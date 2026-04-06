@@ -1137,4 +1137,517 @@ export class PostgresPersistenceGateway
       [layerId],
     );
   }
+
+  // ============ INCIDENT METHODS ============
+
+  async fetchIncidents(input?: { status?: string; severity?: string; limit?: number }): Promise<
+    Array<{
+      incident_id: string;
+      title: string;
+      description: string;
+      start_at: string;
+      end_at: string;
+      aoi: Record<string, unknown> | null;
+      status: string;
+      severity: string;
+      created_at: string;
+      updated_at: string;
+      created_by: string;
+      tags: string[];
+    }>
+  > {
+    let query = `
+      SELECT 
+        incident_id,
+        title,
+        description,
+        start_at,
+        end_at,
+        CASE WHEN aoi IS NOT NULL THEN ST_AsGeoJSON(aoi)::jsonb ELSE NULL END as aoi,
+        status,
+        severity,
+        created_at,
+        updated_at,
+        created_by,
+        tags
+      FROM incidents
+      WHERE 1=1
+    `;
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (input?.status) {
+      query += ` AND status = $${paramIndex}`;
+      params.push(input.status);
+      paramIndex++;
+    }
+
+    if (input?.severity) {
+      query += ` AND severity = $${paramIndex}`;
+      params.push(input.severity);
+      paramIndex++;
+    }
+
+    query += " ORDER BY start_at DESC";
+
+    if (input?.limit) {
+      query += ` LIMIT $${paramIndex}`;
+      params.push(input.limit);
+    }
+
+    const result = await this.database.pool.query(query, params);
+
+    return result.rows.map((row) => ({
+      ...row,
+      start_at: new Date(row.start_at).toISOString(),
+      end_at: new Date(row.end_at).toISOString(),
+      created_at: new Date(row.created_at).toISOString(),
+      updated_at: new Date(row.updated_at).toISOString(),
+    }));
+  }
+
+  async fetchIncident(incidentId: string): Promise<{
+    incident_id: string;
+    title: string;
+    description: string;
+    start_at: string;
+    end_at: string;
+    aoi: Record<string, unknown> | null;
+    status: string;
+    severity: string;
+    created_at: string;
+    updated_at: string;
+    created_by: string;
+    tags: string[];
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          incident_id,
+          title,
+          description,
+          start_at,
+          end_at,
+          CASE WHEN aoi IS NOT NULL THEN ST_AsGeoJSON(aoi)::jsonb ELSE NULL END as aoi,
+          status,
+          severity,
+          created_at,
+          updated_at,
+          created_by,
+          tags
+        FROM incidents
+        WHERE incident_id = $1
+      `,
+      [incidentId],
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      ...row,
+      start_at: new Date(row.start_at).toISOString(),
+      end_at: new Date(row.end_at).toISOString(),
+      created_at: new Date(row.created_at).toISOString(),
+      updated_at: new Date(row.updated_at).toISOString(),
+    };
+  }
+
+  async createIncident(input: {
+    incident_id: string;
+    title: string;
+    description?: string;
+    start_at: string;
+    end_at: string;
+    aoi?: Record<string, unknown>;
+    status: string;
+    severity: string;
+    created_by: string;
+    tags?: string[];
+  }): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO incidents (
+          incident_id,
+          title,
+          description,
+          start_at,
+          end_at,
+          aoi,
+          status,
+          severity,
+          created_by,
+          tags
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+      `,
+      [
+        input.incident_id,
+        input.title,
+        input.description ?? "",
+        input.start_at,
+        input.end_at,
+        input.aoi ? JSON.stringify(input.aoi) : null,
+        input.status,
+        input.severity,
+        input.created_by,
+        input.tags ?? [],
+      ],
+    );
+  }
+
+  async updateIncident(input: {
+    incident_id: string;
+    title?: string;
+    description?: string;
+    start_at?: string;
+    end_at?: string;
+    aoi?: Record<string, unknown>;
+    status?: string;
+    severity?: string;
+    tags?: string[];
+  }): Promise<void> {
+    const updates: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (input.title !== undefined) {
+      updates.push(`title = $${paramIndex++}`);
+      params.push(input.title);
+    }
+    if (input.description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      params.push(input.description);
+    }
+    if (input.start_at !== undefined) {
+      updates.push(`start_at = $${paramIndex++}`);
+      params.push(input.start_at);
+    }
+    if (input.end_at !== undefined) {
+      updates.push(`end_at = $${paramIndex++}`);
+      params.push(input.end_at);
+    }
+    if (input.aoi !== undefined) {
+      updates.push(`aoi = $${paramIndex++}::jsonb`);
+      params.push(input.aoi ? JSON.stringify(input.aoi) : null);
+    }
+    if (input.status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(input.status);
+    }
+    if (input.severity !== undefined) {
+      updates.push(`severity = $${paramIndex++}`);
+      params.push(input.severity);
+    }
+    if (input.tags !== undefined) {
+      updates.push(`tags = $${paramIndex++}`);
+      params.push(input.tags);
+    }
+
+    if (updates.length === 0) {
+      return;
+    }
+
+    params.push(input.incident_id);
+
+    await this.database.pool.query(
+      `UPDATE incidents SET ${updates.join(", ")} WHERE incident_id = $${paramIndex}`,
+      params,
+    );
+  }
+
+  async fetchIncidentChapters(incidentId: string): Promise<
+    Array<{
+      chapter_id: string;
+      incident_id: string;
+      title: string;
+      timestamp: string;
+      description: string | null;
+      event_ids: string[];
+      alert_ids: string[];
+      lat: number | null;
+      lon: number | null;
+      created_at: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          chapter_id,
+          incident_id,
+          title,
+          timestamp,
+          description,
+          event_ids,
+          alert_ids,
+          CASE WHEN position IS NOT NULL THEN ST_Y(position::geometry) ELSE NULL END as lat,
+          CASE WHEN position IS NOT NULL THEN ST_X(position::geometry) ELSE NULL END as lon,
+          created_at
+        FROM incident_chapters
+        WHERE incident_id = $1
+        ORDER BY timestamp ASC
+      `,
+      [incidentId],
+    );
+
+    return result.rows.map((row) => ({
+      ...row,
+      timestamp: new Date(row.timestamp).toISOString(),
+      created_at: new Date(row.created_at).toISOString(),
+    }));
+  }
+
+  async createIncidentChapter(input: {
+    chapter_id: string;
+    incident_id: string;
+    title: string;
+    timestamp: string;
+    description?: string;
+    event_ids?: string[];
+    alert_ids?: string[];
+    lat?: number;
+    lon?: number;
+  }): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO incident_chapters (
+          chapter_id,
+          incident_id,
+          title,
+          timestamp,
+          description,
+          event_ids,
+          alert_ids,
+          position
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 
+          CASE WHEN $8 IS NOT NULL AND $9 IS NOT NULL 
+          THEN ST_SetSRID(ST_MakePoint($9, $8), 4326)::geography 
+          ELSE NULL END
+        )
+      `,
+      [
+        input.chapter_id,
+        input.incident_id,
+        input.title,
+        input.timestamp,
+        input.description ?? null,
+        input.event_ids ?? [],
+        input.alert_ids ?? [],
+        input.lat ?? null,
+        input.lon ?? null,
+      ],
+    );
+  }
+
+  async fetchIncidentLinks(incidentId: string): Promise<
+    Array<{
+      incident_id: string;
+      event_id: string | null;
+      alert_id: string | null;
+      external_event_id: string | null;
+      layer_id: string | null;
+      linked_at: string;
+      linked_by: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          incident_id,
+          event_id,
+          alert_id,
+          external_event_id,
+          layer_id,
+          linked_at,
+          linked_by
+        FROM incident_links
+        WHERE incident_id = $1
+      `,
+      [incidentId],
+    );
+
+    return result.rows.map((row) => ({
+      ...row,
+      linked_at: new Date(row.linked_at).toISOString(),
+    }));
+  }
+
+  async createIncidentLink(input: {
+    incident_id: string;
+    event_id?: string;
+    alert_id?: string;
+    external_event_id?: string;
+    layer_id?: string;
+    linked_by: string;
+  }): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO incident_links (
+          incident_id,
+          event_id,
+          alert_id,
+          external_event_id,
+          layer_id,
+          linked_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (incident_id, event_id, alert_id, external_event_id) DO NOTHING
+      `,
+      [
+        input.incident_id,
+        input.event_id ?? null,
+        input.alert_id ?? null,
+        input.external_event_id ?? null,
+        input.layer_id ?? null,
+        input.linked_by,
+      ],
+    );
+  }
+
+  async fetchIncidentTimeline(incidentId: string): Promise<{
+    incident: {
+      incident_id: string;
+      title: string;
+      description: string;
+      start_at: string;
+      end_at: string;
+      status: string;
+      severity: string;
+    } | null;
+    markers: Array<{
+      marker_id: string;
+      type: string;
+      timestamp: string;
+      title: string;
+      description: string | null;
+      severity: string | null;
+      layer_id: string | null;
+      event_id: string | null;
+      alert_id: string | null;
+      external_id: string | null;
+      lat: number | null;
+      lon: number | null;
+      linked_chapter_id: string | null;
+    }>;
+    chapters: Array<{
+      chapter_id: string;
+      title: string;
+      timestamp: string;
+      description: string | null;
+      lat: number | null;
+      lon: number | null;
+    }>;
+  } | null> {
+    const incidentResult = await this.database.pool.query(
+      `
+        SELECT 
+          incident_id,
+          title,
+          description,
+          start_at,
+          end_at,
+          status,
+          severity
+        FROM incidents
+        WHERE incident_id = $1
+      `,
+      [incidentId],
+    );
+
+    if (incidentResult.rows.length === 0) {
+      return null;
+    }
+
+    const incident = incidentResult.rows[0];
+
+    const markersResult = await this.database.pool.query(
+      `
+        SELECT DISTINCT ON (COALESCE(il.event_id, il.alert_id, il.external_event_id, ic.chapter_id))
+          COALESCE(il.event_id, 'ext_' || il.external_event_id, 'alert_' || il.alert_id, 'chapter_' || ic.chapter_id) as marker_id,
+          COALESCE(il.event_id, 'external') as type,
+          COALESCE(ce.observed_at, ea.opened_at, eed.observed_at, ic.timestamp) as timestamp,
+          COALESCE(ce.event_id, ea.alert_id, eed.event_id, ic.chapter_id) as source_id,
+          CASE 
+            WHEN il.event_id IS NOT NULL THEN 'object_event'
+            WHEN il.alert_id IS NOT NULL THEN 'alert'
+            WHEN il.external_event_id IS NOT NULL THEN il.layer_id
+            ELSE 'chapter'
+          END as marker_type,
+          COALESCE(ce.event_type, ea.severity, eed.event_type, 'chapter') as title,
+          COALESCE(ce.event_id, ea.summary, eed.event_id, ic.title) as description,
+          ea.severity,
+          il.layer_id,
+          il.event_id,
+          il.alert_id,
+          il.external_event_id,
+          COALESCE(ST_Y(ce.geometry), ea.lat, eed.lat, ST_Y(ic.position::geometry)) as lat,
+          COALESCE(ST_X(ce.geometry), ea.lon, eed.lon, ST_X(ic.position::geometry)) as lon,
+          ic.chapter_id as linked_chapter_id
+        FROM incident_links il
+        LEFT JOIN canonical_events ce ON il.event_id = ce.event_id
+        LEFT JOIN alerts ea ON il.alert_id = ea.alert_id
+        LEFT JOIN external_data_events eed ON il.external_event_id = eed.event_id
+        LEFT JOIN incident_chapters ic ON ic.incident_id = il.incident_id AND ic.timestamp BETWEEN 
+          (SELECT start_at FROM incidents WHERE incident_id = $1) AND
+          (SELECT end_at FROM incidents WHERE incident_id = $1)
+        WHERE il.incident_id = $1
+        ORDER BY COALESCE(il.event_id, il.alert_id, il.external_event_id, ic.chapter_id), timestamp ASC
+      `,
+      [incidentId],
+    );
+
+    const chaptersResult = await this.database.pool.query(
+      `
+        SELECT 
+          chapter_id,
+          title,
+          timestamp,
+          description,
+          ST_Y(position::geometry) as lat,
+          ST_X(position::geometry) as lon
+        FROM incident_chapters
+        WHERE incident_id = $1
+        ORDER BY timestamp ASC
+      `,
+      [incidentId],
+    );
+
+    return {
+      incident: {
+        incident_id: incident.incident_id,
+        title: incident.title,
+        description: incident.description,
+        start_at: new Date(incident.start_at).toISOString(),
+        end_at: new Date(incident.end_at).toISOString(),
+        status: incident.status,
+        severity: incident.severity,
+      },
+      markers: markersResult.rows.map((row) => ({
+        marker_id: row.marker_id,
+        type: row.marker_type,
+        timestamp: new Date(row.timestamp).toISOString(),
+        title: row.source_id,
+        description: row.description,
+        severity: row.severity,
+        layer_id: row.layer_id,
+        event_id: row.event_id,
+        alert_id: row.alert_id,
+        external_id: row.external_event_id,
+        lat: row.lat,
+        lon: row.lon,
+        linked_chapter_id: row.linked_chapter_id,
+      })),
+      chapters: chaptersResult.rows.map((row) => ({
+        chapter_id: row.chapter_id,
+        title: row.title,
+        timestamp: new Date(row.timestamp).toISOString(),
+        description: row.description,
+        lat: row.lat,
+        lon: row.lon,
+      })),
+    };
+  }
 }

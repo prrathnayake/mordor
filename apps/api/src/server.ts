@@ -815,6 +815,240 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
         }
       }
 
+      // ============ INCIDENT ENDPOINTS ============
+
+      // GET /incidents
+      if (request.method === "GET" && url.pathname === "/incidents") {
+        const status = url.searchParams.get("status") ?? undefined;
+        const severity = url.searchParams.get("severity") ?? undefined;
+        const limitParam = url.searchParams.get("limit");
+        const limit = limitParam ? Number.parseInt(limitParam, 10) : 50;
+
+        const incidents = await persistence.fetchIncidents({ status, severity, limit });
+        writeJson(response, 200, { incidents });
+        return;
+      }
+
+      // POST /incidents
+      if (request.method === "POST" && url.pathname === "/incidents") {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as {
+          title: string;
+          description?: string;
+          start_at: string;
+          end_at: string;
+          aoi?: Record<string, unknown>;
+          severity: string;
+          tags?: string[];
+        };
+
+        if (!body.title || !body.start_at || !body.end_at || !body.severity) {
+          writeJson(response, 400, { error: "title, start_at, end_at, and severity are required" });
+          return;
+        }
+
+        const incidentId = `inc_${crypto.randomUUID().replace(/-/g, "").substring(0, 12)}`;
+
+        await persistence.createIncident({
+          incident_id: incidentId,
+          title: body.title,
+          description: body.description,
+          start_at: body.start_at,
+          end_at: body.end_at,
+          aoi: body.aoi,
+          status: "open",
+          severity: body.severity,
+          created_by: authContext.user.user_id,
+          tags: body.tags,
+        });
+
+        const incident = await persistence.fetchIncident(incidentId);
+        writeJson(response, 201, incident);
+        return;
+      }
+
+      // GET /incidents/:id
+      if (
+        request.method === "GET" &&
+        url.pathname.startsWith("/incidents/") &&
+        !url.pathname.includes("/timeline") &&
+        !url.pathname.includes("/chapters") &&
+        !url.pathname.includes("/links")
+      ) {
+        const incidentId = url.pathname.replace("/incidents/", "");
+        const incident = await persistence.fetchIncident(incidentId);
+
+        if (!incident) {
+          writeJson(response, 404, { error: "incident not found" });
+          return;
+        }
+
+        writeJson(response, 200, incident);
+        return;
+      }
+
+      // PATCH /incidents/:id
+      if (request.method === "PATCH" && url.pathname.startsWith("/incidents/")) {
+        if (!authContext.isAuthenticated) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const incidentId = url.pathname.replace("/incidents/", "");
+        const existing = await persistence.fetchIncident(incidentId);
+
+        if (!existing) {
+          writeJson(response, 404, { error: "incident not found" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as {
+          title?: string;
+          description?: string;
+          start_at?: string;
+          end_at?: string;
+          aoi?: Record<string, unknown>;
+          status?: string;
+          severity?: string;
+          tags?: string[];
+        };
+
+        await persistence.updateIncident({
+          incident_id: incidentId,
+          ...body,
+        });
+
+        const updated = await persistence.fetchIncident(incidentId);
+        writeJson(response, 200, updated);
+        return;
+      }
+
+      // GET /incidents/:id/timeline
+      if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/timeline$/)) {
+        const incidentId = url.pathname.split("/")[2];
+        const timeline = await persistence.fetchIncidentTimeline(incidentId);
+
+        if (!timeline) {
+          writeJson(response, 404, { error: "incident not found" });
+          return;
+        }
+
+        writeJson(response, 200, timeline);
+        return;
+      }
+
+      // GET /incidents/:id/chapters
+      if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/chapters$/)) {
+        const incidentId = url.pathname.split("/")[2];
+        const chapters = await persistence.fetchIncidentChapters(incidentId);
+        writeJson(response, 200, { chapters });
+        return;
+      }
+
+      // POST /incidents/:id/chapters
+      if (request.method === "POST" && url.pathname.match(/^\/incidents\/[^/]+\/chapters$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const incidentId = url.pathname.split("/")[2];
+        const existing = await persistence.fetchIncident(incidentId);
+
+        if (!existing) {
+          writeJson(response, 404, { error: "incident not found" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as {
+          title: string;
+          timestamp: string;
+          description?: string;
+          event_ids?: string[];
+          alert_ids?: string[];
+          lat?: number;
+          lon?: number;
+        };
+
+        if (!body.title || !body.timestamp) {
+          writeJson(response, 400, { error: "title and timestamp are required" });
+          return;
+        }
+
+        const chapterId = `ch_${crypto.randomUUID().replace(/-/g, "").substring(0, 12)}`;
+
+        await persistence.createIncidentChapter({
+          chapter_id: chapterId,
+          incident_id: incidentId,
+          title: body.title,
+          timestamp: body.timestamp,
+          description: body.description,
+          event_ids: body.event_ids,
+          alert_ids: body.alert_ids,
+          lat: body.lat,
+          lon: body.lon,
+        });
+
+        const chapters = await persistence.fetchIncidentChapters(incidentId);
+        writeJson(response, 201, { chapters });
+        return;
+      }
+
+      // GET /incidents/:id/links
+      if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/links$/)) {
+        const incidentId = url.pathname.split("/")[2];
+        const links = await persistence.fetchIncidentLinks(incidentId);
+        writeJson(response, 200, { links });
+        return;
+      }
+
+      // POST /incidents/:id/links
+      if (request.method === "POST" && url.pathname.match(/^\/incidents\/[^/]+\/links$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const incidentId = url.pathname.split("/")[2];
+        const existing = await persistence.fetchIncident(incidentId);
+
+        if (!existing) {
+          writeJson(response, 404, { error: "incident not found" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as {
+          event_id?: string;
+          alert_id?: string;
+          external_event_id?: string;
+          layer_id?: string;
+        };
+
+        if (!body.event_id && !body.alert_id && !body.external_event_id) {
+          writeJson(response, 400, {
+            error: "event_id, alert_id, or external_event_id is required",
+          });
+          return;
+        }
+
+        await persistence.createIncidentLink({
+          incident_id: incidentId,
+          event_id: body.event_id,
+          alert_id: body.alert_id,
+          external_event_id: body.external_event_id,
+          layer_id: body.layer_id,
+          linked_by: authContext.user.user_id,
+        });
+
+        const links = await persistence.fetchIncidentLinks(incidentId);
+        writeJson(response, 201, { links });
+        return;
+      }
+
       logger.warn("Route not found", { pathname: url.pathname, method: request.method });
 
       writeJson(response, 404, {

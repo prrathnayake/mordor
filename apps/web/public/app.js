@@ -50,6 +50,24 @@ const externalLayerState = {
   entities: new Map(), // layerId -> Map of entityId -> Cesium entity
 };
 
+// Incident state
+const incidentState = {
+  currentIncident: null,
+  timeline: null,
+  chapters: [],
+  links: [],
+  markers: [],
+  entities: new Map(),
+  playback: {
+    isPlaying: false,
+    intervalId: null,
+    speed: 1,
+    currentTime: null,
+    section: "during", // "before", "during", "after"
+  },
+  isActive: false,
+};
+
 // Layer status colors for UI
 const _LAYER_STATUS_COLORS = {
   real: "#22c55e", // Green
@@ -161,6 +179,41 @@ const dom = {
   // Viewport
   coordinates: document.getElementById("coordinates"),
   zoomLevel: document.getElementById("zoom-level"),
+
+  // Incident Panel
+  incidentPanel: document.getElementById("incident-panel"),
+  closeIncident: document.getElementById("close-incident"),
+  incidentTitle: document.getElementById("incident-title"),
+  incidentSeverity: document.getElementById("incident-severity"),
+  incidentStatus: document.getElementById("incident-status"),
+  incidentTime: document.getElementById("incident-time"),
+  btnBefore: document.getElementById("btn-before"),
+  btnDuring: document.getElementById("btn-during"),
+  btnAfter: document.getElementById("btn-after"),
+  beforeCount: document.getElementById("before-count"),
+  duringCount: document.getElementById("during-count"),
+  afterCount: document.getElementById("after-count"),
+  incidentChapters: document.getElementById("incident-chapters"),
+  incidentPlay: document.getElementById("incident-play"),
+  incidentPause: document.getElementById("incident-pause"),
+  incidentScrubber: document.getElementById("incident-scrubber"),
+  incidentSpeed: document.getElementById("incident-speed"),
+
+  // Incident Modal
+  incidentModal: document.getElementById("incident-modal"),
+  closeIncidentModal: document.getElementById("close-incident-modal"),
+  incidentList: document.getElementById("incident-list"),
+  btnNewIncident: document.getElementById("btn-new-incident"),
+  newIncidentModal: document.getElementById("new-incident-modal"),
+  closeNewIncidentModal: document.getElementById("close-new-incident-modal"),
+  incidentTitleInput: document.getElementById("incident-title-input"),
+  incidentDescInput: document.getElementById("incident-desc-input"),
+  incidentStartInput: document.getElementById("incident-start-input"),
+  incidentEndInput: document.getElementById("incident-end-input"),
+  incidentSeverityInput: document.getElementById("incident-severity-input"),
+  incidentTagsInput: document.getElementById("incident-tags-input"),
+  btnCancelIncident: document.getElementById("btn-cancel-incident"),
+  btnCreateIncident: document.getElementById("btn-create-incident"),
 };
 
 // ===== UTILITY FUNCTIONS =====
@@ -1006,6 +1059,599 @@ async function loadAlerts() {
   }
 }
 
+// ===== INCIDENTS =====
+
+async function loadIncidents() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (handleUnauthorized(response)) {
+      return [];
+    }
+
+    const data = await response.json();
+    return data.incidents || [];
+  } catch (error) {
+    console.error("Failed to load incidents:", error);
+    return [];
+  }
+}
+
+async function loadIncidentTimeline(incidentId) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}/timeline`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to load incident timeline");
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to load incident timeline:", error);
+    return null;
+  }
+}
+
+async function loadIncidentChapters(incidentId) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}/chapters`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    return data.chapters || [];
+  } catch (error) {
+    console.error("Failed to load incident chapters:", error);
+    return [];
+  }
+}
+
+window.showIncidentModal = () => {
+  dom.incidentModal.classList.remove("hidden");
+  renderIncidentList();
+};
+
+function hideIncidentModal() {
+  dom.incidentModal.classList.add("hidden");
+}
+
+function showNewIncidentForm() {
+  dom.newIncidentModal.classList.remove("hidden");
+  dom.incidentModal.classList.add("hidden");
+}
+
+function hideNewIncidentForm() {
+  dom.newIncidentModal.classList.add("hidden");
+  dom.incidentModal.classList.remove("hidden");
+}
+
+async function renderIncidentList() {
+  const incidents = await loadIncidents();
+
+  if (incidents.length === 0) {
+    dom.incidentList.innerHTML = '<div class="no-incidents">No incidents found</div>';
+    return;
+  }
+
+  dom.incidentList.innerHTML = incidents
+    .map(
+      (incident) => `
+      <div class="incident-list-item" data-incident-id="${incident.incident_id}">
+        <div class="incident-title">${incident.title}</div>
+        <div class="incident-meta">
+          <span class="incident-severity ${incident.severity}">${incident.severity}</span>
+          <span class="incident-status ${incident.status}">${incident.status}</span>
+        </div>
+        <div class="incident-time">${new Date(incident.start_at).toLocaleString()} - ${new Date(incident.end_at).toLocaleString()}</div>
+      </div>
+    `,
+    )
+    .join("");
+
+  dom.incidentList.querySelectorAll(".incident-list-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      openIncident(item.dataset.incidentId);
+      hideIncidentModal();
+    });
+  });
+}
+
+async function openIncident(incidentId) {
+  updateStatus("LOADING INCIDENT...");
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      updateStatus("FAILED TO LOAD INCIDENT");
+      return;
+    }
+
+    const incident = await response.json();
+    incidentState.currentIncident = incident;
+
+    const timeline = await loadIncidentTimeline(incidentId);
+    if (timeline) {
+      incidentState.timeline = timeline;
+      incidentState.markers = timeline.markers || [];
+    }
+
+    incidentState.chapters = await loadIncidentChapters(incidentId);
+
+    incidentState.isActive = true;
+    incidentState.playback.currentTime = new Date(incident.start_at);
+    incidentState.playback.section = "during";
+
+    renderIncidentPanel();
+    showIncidentPanel();
+
+    if (incident.aoi) {
+      focusOnAOI(incident.aoi);
+    }
+
+    updateStatus(`INCIDENT: ${incident.title.toUpperCase()}`);
+  } catch (error) {
+    console.error("Failed to open incident:", error);
+    updateStatus("INCIDENT LOAD FAILED");
+  }
+}
+
+function showIncidentPanel() {
+  dom.incidentPanel.classList.remove("hidden");
+}
+
+function hideIncidentPanel() {
+  dom.incidentPanel.classList.add("hidden");
+  closeIncident();
+}
+
+function closeIncident() {
+  stopIncidentPlayback();
+  incidentState.currentIncident = null;
+  incidentState.timeline = null;
+  incidentState.chapters = [];
+  incidentState.links = [];
+  incidentState.markers = [];
+  incidentState.isActive = false;
+  incidentState.playback.currentTime = null;
+  incidentState.playback.section = "during";
+
+  updateStatus("REPLAY MODE");
+}
+
+function renderIncidentPanel() {
+  const incident = incidentState.currentIncident;
+  if (!incident) return;
+
+  dom.incidentTitle.textContent = incident.title;
+  dom.incidentSeverity.textContent = incident.severity.toUpperCase();
+  dom.incidentSeverity.className = `incident-severity ${incident.severity}`;
+  dom.incidentStatus.textContent = incident.status.toUpperCase();
+  dom.incidentStatus.className = `incident-status ${incident.status}`;
+
+  const startDate = new Date(incident.start_at);
+  const endDate = new Date(incident.end_at);
+  dom.incidentTime.textContent = `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()} - ${endDate.toLocaleTimeString()}`;
+
+  updateSectionCounts();
+  renderChapters();
+  renderCorrelationTimeline();
+}
+
+function updateSectionCounts() {
+  const timeline = incidentState.timeline;
+  if (!timeline) {
+    dom.beforeCount.textContent = "0";
+    dom.duringCount.textContent = "0";
+    dom.afterCount.textContent = "0";
+    return;
+  }
+
+  const beforeMarkers = timeline.markers.filter((m) => m.section === "before");
+  const duringMarkers = timeline.markers.filter((m) => m.section === "during");
+  const afterMarkers = timeline.markers.filter((m) => m.section === "after");
+
+  dom.beforeCount.textContent = String(beforeMarkers.length);
+  dom.duringCount.textContent = String(duringMarkers.length);
+  dom.afterCount.textContent = String(afterMarkers.length);
+}
+
+function renderChapters() {
+  const chapters = incidentState.chapters;
+
+  if (chapters.length === 0) {
+    dom.incidentChapters.innerHTML = '<div class="no-chapters">No chapters defined</div>';
+    return;
+  }
+
+  dom.incidentChapters.innerHTML = chapters
+    .map(
+      (chapter) => `
+      <div class="chapter-marker" data-chapter-id="${chapter.chapter_id}" data-timestamp="${chapter.timestamp}">
+        <span class="chapter-timestamp">${new Date(chapter.timestamp).toLocaleTimeString()}</span>
+        <span class="chapter-title">${chapter.title}</span>
+      </div>
+    `,
+    )
+    .join("");
+
+  dom.incidentChapters.querySelectorAll(".chapter-marker").forEach((marker) => {
+    marker.addEventListener("click", () => {
+      const timestamp = new Date(marker.dataset.timestamp);
+      jumpToIncidentTime(timestamp);
+    });
+  });
+}
+
+function renderCorrelationTimeline() {
+  const timeline = incidentState.timeline;
+  const markers = incidentState.markers;
+
+  if (!timeline || markers.length === 0) {
+    return;
+  }
+
+  for (const marker of markers) {
+    if (!marker.lon || !marker.lat) continue;
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(marker.lon, marker.lat, 0),
+      point: {
+        pixelSize: getMarkerSize(marker.type),
+        color: Cesium.Color.fromCssColorString(getMarkerColor(marker)),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 1,
+      },
+      label: {
+        text: getMarkerLabel(marker),
+        font: "9px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -12),
+        show: false,
+      },
+      properties: {
+        type: "incident_marker",
+        marker: marker,
+      },
+    });
+
+    incidentState.entities?.set(marker.event_id || marker.id, entity);
+  }
+}
+
+function getMarkerSize(type) {
+  switch (type) {
+    case "earthquake":
+      return 14;
+    case "alert":
+      return 12;
+    case "weather":
+      return 10;
+    case "satellite":
+      return 8;
+    case "traffic":
+      return 8;
+    case "bikeshare":
+      return 6;
+    case "source_health":
+      return 5;
+    default:
+      return 8;
+  }
+}
+
+function getMarkerColor(marker) {
+  switch (marker.type) {
+    case "alert":
+      return marker.severity === "critical"
+        ? "#ef4444"
+        : marker.severity === "high"
+          ? "#f97316"
+          : "#eab308";
+    case "earthquake": {
+      const mag = marker.magnitude || 3;
+      if (mag >= 5) return "#ef4444";
+      if (mag >= 3) return "#f97316";
+      if (mag >= 1) return "#eab308";
+      return "#22c55e";
+    }
+    case "weather":
+      return marker.severity === "Extreme"
+        ? "#dc2626"
+        : marker.severity === "Severe"
+          ? "#ea580c"
+          : "#eab308";
+    case "traffic":
+      return marker.severity === "blocking"
+        ? "#dc2626"
+        : marker.severity === "major"
+          ? "#ea580c"
+          : "#eab308";
+    case "satellite":
+      return "#3b82f6";
+    case "bikeshare":
+      return "#22c55e";
+    case "source_health":
+      return marker.status === "active" ? "#22c55e" : "#6b7280";
+    default:
+      return "#6b7280";
+  }
+}
+
+function getMarkerLabel(marker) {
+  switch (marker.type) {
+    case "alert":
+      return `ALERT: ${marker.severity}`;
+    case "earthquake":
+      return `M${marker.magnitude}`;
+    case "weather":
+      return marker.severity || "WEATHER";
+    case "traffic":
+      return marker.type || "TRAFFIC";
+    case "satellite":
+      return marker.name || "SAT";
+    case "bikeshare":
+      return `${marker.availability || 0}%`;
+    default:
+      return marker.type || "";
+  }
+}
+
+function setIncidentSection(section) {
+  incidentState.playback.section = section;
+
+  dom.btnBefore.classList.remove("active");
+  dom.btnDuring.classList.remove("active");
+  dom.btnAfter.classList.remove("active");
+
+  switch (section) {
+    case "before":
+      dom.btnBefore.classList.add("active");
+      break;
+    case "during":
+      dom.btnDuring.classList.add("active");
+      break;
+    case "after":
+      dom.btnAfter.classList.add("active");
+      break;
+  }
+}
+
+function jumpToIncidentTime(timestamp) {
+  if (!incidentState.currentIncident) return;
+
+  const incident = incidentState.currentIncident;
+  const startTime = new Date(incident.start_at).getTime();
+  const endTime = new Date(incident.end_at).getTime();
+  const targetTime = timestamp.getTime();
+
+  if (targetTime < startTime) {
+    setIncidentSection("before");
+  } else if (targetTime > endTime) {
+    setIncidentSection("after");
+  } else {
+    setIncidentSection("during");
+  }
+
+  incidentState.playback.currentTime = timestamp;
+  updateIncidentScrubber();
+  updateIncidentView();
+}
+
+function updateIncidentScrubber() {
+  if (!incidentState.currentIncident) return;
+
+  const incident = incidentState.currentIncident;
+  const startTime = new Date(incident.start_at).getTime();
+  const endTime = new Date(incident.end_at).getTime();
+  const currentTime = incidentState.playback.currentTime?.getTime() || startTime;
+
+  const progress = Math.max(
+    0,
+    Math.min(100, ((currentTime - startTime) / (endTime - startTime)) * 100),
+  );
+  dom.incidentScrubber.value = String(progress);
+}
+
+function updateIncidentView() {
+  if (!incidentState.currentIncident || !incidentState.playback.currentTime) return;
+
+  const currentTime = incidentState.playback.currentTime;
+
+  highlightMarkersAtTime(currentTime);
+
+  const activeChapter = incidentState.chapters.find((chapter, index, chapters) => {
+    const chapterTime = new Date(chapter.timestamp).getTime();
+    const nextChapter = chapters[index + 1];
+    const nextTime = nextChapter ? new Date(nextChapter.timestamp).getTime() : Infinity;
+    return currentTime.getTime() >= chapterTime && currentTime.getTime() < nextTime;
+  });
+
+  if (activeChapter) {
+    dom.incidentChapters.querySelectorAll(".chapter-marker").forEach((marker) => {
+      marker.classList.toggle("active", marker.dataset.chapterId === activeChapter.chapter_id);
+    });
+  }
+}
+
+function highlightMarkersAtTime(timestamp) {
+  if (!incidentState.timeline) return;
+
+  const targetTime = timestamp.getTime();
+  const toleranceMs = 60000;
+
+  for (const [, entity] of incidentState.entities || []) {
+    if (!entity.properties?.marker) continue;
+
+    const marker = entity.properties.marker.getValue();
+    if (!marker) continue;
+
+    const markerTime = new Date(marker.timestamp).getTime();
+    const isRelevant = Math.abs(markerTime - targetTime) <= toleranceMs;
+
+    if (entity.point) {
+      entity.point.show = isRelevant;
+    }
+    if (entity.label) {
+      entity.label.show = isRelevant;
+    }
+  }
+}
+
+function playIncident() {
+  if (!incidentState.currentIncident) return;
+
+  stopIncidentPlayback();
+
+  incidentState.playback.isPlaying = true;
+  dom.incidentPlay.style.display = "none";
+  dom.incidentPause.style.display = "flex";
+
+  const baseIntervalMs = 1000;
+  const speed = incidentState.playback.speed;
+  const intervalMs = baseIntervalMs / speed;
+
+  incidentState.playback.intervalId = setInterval(() => {
+    const incident = incidentState.currentIncident;
+    const currentTime = incidentState.playback.currentTime || new Date(incident.start_at);
+    const endTime = new Date(incident.end_at);
+
+    const newTime = new Date(currentTime.getTime() + 1000);
+    incidentState.playback.currentTime = newTime;
+
+    if (newTime >= endTime) {
+      stopIncidentPlayback();
+      return;
+    }
+
+    if (newTime < new Date(incident.start_at)) {
+      setIncidentSection("before");
+    } else if (newTime > new Date(incident.end_at)) {
+      setIncidentSection("after");
+    } else {
+      setIncidentSection("during");
+    }
+
+    updateIncidentScrubber();
+    updateIncidentView();
+  }, intervalMs);
+}
+
+function pauseIncident() {
+  stopIncidentPlayback();
+}
+
+function stopIncidentPlayback() {
+  if (incidentState.playback.intervalId) {
+    clearInterval(incidentState.playback.intervalId);
+    incidentState.playback.intervalId = null;
+  }
+  incidentState.playback.isPlaying = false;
+  dom.incidentPlay.style.display = "flex";
+  dom.incidentPause.style.display = "none";
+}
+
+function setIncidentSpeed(speed) {
+  incidentState.playback.speed = parseFloat(speed);
+  if (incidentState.playback.isPlaying) {
+    playIncident();
+  }
+}
+
+function focusOnAOI(aoi) {
+  if (!aoi?.coordinates) return;
+
+  const coords = aoi.coordinates;
+  if (coords.length < 4) return;
+
+  let minLon = Infinity,
+    maxLon = -Infinity;
+  let minLat = Infinity,
+    maxLat = -Infinity;
+
+  for (const [lon, lat] of coords) {
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+
+  const centerLon = (minLon + maxLon) / 2;
+  const centerLat = (minLat + maxLat) / 2;
+  const spanLon = maxLon - minLon;
+  const spanLat = maxLat - minLat;
+  const maxSpan = Math.max(spanLon, spanLat);
+  const height = maxSpan * 111000 * 2;
+
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, Math.max(height, 5000)),
+    duration: 1.5,
+  });
+}
+
+async function createIncident() {
+  const title = dom.incidentTitleInput.value.trim();
+  const description = dom.incidentDescInput.value.trim();
+  const startAt = dom.incidentStartInput.value;
+  const endAt = dom.incidentEndInput.value;
+  const severity = dom.incidentSeverityInput.value;
+  const tags = dom.incidentTagsInput.value
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  if (!title || !startAt || !endAt || !severity) {
+    alert("Please fill in all required fields");
+    return;
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        title,
+        description,
+        start_at: new Date(startAt).toISOString(),
+        end_at: new Date(endAt).toISOString(),
+        severity,
+        tags,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      alert(`Failed to create incident: ${error.message || error.error}`);
+      return;
+    }
+
+    hideNewIncidentForm();
+    renderIncidentList();
+    updateStatus("INCIDENT CREATED");
+  } catch (error) {
+    console.error("Failed to create incident:", error);
+    alert("Failed to create incident");
+  }
+}
+
 async function showAlertDetail(alertId) {
   try {
     const response = await fetch(`${apiBaseUrl}/alerts/${alertId}`, {
@@ -1482,6 +2128,49 @@ function initEventListeners() {
   dom.togglePanoptic.addEventListener("change", (e) => {
     visualState.panoptic = e.target.checked;
   });
+
+  // Incident panel events
+  dom.closeIncident.addEventListener("click", hideIncidentPanel);
+
+  dom.btnBefore.addEventListener("click", () => setIncidentSection("before"));
+  dom.btnDuring.addEventListener("click", () => setIncidentSection("during"));
+  dom.btnAfter.addEventListener("click", () => setIncidentSection("after"));
+
+  dom.incidentPlay.addEventListener("click", playIncident);
+  dom.incidentPause.addEventListener("click", pauseIncident);
+
+  dom.incidentScrubber.addEventListener("input", () => {
+    if (!incidentState.currentIncident) return;
+
+    const incident = incidentState.currentIncident;
+    const startTime = new Date(incident.start_at).getTime();
+    const endTime = new Date(incident.end_at).getTime();
+    const progress = parseInt(dom.incidentScrubber.value, 10) / 100;
+    const newTime = new Date(startTime + (endTime - startTime) * progress);
+
+    incidentState.playback.currentTime = newTime;
+
+    if (newTime < new Date(incident.start_at)) {
+      setIncidentSection("before");
+    } else if (newTime > new Date(incident.end_at)) {
+      setIncidentSection("after");
+    } else {
+      setIncidentSection("during");
+    }
+
+    updateIncidentView();
+  });
+
+  dom.incidentSpeed.addEventListener("change", (e) => {
+    setIncidentSpeed(e.target.value);
+  });
+
+  // Incident modal events
+  dom.closeIncidentModal.addEventListener("click", hideIncidentModal);
+  dom.btnNewIncident.addEventListener("click", showNewIncidentForm);
+  dom.closeNewIncidentModal.addEventListener("click", hideNewIncidentForm);
+  dom.btnCancelIncident.addEventListener("click", hideNewIncidentForm);
+  dom.btnCreateIncident.addEventListener("click", createIncident);
 }
 
 // Make handleAuthClick available globally for onclick handler

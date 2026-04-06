@@ -494,6 +494,126 @@
         </div>
         <ol id="event-list" class="event-list"></ol>
       </div>
+
+      <!-- Incident Panel (Hidden by default) -->
+      <div id="incident-panel" class="incident-panel hidden">
+        <div class="panel-header">
+          <h3>INCIDENT</h3>
+          <button type="button" id="close-incident" class="panel-close">×</button>
+        </div>
+        <div id="incident-info" class="incident-info">
+          <div class="incident-title" id="incident-title">--</div>
+          <div class="incident-meta" id="incident-meta">
+            <span class="incident-severity" id="incident-severity">--</span>
+            <span class="incident-status" id="incident-status">--</span>
+          </div>
+          <div class="incident-time" id="incident-time">--</div>
+        </div>
+        <div class="incident-sections">
+          <div class="incident-section">
+            <button type="button" class="incident-section-btn" id="btn-before">
+              <span class="section-label">BEFORE</span>
+              <span class="section-count" id="before-count">0</span>
+            </button>
+          </div>
+          <div class="incident-section">
+            <button type="button" class="incident-section-btn active" id="btn-during">
+              <span class="section-label">DURING</span>
+              <span class="section-count" id="during-count">0</span>
+            </button>
+          </div>
+          <div class="incident-section">
+            <button type="button" class="incident-section-btn" id="btn-after">
+              <span class="section-label">AFTER</span>
+              <span class="section-count" id="after-count">0</span>
+            </button>
+          </div>
+        </div>
+        <div id="incident-chapters" class="incident-chapters">
+          <!-- Chapter markers populated by JS -->
+        </div>
+        <div class="incident-playback">
+          <button type="button" class="playback-btn" id="incident-play" title="Play Incident">
+            <svg viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="Play"><title>Play</title><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button type="button" class="playback-btn" id="incident-pause" title="Pause Incident" style="display:none;">
+            <svg viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="Pause"><title>Pause</title><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <input type="range" class="playback-slider" id="incident-scrubber" min="0" max="100" value="0" />
+          <select class="speed-select" id="incident-speed">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Incident List Modal -->
+      <div id="incident-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>INCIDENTS</h2>
+            <button type="button" id="close-incident-modal" class="panel-close">×</button>
+          </div>
+          <div class="modal-body">
+            <div id="incident-list" class="incident-list">
+              <!-- Incidents populated by JS -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="action-button" id="btn-new-incident">+ NEW INCIDENT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- New Incident Modal -->
+      <div id="new-incident-modal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>CREATE INCIDENT</h2>
+            <button type="button" id="close-new-incident-modal" class="panel-close">×</button>
+          </div>
+          <div class="modal-body">
+            <form id="new-incident-form">
+              <div class="form-group">
+                <label for="incident-title-input">Title *</label>
+                <input type="text" id="incident-title-input" required />
+              </div>
+              <div class="form-group">
+                <label for="incident-desc-input">Description</label>
+                <textarea id="incident-desc-input" rows="3"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="incident-start-input">Start Time *</label>
+                <input type="datetime-local" id="incident-start-input" required />
+              </div>
+              <div class="form-group">
+                <label for="incident-end-input">End Time *</label>
+                <input type="datetime-local" id="incident-end-input" required />
+              </div>
+              <div class="form-group">
+                <label for="incident-severity-input">Severity *</label>
+                <select id="incident-severity-input" required>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="incident-tags-input">Tags (comma-separated)</label>
+                <input type="text" id="incident-tags-input" placeholder="security, breach, network" />
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="action-button secondary" id="btn-cancel-incident">CANCEL</button>
+            <button type="button" class="action-button" id="btn-create-incident">CREATE</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.112/Build/Cesium/Cesium.js"></script>
