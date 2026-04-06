@@ -1281,7 +1281,14 @@ export class PostgresPersistenceGateway
           created_by,
           tags
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        VALUES (
+          $1, $2, $3, $4, $5,
+          CASE
+            WHEN $6::jsonb IS NULL THEN NULL
+            ELSE ST_SetSRID(ST_GeomFromGeoJSON($6::jsonb::text), 4326)
+          END,
+          $7, $8, $9, $10
+        )
       `,
       [
         input.incident_id,
@@ -1330,8 +1337,11 @@ export class PostgresPersistenceGateway
       params.push(input.end_at);
     }
     if (input.aoi !== undefined) {
-      updates.push(`aoi = $${paramIndex++}::jsonb`);
+      updates.push(
+        `aoi = CASE WHEN $${paramIndex}::jsonb IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromGeoJSON($${paramIndex}::jsonb::text), 4326) END`,
+      );
       params.push(input.aoi ? JSON.stringify(input.aoi) : null);
+      paramIndex++;
     }
     if (input.status !== undefined) {
       updates.push(`status = $${paramIndex++}`);
@@ -1649,5 +1659,828 @@ export class PostgresPersistenceGateway
         lon: row.lon,
       })),
     };
+  }
+
+  async createCaptureJob(
+    incidentId: string,
+    sourceType: string,
+    createdBy: string,
+  ): Promise<string> {
+    const captureJobId = `cap_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    await this.database.pool.query(
+      `
+        INSERT INTO capture_jobs (
+          capture_job_id,
+          incident_id,
+          source_type,
+          status,
+          created_by
+        )
+        VALUES ($1, $2, $3, 'pending', $4)
+      `,
+      [captureJobId, incidentId, sourceType, createdBy],
+    );
+    return captureJobId;
+  }
+
+  async getCaptureJob(captureJobId: string): Promise<{
+    capture_job_id: string;
+    incident_id: string;
+    source_type: string;
+    status: string;
+    started_at: string | null;
+    ended_at: string | null;
+    snapshot_count: number;
+    error_code: string | null;
+    error_message: string | null;
+    freeze_status: string;
+    created_at: string;
+    created_by: string;
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          capture_job_id,
+          incident_id,
+          source_type,
+          status,
+          started_at,
+          ended_at,
+          snapshot_count,
+          error_code,
+          error_message,
+          freeze_status,
+          created_at,
+          created_by
+        FROM capture_jobs
+        WHERE capture_job_id = $1
+      `,
+      [captureJobId],
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    return {
+      ...row,
+      started_at: row.started_at ? new Date(row.started_at).toISOString() : null,
+      ended_at: row.ended_at ? new Date(row.ended_at).toISOString() : null,
+      created_at: new Date(row.created_at).toISOString(),
+    };
+  }
+
+  async listCaptureJobs(
+    incidentId?: string,
+    status?: string,
+  ): Promise<
+    Array<{
+      capture_job_id: string;
+      incident_id: string;
+      source_type: string;
+      status: string;
+      started_at: string | null;
+      ended_at: string | null;
+      snapshot_count: number;
+      freeze_status: string;
+      created_at: string;
+    }>
+  > {
+    let query = `
+      SELECT 
+        capture_job_id,
+        incident_id,
+        source_type,
+        status,
+        started_at,
+        ended_at,
+        snapshot_count,
+        freeze_status,
+        created_at
+      FROM capture_jobs
+    `;
+    const params: string[] = [];
+    const conditions: string[] = [];
+
+    if (incidentId) {
+      params.push(incidentId);
+      conditions.push(`incident_id = $${params.length}`);
+    }
+    if (status) {
+      params.push(status);
+      conditions.push(`status = $${params.length}`);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
+    query += " ORDER BY created_at DESC";
+
+    const result = await this.database.pool.query(query, params);
+    return result.rows.map((row) => ({
+      ...row,
+      started_at: row.started_at ? new Date(row.started_at).toISOString() : null,
+      ended_at: row.ended_at ? new Date(row.ended_at).toISOString() : null,
+      created_at: new Date(row.created_at).toISOString(),
+    }));
+  }
+
+  async startCaptureJob(captureJobId: string): Promise<void> {
+    await this.database.pool.query(
+      `
+        UPDATE capture_jobs
+        SET status = 'running', started_at = NOW()
+        WHERE capture_job_id = $1 AND status = 'pending'
+      `,
+      [captureJobId],
+    );
+  }
+
+  async completeCaptureJob(
+    captureJobId: string,
+    errorCode?: string,
+    errorMessage?: string,
+  ): Promise<void> {
+    const status = errorCode ? "failed" : "completed";
+    await this.database.pool.query(
+      `
+        UPDATE capture_jobs
+        SET status = $1, ended_at = NOW(), error_code = $2, error_message = $3
+        WHERE capture_job_id = $4
+      `,
+      [status, errorCode ?? null, errorMessage ?? null, captureJobId],
+    );
+  }
+
+  async addCaptureSnapshot(
+    captureJobId: string,
+    sourceType: string,
+    externalId: string | null,
+    observedAt: string,
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+  ): Promise<string> {
+    const snapshotId = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    await this.database.pool.query(
+      `
+        INSERT INTO capture_snapshots (
+          snapshot_id,
+          capture_job_id,
+          source_type,
+          external_id,
+          observed_at,
+          payload,
+          metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+      `,
+      [
+        snapshotId,
+        captureJobId,
+        sourceType,
+        externalId,
+        observedAt,
+        JSON.stringify(payload),
+        JSON.stringify(metadata),
+      ],
+    );
+    return snapshotId;
+  }
+
+  async listCaptureSnapshots(captureJobId: string): Promise<
+    Array<{
+      snapshot_id: string;
+      source_type: string;
+      external_id: string | null;
+      observed_at: string;
+      captured_at: string;
+      frozen: boolean;
+      frozen_at: string | null;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          snapshot_id,
+          source_type,
+          external_id,
+          observed_at,
+          captured_at,
+          frozen,
+          frozen_at
+        FROM capture_snapshots
+        WHERE capture_job_id = $1
+        ORDER BY captured_at ASC
+      `,
+      [captureJobId],
+    );
+    return result.rows.map((row) => ({
+      ...row,
+      observed_at: new Date(row.observed_at).toISOString(),
+      captured_at: new Date(row.captured_at).toISOString(),
+      frozen_at: row.frozen_at ? new Date(row.frozen_at).toISOString() : null,
+    }));
+  }
+
+  async freezeSnapshots(captureJobId: string): Promise<number> {
+    const result = await this.database.pool.query(
+      `
+        UPDATE capture_snapshots
+        SET frozen = TRUE, frozen_at = NOW()
+        WHERE capture_job_id = $1 AND frozen = FALSE
+      `,
+      [captureJobId],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async updateCaptureJobFreezeStatus(captureJobId: string, freezeStatus: string): Promise<void> {
+    await this.database.pool.query(
+      `
+        UPDATE capture_jobs
+        SET freeze_status = $1
+        WHERE capture_job_id = $2
+      `,
+      [freezeStatus, captureJobId],
+    );
+  }
+
+  async createEvidenceFreeze(
+    captureJobId: string,
+    incidentId: string,
+    sourceType: string,
+    sourceName: string,
+    frozenBy: string,
+    notes?: string,
+  ): Promise<string> {
+    const freezeId = `frz_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    await this.database.pool.query(
+      `
+        INSERT INTO evidence_freeze (
+          freeze_id,
+          capture_job_id,
+          incident_id,
+          source_type,
+          source_name,
+          frozen_by,
+          notes,
+          freeze_status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'frozen')
+      `,
+      [freezeId, captureJobId, incidentId, sourceType, sourceName, frozenBy, notes ?? null],
+    );
+    return freezeId;
+  }
+
+  async getEvidenceFreeze(captureJobId: string): Promise<{
+    freeze_id: string;
+    capture_job_id: string;
+    incident_id: string;
+    freeze_status: string;
+    total_snapshots: number;
+    frozen_snapshots: number;
+    source_type: string;
+    source_name: string;
+    frozen_by: string;
+    frozen_at: string | null;
+    notes: string | null;
+    created_at: string;
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          freeze_id,
+          capture_job_id,
+          incident_id,
+          freeze_status,
+          total_snapshots,
+          frozen_snapshots,
+          source_type,
+          source_name,
+          frozen_by,
+          frozen_at,
+          notes,
+          created_at
+        FROM evidence_freeze
+        WHERE capture_job_id = $1
+      `,
+      [captureJobId],
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    return {
+      ...row,
+      frozen_at: row.frozen_at ? new Date(row.frozen_at).toISOString() : null,
+      created_at: new Date(row.created_at).toISOString(),
+    };
+  }
+
+  async listEvidenceFreeze(incidentId: string): Promise<
+    Array<{
+      freeze_id: string;
+      capture_job_id: string;
+      freeze_status: string;
+      total_snapshots: number;
+      frozen_snapshots: number;
+      source_type: string;
+      source_name: string;
+      frozen_at: string | null;
+      created_at: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          freeze_id,
+          capture_job_id,
+          freeze_status,
+          total_snapshots,
+          frozen_snapshots,
+          source_type,
+          source_name,
+          frozen_at,
+          created_at
+        FROM evidence_freeze
+        WHERE incident_id = $1
+        ORDER BY created_at DESC
+      `,
+      [incidentId],
+    );
+    return result.rows.map((row) => ({
+      ...row,
+      frozen_at: row.frozen_at ? new Date(row.frozen_at).toISOString() : null,
+      created_at: new Date(row.created_at).toISOString(),
+    }));
+  }
+
+  async getIncidentCaptureStatus(incidentId: string): Promise<{
+    incident_id: string;
+    total_jobs: number;
+    completed_jobs: number;
+    active_jobs: number;
+    failed_jobs: number;
+    total_snapshots: number;
+    has_frozen_evidence: boolean;
+    sources_captured: string[];
+    sources_frozen: string[];
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          incident_id,
+          total_jobs,
+          completed_jobs,
+          active_jobs,
+          failed_jobs,
+          total_snapshots,
+          has_frozen_evidence,
+          sources_captured,
+          sources_frozen
+        FROM incident_capture_status_view
+        WHERE incident_id = $1
+      `,
+      [incidentId],
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    return {
+      ...row,
+      has_frozen_evidence: row.has_frozen_evidence ?? false,
+      sources_captured: row.sources_captured ?? [],
+      sources_frozen: row.sources_frozen ?? [],
+    };
+  }
+
+  async createInferredEvent(input: {
+    inference_type: string;
+    confidence: number;
+    confidence_level: string;
+    time_window_start: string;
+    time_window_end: string;
+    aoi?: Record<string, unknown>;
+    related_source_ids?: string[];
+    related_object_ids?: string[];
+    related_event_ids?: string[];
+    evidence_summary: string;
+    details: Record<string, unknown>;
+  }): Promise<string> {
+    const inferenceId = `inf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    await this.database.pool.query(
+      `
+        INSERT INTO inferred_events (
+          inference_id,
+          inference_type,
+          confidence,
+          confidence_level,
+          time_window_start,
+          time_window_end,
+          aoi,
+          related_source_ids,
+          related_object_ids,
+          related_event_ids,
+          evidence_summary,
+          details
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6,
+          CASE WHEN $7::jsonb IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromGeoJSON($7::jsonb::text), 4326) END,
+          $8, $9, $10, $11, $12::jsonb
+        )
+      `,
+      [
+        inferenceId,
+        input.inference_type,
+        input.confidence,
+        input.confidence_level,
+        input.time_window_start,
+        input.time_window_end,
+        input.aoi ? JSON.stringify(input.aoi) : null,
+        input.related_source_ids ?? [],
+        input.related_object_ids ?? [],
+        input.related_event_ids ?? [],
+        input.evidence_summary,
+        JSON.stringify(input.details),
+      ],
+    );
+
+    return inferenceId;
+  }
+
+  async getInferredEvent(inferenceId: string): Promise<{
+    inference_id: string;
+    inference_type: string;
+    confidence: number;
+    confidence_level: string;
+    time_window_start: string;
+    time_window_end: string;
+    aoi: Record<string, unknown> | null;
+    related_source_ids: string[];
+    related_object_ids: string[];
+    related_event_ids: string[];
+    evidence_summary: string;
+    inferred_status: string;
+    details: Record<string, unknown>;
+    created_at: string;
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT
+          inference_id,
+          inference_type,
+          confidence,
+          confidence_level,
+          time_window_start,
+          time_window_end,
+          CASE WHEN aoi IS NULL THEN NULL ELSE ST_AsGeoJSON(aoi)::jsonb END as aoi,
+          related_source_ids,
+          related_object_ids,
+          related_event_ids,
+          evidence_summary,
+          inferred_status,
+          details,
+          created_at
+        FROM inferred_events
+        WHERE inference_id = $1
+      `,
+      [inferenceId],
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      ...row,
+      time_window_start: new Date(row.time_window_start).toISOString(),
+      time_window_end: new Date(row.time_window_end).toISOString(),
+      created_at: new Date(row.created_at).toISOString(),
+    };
+  }
+
+  async listInferredEvents(filters?: {
+    inference_type?: string;
+    status?: string;
+    start_time?: string;
+    end_time?: string;
+  }): Promise<
+    Array<{
+      inference_id: string;
+      inference_type: string;
+      confidence: number;
+      confidence_level: string;
+      time_window_start: string;
+      time_window_end: string;
+      evidence_summary: string;
+      inferred_status: string;
+      created_at: string;
+    }>
+  > {
+    const conditions: string[] = [];
+    const params: string[] = [];
+    let paramIndex = 1;
+
+    if (filters?.inference_type) {
+      conditions.push(`inference_type = $${paramIndex++}`);
+      params.push(filters.inference_type);
+    }
+
+    if (filters?.status) {
+      conditions.push(`inferred_status = $${paramIndex++}`);
+      params.push(filters.status);
+    }
+
+    if (filters?.start_time) {
+      conditions.push(`time_window_start >= $${paramIndex++}`);
+      params.push(filters.start_time);
+    }
+
+    if (filters?.end_time) {
+      conditions.push(`time_window_end <= $${paramIndex++}`);
+      params.push(filters.end_time);
+    }
+
+    const query = `
+      SELECT
+        inference_id,
+        inference_type,
+        confidence,
+        confidence_level,
+        time_window_start,
+        time_window_end,
+        evidence_summary,
+        inferred_status,
+        created_at
+      FROM inferred_events
+      ${conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""}
+      ORDER BY created_at DESC
+    `;
+
+    const result = await this.database.pool.query(query, params);
+    return result.rows.map((row) => ({
+      ...row,
+      time_window_start: new Date(row.time_window_start).toISOString(),
+      time_window_end: new Date(row.time_window_end).toISOString(),
+      created_at: new Date(row.created_at).toISOString(),
+    }));
+  }
+
+  async createDegradationZone(input: {
+    polygon: Record<string, unknown>;
+    severity: string;
+    confidence: number;
+    affected_signals: number;
+    estimated_area_sqkm: number;
+    evidence_refs?: string[];
+  }): Promise<string> {
+    const zoneId = `deg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    await this.database.pool.query(
+      `
+        INSERT INTO degradation_zones (
+          zone_id,
+          polygon,
+          severity,
+          confidence,
+          affected_signals,
+          estimated_area_sqkm,
+          evidence_refs
+        )
+        VALUES (
+          $1,
+          ST_SetSRID(ST_GeomFromGeoJSON($2::jsonb::text), 4326),
+          $3, $4, $5, $6, $7
+        )
+      `,
+      [
+        zoneId,
+        JSON.stringify(input.polygon),
+        input.severity,
+        input.confidence,
+        input.affected_signals,
+        input.estimated_area_sqkm,
+        input.evidence_refs ?? [],
+      ],
+    );
+
+    return zoneId;
+  }
+
+  async listActiveDegradationZones(): Promise<
+    Array<{
+      zone_id: string;
+      severity: string;
+      confidence: number;
+      affected_signals: number;
+      estimated_area_sqkm: number;
+      inferred_at: string;
+      center_lat: number;
+      center_lon: number;
+    }>
+  > {
+    const result = await this.database.pool.query(`
+      SELECT
+        zone_id,
+        severity,
+        confidence,
+        affected_signals,
+        estimated_area_sqkm,
+        inferred_at,
+        ST_Y(ST_Centroid(polygon)) AS center_lat,
+        ST_X(ST_Centroid(polygon)) AS center_lon
+      FROM degradation_zones
+      WHERE expired_at IS NULL
+        AND inferred_at > NOW() - INTERVAL '24 hours'
+      ORDER BY inferred_at DESC
+    `);
+
+    return result.rows.map((row) => ({
+      ...row,
+      inferred_at: new Date(row.inferred_at).toISOString(),
+    }));
+  }
+
+  async createRouteRedirection(input: {
+    object_id: string;
+    inference_id: string;
+    original_path: Array<{ lat: number; lon: number; timestamp: string }>;
+    actual_path: Array<{ lat: number; lon: number; timestamp: string }>;
+    deviation_meters: number;
+    deviation_point: { lat: number; lon: number };
+    probable_cause?: string;
+  }): Promise<string> {
+    const redirectionId = `rrt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    await this.database.pool.query(
+      `
+        INSERT INTO route_redirections (
+          redirection_id,
+          object_id,
+          inference_id,
+          original_path,
+          actual_path,
+          deviation_meters,
+          deviation_point,
+          probable_cause
+        )
+        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, ST_SetSRID(ST_Point($7, $8), 4326), $9)
+      `,
+      [
+        redirectionId,
+        input.object_id,
+        input.inference_id,
+        JSON.stringify(input.original_path),
+        JSON.stringify(input.actual_path),
+        input.deviation_meters,
+        input.deviation_point.lon,
+        input.deviation_point.lat,
+        input.probable_cause ?? null,
+      ],
+    );
+
+    return redirectionId;
+  }
+
+  async createHoldingPattern(input: {
+    object_id: string;
+    inference_id: string;
+    center_point: { lat: number; lon: number };
+    radius_meters: number;
+    loop_count: number;
+    duration_seconds: number;
+    orbit_type?: string;
+    heading_changes?: number;
+  }): Promise<string> {
+    const patternId = `hld_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    await this.database.pool.query(
+      `
+        INSERT INTO holding_patterns (
+          pattern_id,
+          object_id,
+          inference_id,
+          center_point,
+          radius_meters,
+          loop_count,
+          duration_seconds,
+          orbit_type,
+          heading_changes
+        )
+        VALUES ($1, $2, $3, ST_SetSRID(ST_Point($4, $5), 4326), $6, $7, $8, $9, $10)
+      `,
+      [
+        patternId,
+        input.object_id,
+        input.inference_id,
+        input.center_point.lon,
+        input.center_point.lat,
+        input.radius_meters,
+        input.loop_count,
+        input.duration_seconds,
+        input.orbit_type ?? null,
+        input.heading_changes ?? 0,
+      ],
+    );
+
+    return patternId;
+  }
+
+  async linkInferenceToIncident(
+    inferenceId: string,
+    incidentId: string,
+    linkedBy: string,
+  ): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO inference_incident_links (inference_id, incident_id, linked_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
+      `,
+      [inferenceId, incidentId, linkedBy],
+    );
+  }
+
+  async listInferenceTimelineMarkers(incidentId?: string): Promise<
+    Array<{
+      marker_id: string;
+      inference_id: string;
+      type: string;
+      subtype: string;
+      timestamp: string;
+      title: string;
+      description: string;
+      confidence: number;
+      confidence_level: string;
+      severity: string;
+      lat: number | null;
+      lon: number | null;
+    }>
+  > {
+    let query = `
+      SELECT
+        inference_id AS marker_id,
+        inference_id,
+        'inferred' AS type,
+        inference_type AS subtype,
+        time_window_start AS timestamp,
+        inference_type AS title,
+        evidence_summary AS description,
+        confidence,
+        confidence_level,
+        inferred_status AS severity,
+        ST_Y(aoi::geometry) AS lat,
+        ST_X(aoi::geometry) AS lon
+      FROM inferred_events
+      WHERE inferred_status = 'active'
+    `;
+
+    const params: string[] = [];
+
+    if (incidentId) {
+      query = `
+        SELECT
+          itm.marker_id,
+          itm.inference_id,
+          itm.type,
+          itm.subtype,
+          itm.timestamp,
+          itm.title,
+          itm.description,
+          itm.confidence,
+          itm.confidence_level,
+          itm.severity,
+          itm.lat,
+          itm.lon
+        FROM inferred_timeline_markers itm
+        INNER JOIN inference_incident_links iil ON itm.inference_id = iil.inference_id
+        WHERE iil.incident_id = $1
+        ORDER BY itm.timestamp DESC
+      `;
+      params.push(incidentId);
+    }
+
+    query += " ORDER BY timestamp DESC";
+
+    const result = await this.database.pool.query(query, params);
+    return result.rows.map((row) => ({
+      ...row,
+      timestamp: new Date(row.timestamp).toISOString(),
+    }));
+  }
+
+  async updateInferenceStatus(inferenceId: string, status: string): Promise<void> {
+    await this.database.pool.query(
+      `
+        UPDATE inferred_events
+        SET inferred_status = $1, updated_at = NOW()
+        WHERE inference_id = $2
+      `,
+      [status, inferenceId],
+    );
   }
 }

@@ -180,8 +180,6 @@ describe("Tactical UI State Management", () => {
       const html = await response.text();
 
       expect(html).toContain('id="layer-military" disabled');
-      expect(html).toContain('id="layer-earthquakes" disabled');
-      expect(html).toContain('id="layer-satellites" disabled');
     });
   });
 

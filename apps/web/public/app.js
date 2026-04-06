@@ -58,6 +58,8 @@ const incidentState = {
   links: [],
   markers: [],
   entities: new Map(),
+  captureJobs: [],
+  evidence: [],
   playback: {
     isPlaying: false,
     intervalId: null,
@@ -66,6 +68,21 @@ const incidentState = {
     section: "during", // "before", "during", "after"
   },
   isActive: false,
+};
+
+// Inferred intelligence state
+const inferenceState = {
+  inferences: [],
+  degradationZones: [],
+  routeRedirections: [],
+  holdingPatterns: [],
+  entities: new Map(), // inferenceId -> Cesium entity
+  layers: {
+    degradation: false,
+    redirection: false,
+    holding: false,
+    absence: false,
+  },
 };
 
 // Layer status colors for UI
@@ -214,6 +231,26 @@ const dom = {
   incidentTagsInput: document.getElementById("incident-tags-input"),
   btnCancelIncident: document.getElementById("btn-cancel-incident"),
   btnCreateIncident: document.getElementById("btn-create-incident"),
+
+  // Capture Panel
+  captureSection: document.getElementById("incident-capture-section"),
+  captureJobList: document.getElementById("capture-job-list"),
+  evidenceList: document.getElementById("evidence-list"),
+  btnAddCapture: document.getElementById("btn-add-capture"),
+
+  // Inference Panel
+  inferencePanel: document.getElementById("inference-panel"),
+  inferenceCount: document.getElementById("inference-count"),
+  inferenceLayers: document.getElementById("inference-layers"),
+  inferenceList: document.getElementById("inference-list"),
+  degradationCount: document.getElementById("degradation-count"),
+  redirectionCount: document.getElementById("redirection-count"),
+  holdingCount: document.getElementById("holding-count"),
+  absenceCount: document.getElementById("absence-count"),
+  layerDegradation: document.getElementById("layer-degradation"),
+  layerRedirection: document.getElementById("layer-redirection"),
+  layerHolding: document.getElementById("layer-holding"),
+  layerAbsence: document.getElementById("layer-absence"),
 };
 
 // ===== UTILITY FUNCTIONS =====
@@ -1097,6 +1134,51 @@ async function loadIncidentTimeline(incidentId) {
   }
 }
 
+async function loadIncidentLinks(incidentId) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}/links`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    return data.links || [];
+  } catch (error) {
+    console.error("Failed to load incident links:", error);
+    return [];
+  }
+}
+
+async function linkAlertToIncident(incidentId, alertId) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}/links`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        alert_id: alertId,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      alert(`Failed to link alert: ${error.message || error.error}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Failed to link alert to incident:", error);
+    alert("Failed to link alert to incident");
+    return false;
+  }
+}
+
 async function loadIncidentChapters(incidentId) {
   try {
     const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}/chapters`, {
@@ -1132,6 +1214,41 @@ function showNewIncidentForm() {
 function hideNewIncidentForm() {
   dom.newIncidentModal.classList.add("hidden");
   dom.incidentModal.classList.remove("hidden");
+}
+
+let _pendingAlertToLink = null;
+
+async function showLinkIncidentModal(alertId) {
+  _pendingAlertToLink = alertId;
+
+  const incidents = await loadIncidents();
+  const openIncidents = incidents.filter(
+    (i) => i.status === "open" || i.status === "investigating",
+  );
+
+  if (openIncidents.length === 0) {
+    alert("No open incidents available. Create an incident first.");
+    return;
+  }
+
+  const selection = prompt(
+    `Link alert to incident:\n` +
+      openIncidents.map((i, idx) => `${idx + 1}. ${i.title} (${i.incident_id})`).join("\n") +
+      `\n\nEnter number (or 0 to cancel):`,
+  );
+
+  if (!selection) return;
+
+  const index = parseInt(selection, 10) - 1;
+  if (index < 0 || index >= openIncidents.length) return;
+
+  const selectedIncident = openIncidents[index];
+  const success = await linkAlertToIncident(selectedIncident.incident_id, alertId);
+
+  if (success) {
+    alert(`Alert linked to incident: ${selectedIncident.title}`);
+    dom.alertModal.classList.add("hidden");
+  }
 }
 
 async function renderIncidentList() {
@@ -1188,6 +1305,7 @@ async function openIncident(incidentId) {
     }
 
     incidentState.chapters = await loadIncidentChapters(incidentId);
+    incidentState.links = await loadIncidentLinks(incidentId);
 
     incidentState.isActive = true;
     incidentState.playback.currentTime = new Date(incident.start_at);
@@ -1195,6 +1313,8 @@ async function openIncident(incidentId) {
 
     renderIncidentPanel();
     showIncidentPanel();
+    loadCaptureJobs();
+    loadEvidence();
 
     if (incident.aoi) {
       focusOnAOI(incident.aoi);
@@ -1223,6 +1343,8 @@ function closeIncident() {
   incidentState.chapters = [];
   incidentState.links = [];
   incidentState.markers = [];
+  incidentState.captureJobs = [];
+  incidentState.evidence = [];
   incidentState.isActive = false;
   incidentState.playback.currentTime = null;
   incidentState.playback.section = "during";
@@ -1246,6 +1368,7 @@ function renderIncidentPanel() {
 
   updateSectionCounts();
   renderChapters();
+  renderLinkedAlerts();
   renderCorrelationTimeline();
 }
 
@@ -1292,6 +1415,303 @@ function renderChapters() {
       jumpToIncidentTime(timestamp);
     });
   });
+}
+
+function renderLinkedAlerts() {
+  const links = incidentState.links;
+  const alertLinks = links.filter((link) => link.alert_id);
+
+  const linkedAlertsContainer = document.getElementById("incident-linked-alerts");
+  if (!linkedAlertsContainer) return;
+
+  if (alertLinks.length === 0) {
+    linkedAlertsContainer.innerHTML = '<div class="no-linked-alerts">No linked alerts</div>';
+    return;
+  }
+
+  linkedAlertsContainer.innerHTML = alertLinks
+    .map(
+      (link) => `
+      <div class="linked-alert-chip ${link.alert_id?.severity || ""}" data-alert-id="${link.alert_id}">
+        <span class="linked-alert-severity">${link.alert_id?.severity || "unknown"}</span>
+        <span class="linked-alert-summary">${link.alert_id?.summary || link.alert_id}</span>
+      </div>
+    `,
+    )
+    .join("");
+
+  linkedAlertsContainer.querySelectorAll(".linked-alert-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      showAlertDetail(chip.dataset.alertId);
+    });
+  });
+}
+
+async function loadCaptureJobs() {
+  const incident = incidentState.currentIncident;
+  if (!incident) return;
+
+  try {
+    const response = await fetch(
+      `${getApiBaseUrl()}/incidents/${incident.incident_id}/capture-jobs`,
+      { headers: getAuthHeaders() },
+    );
+
+    if (!response.ok) {
+      console.error("Failed to load capture jobs:", response.statusText);
+      return;
+    }
+
+    const data = await response.json();
+    incidentState.captureJobs = data.capture_jobs || [];
+    renderCaptureJobs();
+    renderEvidenceList();
+  } catch (error) {
+    console.error("Error loading capture jobs:", error);
+  }
+}
+
+async function loadEvidence() {
+  const incident = incidentState.currentIncident;
+  if (!incident) return;
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/incidents/${incident.incident_id}/evidence`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to load evidence:", response.statusText);
+      return;
+    }
+
+    const data = await response.json();
+    incidentState.evidence = data.evidence || [];
+    renderEvidenceList();
+  } catch (error) {
+    console.error("Error loading evidence:", error);
+  }
+}
+
+function renderCaptureJobs() {
+  const jobs = incidentState.captureJobs || [];
+
+  if (jobs.length === 0) {
+    dom.captureJobList.innerHTML = '<div class="no-capture-jobs">No capture jobs</div>';
+    return;
+  }
+
+  dom.captureJobList.innerHTML = jobs
+    .map((job) => {
+      const sourceName = getSourceDisplayName(job.source_type);
+      const canRun = job.status === "pending";
+      const canFreeze = job.status === "completed" && job.freeze_status !== "frozen";
+
+      return `
+      <div class="capture-job-item" data-job-id="${job.capture_job_id}">
+        <div class="capture-job-info">
+          <span class="capture-job-source">${sourceName}</span>
+          <span class="capture-job-status ${job.status}">${job.status}</span>
+          ${job.snapshot_count > 0 ? `<span class="capture-job-count">(${job.snapshot_count} snapshots)</span>` : ""}
+        </div>
+        <div class="capture-job-actions">
+          ${canRun ? `<button type="button" class="capture-job-btn run-capture" data-job-id="${job.capture_job_id}">RUN</button>` : ""}
+          ${canFreeze ? `<button type="button" class="capture-job-btn freeze-capture" data-job-id="${job.capture_job_id}">FREEZE</button>` : ""}
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+
+  dom.captureJobList.querySelectorAll(".run-capture").forEach((btn) => {
+    btn.addEventListener("click", () => runCaptureJob(btn.dataset.jobId));
+  });
+
+  dom.captureJobList.querySelectorAll(".freeze-capture").forEach((btn) => {
+    btn.addEventListener("click", () => freezeEvidence(btn.dataset.jobId));
+  });
+}
+
+function renderEvidenceList() {
+  const evidence = incidentState.evidence || [];
+
+  if (evidence.length === 0) {
+    dom.evidenceList.innerHTML = '<div class="no-evidence">No frozen evidence</div>';
+    return;
+  }
+
+  dom.evidenceList.innerHTML = evidence
+    .map(
+      (e) => `
+      <div class="evidence-item" data-freeze-id="${e.freeze_id}">
+        <div class="evidence-info">
+          <span class="evidence-icon">❄️</span>
+          <span class="evidence-source">${e.source_name}</span>
+        </div>
+        <span class="evidence-stats">${e.frozen_snapshots}/${e.total_snapshots} snapshots</span>
+      </div>
+    `,
+    )
+    .join("");
+}
+
+async function createCaptureJob(sourceType) {
+  const incident = incidentState.currentIncident;
+  if (!incident) return;
+
+  if (!sessionState.isAuthenticated) {
+    showAuthModal();
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${getApiBaseUrl()}/incidents/${incident.incident_id}/capture-jobs`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ source_type: sourceType }),
+      },
+    );
+
+    if (!response.ok) {
+      console.error("Failed to create capture job:", response.statusText);
+      return;
+    }
+
+    await loadCaptureJobs();
+  } catch (error) {
+    console.error("Error creating capture job:", error);
+  }
+}
+
+async function runCaptureJob(captureJobId) {
+  if (!sessionState.isAuthenticated) {
+    showAuthModal();
+    return;
+  }
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/capture-jobs/${captureJobId}/run`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to run capture job:", response.statusText);
+      return;
+    }
+
+    await loadCaptureJobs();
+    await loadEvidence();
+  } catch (error) {
+    console.error("Error running capture job:", error);
+  }
+}
+
+async function freezeEvidence(captureJobId) {
+  if (!sessionState.isAuthenticated) {
+    showAuthModal();
+    return;
+  }
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/capture-jobs/${captureJobId}/freeze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to freeze evidence:", response.statusText);
+      return;
+    }
+
+    await loadCaptureJobs();
+    await loadEvidence();
+  } catch (error) {
+    console.error("Error freezing evidence:", error);
+  }
+}
+
+function showCaptureSourceModal() {
+  const modal = document.createElement("div");
+  modal.className = "modal capture-modal";
+  modal.id = "capture-source-modal";
+
+  const sources = [
+    { type: "flights", name: "Live Flights", status: "ADS-B / Telemetry" },
+    { type: "earthquakes", name: "Earthquakes", status: "USGS" },
+    { type: "satellites", name: "Satellites", status: "CelesTrak" },
+    { type: "weather", name: "Weather", status: "NOAA" },
+    { type: "bikeshare", name: "Bikeshare", status: "CityBikes" },
+    { type: "alerts", name: "Alerts", status: "MORDOR Alerts" },
+    { type: "events", name: "Object Events", status: "Tracked Objects" },
+  ];
+
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>ADD CAPTURE JOB</h2>
+        <button type="button" class="panel-close" id="close-capture-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="capture-source-grid">
+          ${sources
+            .map(
+              (s) => `
+            <button type="button" class="capture-source-btn" data-source="${s.type}">
+              <span class="source-name">${s.name}</span>
+              <span class="source-status">${s.status}</span>
+            </button>
+          `,
+            )
+            .join("")}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.classList.remove("hidden");
+
+  modal.querySelector("#close-capture-modal").addEventListener("click", () => {
+    modal.remove();
+  });
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+
+  modal.querySelectorAll(".capture-source-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      createCaptureJob(btn.dataset.source);
+      modal.remove();
+    });
+  });
+}
+
+function getSourceDisplayName(sourceType) {
+  const names = {
+    flights: "Live Flights",
+    earthquakes: "Earthquakes",
+    satellites: "Satellites",
+    weather: "Weather",
+    bikeshare: "Bikeshare",
+    traffic: "Traffic",
+    cctv: "CCTV",
+    alerts: "Alerts",
+    events: "Events",
+  };
+  return names[sourceType] || sourceType;
 }
 
 function renderCorrelationTimeline() {
@@ -1741,6 +2161,10 @@ async function showAlertDetail(alertId) {
       actionsHtml += `<button type="button" class="alert-action-btn jump" id="jump-replay">JUMP TO REPLAY</button>`;
     }
 
+    if (sessionState.isAuthenticated) {
+      actionsHtml += `<button type="button" class="alert-action-btn link" id="link-incident">LINK TO INCIDENT</button>`;
+    }
+
     actionsHtml += `<button class="alert-action-btn back" id="back-alerts">BACK</button>`;
 
     dom.alertActions.innerHTML = actionsHtml;
@@ -1760,6 +2184,11 @@ async function showAlertDetail(alertId) {
       document
         .getElementById("jump-replay")
         .addEventListener("click", () => jumpToReplayFromAlert(alert));
+    }
+    if (document.getElementById("link-incident")) {
+      document
+        .getElementById("link-incident")
+        .addEventListener("click", () => showLinkIncidentModal(alertId));
     }
     document.getElementById("back-alerts").addEventListener("click", () => {
       dom.alertModal.classList.add("hidden");
@@ -2091,6 +2520,47 @@ function initEventListeners() {
     }
   });
 
+  // Inference layer toggles
+  dom.layerDegradation.addEventListener("change", (e) => {
+    inferenceState.layers.degradation = e.target.checked;
+    if (e.target.checked) {
+      renderInferenceLayer("degradation");
+    } else {
+      clearInferenceEntities("degradation");
+    }
+    updateInferenceCounts();
+  });
+
+  dom.layerRedirection.addEventListener("change", (e) => {
+    inferenceState.layers.redirection = e.target.checked;
+    if (e.target.checked) {
+      renderInferenceLayer("redirection");
+    } else {
+      clearInferenceEntities("redirection");
+    }
+    updateInferenceCounts();
+  });
+
+  dom.layerHolding.addEventListener("change", (e) => {
+    inferenceState.layers.holding = e.target.checked;
+    if (e.target.checked) {
+      renderInferenceLayer("holding");
+    } else {
+      clearInferenceEntities("holding");
+    }
+    updateInferenceCounts();
+  });
+
+  dom.layerAbsence.addEventListener("change", (e) => {
+    inferenceState.layers.absence = e.target.checked;
+    if (e.target.checked) {
+      renderInferenceLayer("absence");
+    } else {
+      clearInferenceEntities("absence");
+    }
+    updateInferenceCounts();
+  });
+
   // Style presets
   dom.presetButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2168,6 +2638,8 @@ function initEventListeners() {
   // Incident modal events
   dom.closeIncidentModal.addEventListener("click", hideIncidentModal);
   dom.btnNewIncident.addEventListener("click", showNewIncidentForm);
+
+  dom.btnAddCapture.addEventListener("click", showCaptureSourceModal);
   dom.closeNewIncidentModal.addEventListener("click", hideNewIncidentForm);
   dom.btnCancelIncident.addEventListener("click", hideNewIncidentForm);
   dom.btnCreateIncident.addEventListener("click", createIncident);
@@ -2548,6 +3020,231 @@ function updateLayerRailUI() {
   }
 }
 
+// ===== INFERRED INTELLIGENCE =====
+async function loadInferences(incidentId = null) {
+  try {
+    const url = incidentId
+      ? `${apiBaseUrl}/inferences?incident_id=${incidentId}`
+      : `${apiBaseUrl}/inferences`;
+    const response = await fetch(url);
+    if (!response.ok) return;
+
+    const data = await response.json();
+    const inferences = data.inferences || data;
+
+    inferenceState.inferences = Array.isArray(inferences) ? inferences : [];
+
+    for (const inference of inferenceState.inferences) {
+      switch (inference.type) {
+        case "navigation_degradation":
+        case "degradation":
+          inferenceState.degradationZones.push(inference);
+          break;
+        case "route_redirection":
+        case "redirection":
+          inferenceState.routeRedirections.push(inference);
+          break;
+        case "holding_pattern":
+        case "holding":
+          inferenceState.holdingPatterns.push(inference);
+          break;
+        case "absence_signal":
+        case "absence":
+          break;
+      }
+    }
+
+    updateInferenceCounts();
+    renderInferenceList();
+  } catch (error) {
+    console.error("Failed to load inferences:", error);
+  }
+}
+
+function updateInferenceCounts() {
+  const degradationCount = inferenceState.degradationZones.length;
+  const redirectionCount = inferenceState.routeRedirections.length;
+  const holdingCount = inferenceState.holdingPatterns.length;
+  const absenceCount = inferenceState.inferences.filter(
+    (i) => i.type === "absence_signal" || i.type === "absence",
+  ).length;
+
+  dom.degradationCount.textContent = degradationCount;
+  dom.redirectionCount.textContent = redirectionCount;
+  dom.holdingCount.textContent = holdingCount;
+  dom.absenceCount.textContent = absenceCount;
+
+  const total = degradationCount + redirectionCount + holdingCount + absenceCount;
+  dom.inferenceCount.textContent = total;
+}
+
+function renderInferenceList() {
+  if (inferenceState.inferences.length === 0) {
+    dom.inferenceList.innerHTML = '<div class="inference-empty">No inferences detected</div>';
+    return;
+  }
+
+  dom.inferenceList.innerHTML = inferenceState.inferences
+    .map((inference) => {
+      const type = inference.type || "unknown";
+      const confidence = inference.confidence || "low";
+      const confidenceLabel =
+        confidence === "high" ? "HIGH" : confidence === "medium" ? "MED" : "LOW";
+      const time = inference.detected_at || inference.created_at || "";
+      const description = inference.description || inference.summary || `Detected ${type}`;
+      const evidence = inference.evidence
+        ? Array.isArray(inference.evidence)
+          ? inference.evidence.join(", ")
+          : inference.evidence
+        : "";
+
+      return `
+        <div class="inference-item ${type.replace("_", "")}" data-inference-id="${inference.inference_id || inference.id}">
+          <div class="inference-item-header">
+            <span class="inference-item-type">${type.replace("_", " ")}</span>
+            <span class="inference-item-confidence ${confidence}">${confidenceLabel}</span>
+          </div>
+          <div class="inference-item-description">${description}</div>
+          ${evidence ? `<div class="inference-item-evidence">Evidence: ${evidence}</div>` : ""}
+          ${time ? `<div class="inference-item-time">${new Date(time).toLocaleString()}</div>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+
+  dom.inferenceList.querySelectorAll(".inference-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const inferenceId = item.dataset.inferenceId;
+      const inference = inferenceState.inferences.find(
+        (i) => (i.inference_id || i.id) === inferenceId,
+      );
+      if (inference) {
+        flyToInference(inference);
+      }
+    });
+  });
+}
+
+function flyToInference(inference) {
+  if (!viewer || !inference.location) return;
+
+  const location = inference.location;
+  if (location.latitude !== undefined && location.longitude !== undefined) {
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(location.longitude, location.latitude, 5000),
+      duration: 1.5,
+    });
+  }
+}
+
+function renderInferenceLayer(layerType) {
+  if (!viewer) return;
+
+  let inferences = [];
+  switch (layerType) {
+    case "degradation":
+      inferences = inferenceState.degradationZones;
+      break;
+    case "redirection":
+      inferences = inferenceState.routeRedirections;
+      break;
+    case "holding":
+      inferences = inferenceState.holdingPatterns;
+      break;
+    case "absence":
+      inferences = inferenceState.inferences.filter(
+        (i) => i.type === "absence_signal" || i.type === "absence",
+      );
+      break;
+    default:
+      return;
+  }
+
+  const colors = {
+    degradation: Cesium.Color.fromCssColorString("#f59e0b"),
+    redirection: Cesium.Color.fromCssColorString("#3399ff"),
+    holding: Cesium.Color.fromCssColorString("#9b59b6"),
+    absence: Cesium.Color.fromCssColorString("#ef4444"),
+  };
+
+  for (const inference of inferences) {
+    const id = `inference-${layerType}-${inference.inference_id || inference.id}`;
+    if (inferenceState.entities.has(id)) continue;
+
+    if (inference.location && inference.location.latitude !== undefined) {
+      const entity = viewer.entities.add({
+        id: id,
+        position: Cesium.Cartesian3.fromDegrees(
+          inference.location.longitude,
+          inference.location.latitude,
+          100,
+        ),
+        point: {
+          pixelSize: 12,
+          color: colors[layerType].withAlpha(0.8),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
+        description: `
+          <div style="font-family: monospace; padding: 10px;">
+            <h3 style="margin: 0 0 8px 0; color: #00ff41;">${(inference.type || layerType).toUpperCase()}</h3>
+            <p style="margin: 4px 0;"><strong>Confidence:</strong> ${(inference.confidence || "unknown").toUpperCase()}</p>
+            <p style="margin: 4px 0;"><strong>Description:</strong> ${inference.description || "N/A"}</p>
+            ${inference.evidence ? `<p style="margin: 4px 0;"><strong>Evidence:</strong> ${Array.isArray(inference.evidence) ? inference.evidence.join(", ") : inference.evidence}</p>` : ""}
+          </div>
+        `,
+      });
+      inferenceState.entities.set(id, entity);
+    }
+
+    if (inference.zone?.coordinates) {
+      const coords = inference.zone.coordinates;
+      const positions = [];
+      if (Array.isArray(coords[0])) {
+        for (const pair of coords) {
+          positions.push(Cesium.Cartesian3.fromDegrees(pair[0], pair[1]));
+        }
+      } else if (coords.length >= 2) {
+        positions.push(Cesium.Cartesian3.fromDegrees(coords[0], coords[1]));
+      }
+
+      if (positions.length >= 3) {
+        const entity = viewer.entities.add({
+          id: `inference-zone-${layerType}-${inference.inference_id || inference.id}`,
+          polygon: {
+            hierarchy: new Cesium.PolygonHierarchy(positions),
+            material: colors[layerType].withAlpha(0.3),
+            outline: true,
+            outlineColor: colors[layerType],
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          },
+        });
+        inferenceState.entities.set(
+          `inference-zone-${layerType}-${inference.inference_id || inference.id}`,
+          entity,
+        );
+      }
+    }
+  }
+}
+
+function clearInferenceEntities(layerType) {
+  for (const [id, entity] of inferenceState.entities) {
+    if (id.startsWith(`inference-${layerType}`) || id.startsWith(`inference-zone-${layerType}`)) {
+      viewer.entities.remove(entity);
+      inferenceState.entities.delete(id);
+    }
+  }
+}
+
+function _clearAllInferenceEntities() {
+  for (const [_id, entity] of inferenceState.entities) {
+    viewer.entities.remove(entity);
+  }
+  inferenceState.entities.clear();
+}
+
 // ===== INITIALIZATION =====
 function init() {
   // Set default query times
@@ -2575,6 +3272,10 @@ function init() {
   // Load external layers
   loadExternalLayers();
   setInterval(loadExternalLayers, 60000); // Refresh layer metadata every minute
+
+  // Load inferred intelligence
+  loadInferences();
+  setInterval(loadInferences, 60000); // Refresh inferences every minute
 
   // Initial load
   loadSourceHealth();

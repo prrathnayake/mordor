@@ -216,6 +216,79 @@
               <div class="source-item loading">Loading sources...</div>
             </div>
           </div>
+
+          <!-- Inferred Intelligence Panel -->
+          <div class="inference-panel" id="inference-panel">
+            <div class="panel-header">
+              <h3>INFERRED INTEL</h3>
+              <span class="inference-count" id="inference-count">0</span>
+            </div>
+            <div class="inference-layers" id="inference-layers">
+              <div class="inference-layer-item" data-layer="degradation">
+                <div class="inference-layer-icon">
+                  <svg viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="Navigation degradation"><title>Navigation degradation</title><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                </div>
+                <div class="inference-layer-info">
+                  <div class="inference-layer-name">Navigation Degradation</div>
+                  <div class="inference-layer-meta">
+                    <span class="inference-count-badge" id="degradation-count">0</span>
+                  </div>
+                </div>
+                <label class="layer-toggle">
+                  <input type="checkbox" id="layer-degradation" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="inference-layer-item" data-layer="redirection">
+                <div class="inference-layer-icon">
+                  <svg viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="Route redirection"><title>Route redirection</title><path fill="currentColor" d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                </div>
+                <div class="inference-layer-info">
+                  <div class="inference-layer-name">Route Redirections</div>
+                  <div class="inference-layer-meta">
+                    <span class="inference-count-badge" id="redirection-count">0</span>
+                  </div>
+                </div>
+                <label class="layer-toggle">
+                  <input type="checkbox" id="layer-redirection" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="inference-layer-item" data-layer="holding">
+                <div class="inference-layer-icon">
+                  <svg viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="Holding pattern"><title>Holding pattern</title><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>
+                </div>
+                <div class="inference-layer-info">
+                  <div class="inference-layer-name">Holding Patterns</div>
+                  <div class="inference-layer-meta">
+                    <span class="inference-count-badge" id="holding-count">0</span>
+                  </div>
+                </div>
+                <label class="layer-toggle">
+                  <input type="checkbox" id="layer-holding" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="inference-layer-item" data-layer="absence">
+                <div class="inference-layer-icon">
+                  <svg viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="Absence signal"><title>Absence signal</title><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm-2-3.5l6-4.5-6-4.5v9z"/></svg>
+                </div>
+                <div class="inference-layer-info">
+                  <div class="inference-layer-name">Absence Signals</div>
+                  <div class="inference-layer-meta">
+                    <span class="inference-count-badge" id="absence-count">0</span>
+                  </div>
+                </div>
+                <label class="layer-toggle">
+                  <input type="checkbox" id="layer-absence" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div id="inference-list" class="inference-list">
+              <div class="inference-empty">No inferences detected</div>
+            </div>
+          </div>
         </aside>
 
         <!-- Center: Globe Viewport -->
@@ -508,6 +581,21 @@
             <span class="incident-status" id="incident-status">--</span>
           </div>
           <div class="incident-time" id="incident-time">--</div>
+          <div id="incident-linked-alerts" class="incident-linked-alerts">
+            <!-- Linked alerts populated by JS -->
+          </div>
+        </div>
+        <div id="incident-capture-section" class="incident-capture-section">
+          <div class="capture-section-header">
+            <h4>EVIDENCE CAPTURE</h4>
+            <button type="button" class="capture-add-btn" id="btn-add-capture" title="Add Capture Job">+</button>
+          </div>
+          <div id="capture-job-list" class="capture-job-list">
+            <!-- Capture jobs populated by JS -->
+          </div>
+          <div id="evidence-list" class="evidence-list">
+            <!-- Frozen evidence populated by JS -->
+          </div>
         </div>
         <div class="incident-sections">
           <div class="incident-section">

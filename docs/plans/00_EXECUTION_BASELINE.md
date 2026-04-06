@@ -240,3 +240,41 @@ Before this bootstrap pass, the repository contained only the markdown planning 
 - added e2e tests for layer UI and toggle behavior
 - created docs/plans/15_REAL_DATA_LAYER_EXPANSION_PROGRESS.md
 
+## Incident Playback and Correlation Timeline (Phase 16)
+- incident model with severity, status, AOI geometry, chapters, and links
+- database migration (0003_incidents.sql) for incidents, chapters, and links tables
+- incident API endpoints: list, create, detail, update, timeline, chapters, links
+- incident persistence methods for CRUD and timeline correlation
+- incident panel UI with title, severity, status, time display
+- Before/During/After section controls with marker counts
+- incident playback controls: play/pause/scrubber/speed presets (0.5x-10x)
+- correlation timeline rendering with layer markers on Cesium globe:
+  - alert markers (red triangles)
+  - earthquake markers (magnitude-colored circles)
+  - weather markers (severity-colored diamonds)
+  - satellite markers (type-colored squares)
+  - traffic markers (severity-colored hexagons)
+  - bikeshare markers (availability-colored circles)
+- chapter markers with click-to-jump functionality
+- linked alerts display in incident panel with severity colors
+- alert-to-incident linking via "Link to Incident" button
+- globe focus integration (camera flies to incident AOI)
+- comprehensive E2E tests (25+ test cases)
+- added DOM lib to tsconfig.json for Playwright type safety
+- created docs/plans/16_INCIDENT_PLAYBACK_AND_CORRELATION_TIMELINE_PROGRESS.md
+
+## Incident Capture and Evidence Freeze (Phase 17)
+- capture job model with id, incident, source, status, timestamps, snapshots, freeze status
+- database migration (0004_capture_jobs.sql) for capture_jobs, capture_snapshots, evidence_freeze tables
+- capture job API endpoints: create, list, detail, start, run, complete, freeze
+- source snapshotting for 9 sources: flights, earthquakes, satellites, weather, bikeshare, traffic, cctv, alerts, events
+- evidence freeze functionality with automatic status tracking
+- tactical UI capture panel in incident section with:
+  - capture job list with status indicators
+  - evidence list with frozen status
+  - add capture job modal with source selection
+- integration tests for capture persistence (11 test cases)
+- E2E tests for capture workflow (18 test cases)
+- unit tests for capture models (13 test cases)
+- created docs/plans/17_INCIDENT_CAPTURE_AND_EVIDENCE_FREEZE_PROGRESS.md
+

@@ -34,9 +34,7 @@ CREATE TABLE incident_chapters (
   event_ids TEXT[] NOT NULL DEFAULT '{}',
   alert_ids TEXT[] NOT NULL DEFAULT '{}',
   position geography(Point, 4326),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CHECK (timestamp >= (SELECT start_at FROM incidents WHERE incident_id = incident_chapters.incident_id)),
-  CHECK (timestamp <= (SELECT end_at FROM incidents WHERE incident_id = incident_chapters.incident_id))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX incident_chapters_incident_idx ON incident_chapters (incident_id);

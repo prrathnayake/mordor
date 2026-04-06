@@ -31,6 +31,7 @@ import {
   type ReplayQueryRequest,
   validateReplayQueryRequest,
 } from "../../../packages/replay/src/index.js";
+import { runCaptureJob } from "./capture-service.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
 
 // Layer ID to display label mapping
@@ -44,6 +45,22 @@ function getLayerLabel(layerId: string): string {
     military: "Military Flights",
   };
   return labels[layerId] || layerId;
+}
+
+// Source type to display name mapping
+function getSourceDisplayName(sourceType: string): string {
+  const names: Record<string, string> = {
+    flights: "Live Flights",
+    earthquakes: "Earthquakes (24h)",
+    satellites: "Satellites",
+    weather: "Weather Radar",
+    bikeshare: "Bikeshare",
+    traffic: "Street Traffic",
+    cctv: "CCTV Mesh",
+    alerts: "Alerts",
+    events: "Object Events",
+  };
+  return names[sourceType] || sourceType;
 }
 
 // Refresh external data layer from source
@@ -877,7 +894,10 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
         url.pathname.startsWith("/incidents/") &&
         !url.pathname.includes("/timeline") &&
         !url.pathname.includes("/chapters") &&
-        !url.pathname.includes("/links")
+        !url.pathname.includes("/links") &&
+        !url.pathname.includes("/capture-jobs") &&
+        !url.pathname.includes("/evidence") &&
+        !url.pathname.includes("/capture-status")
       ) {
         const incidentId = url.pathname.replace("/incidents/", "");
         const incident = await persistence.fetchIncident(incidentId);
@@ -1046,6 +1066,470 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
 
         const links = await persistence.fetchIncidentLinks(incidentId);
         writeJson(response, 201, { links });
+        return;
+      }
+
+      // GET /incidents/:id/capture-jobs
+      if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/capture-jobs$/)) {
+        const incidentId = url.pathname.split("/")[2];
+        const status = url.searchParams.get("status") ?? undefined;
+        const jobs = await persistence.listCaptureJobs(incidentId, status);
+        writeJson(response, 200, { capture_jobs: jobs });
+        return;
+      }
+
+      // POST /incidents/:id/capture-jobs
+      if (request.method === "POST" && url.pathname.match(/^\/incidents\/[^/]+\/capture-jobs$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const incidentId = url.pathname.split("/")[2];
+        const existing = await persistence.fetchIncident(incidentId);
+
+        if (!existing) {
+          writeJson(response, 404, { error: "incident not found" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as { source_type: string };
+
+        if (!body.source_type) {
+          writeJson(response, 400, { error: "source_type is required" });
+          return;
+        }
+
+        const validSourceTypes = [
+          "flights",
+          "earthquakes",
+          "satellites",
+          "weather",
+          "bikeshare",
+          "traffic",
+          "cctv",
+          "alerts",
+          "events",
+        ];
+        if (!validSourceTypes.includes(body.source_type)) {
+          writeJson(response, 400, {
+            error: `source_type must be one of: ${validSourceTypes.join(", ")}`,
+          });
+          return;
+        }
+
+        const captureJobId = await persistence.createCaptureJob(
+          incidentId,
+          body.source_type,
+          authContext.user.user_id,
+        );
+
+        const job = await persistence.getCaptureJob(captureJobId);
+        writeJson(response, 201, { capture_job: job });
+        return;
+      }
+
+      // GET /capture-jobs/:id
+      if (
+        request.method === "GET" &&
+        url.pathname.match(/^\/capture-jobs\/[^/]+$/) &&
+        !url.pathname.includes("/snapshots")
+      ) {
+        const captureJobId = url.pathname.replace("/capture-jobs/", "");
+        const job = await persistence.getCaptureJob(captureJobId);
+
+        if (!job) {
+          writeJson(response, 404, { error: "capture job not found" });
+          return;
+        }
+
+        const snapshots = await persistence.listCaptureSnapshots(captureJobId);
+        const evidenceFreeze = await persistence.getEvidenceFreeze(captureJobId);
+
+        writeJson(response, 200, {
+          capture_job: {
+            ...job,
+            snapshots,
+            evidence_freeze: evidenceFreeze,
+          },
+        });
+        return;
+      }
+
+      // POST /capture-jobs/:id/start
+      if (request.method === "POST" && url.pathname.match(/^\/capture-jobs\/[^/]+\/start$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const captureJobId = url.pathname.split("/")[2];
+        const job = await persistence.getCaptureJob(captureJobId);
+
+        if (!job) {
+          writeJson(response, 404, { error: "capture job not found" });
+          return;
+        }
+
+        if (job.status !== "pending") {
+          writeJson(response, 400, { error: `cannot start job in ${job.status} status` });
+          return;
+        }
+
+        await persistence.startCaptureJob(captureJobId);
+        const updatedJob = await persistence.getCaptureJob(captureJobId);
+        writeJson(response, 200, { capture_job: updatedJob });
+        return;
+      }
+
+      // POST /capture-jobs/:id/run - start and execute the capture job
+      if (request.method === "POST" && url.pathname.match(/^\/capture-jobs\/[^/]+\/run$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const captureJobId = url.pathname.split("/")[2];
+        const job = await persistence.getCaptureJob(captureJobId);
+
+        if (!job) {
+          writeJson(response, 404, { error: "capture job not found" });
+          return;
+        }
+
+        if (job.status !== "pending") {
+          writeJson(response, 400, { error: `cannot run job in ${job.status} status` });
+          return;
+        }
+
+        await persistence.startCaptureJob(captureJobId);
+        const result = await runCaptureJob(persistence, captureJobId, logger);
+        const updatedJob = await persistence.getCaptureJob(captureJobId);
+
+        writeJson(response, 200, {
+          capture_job: updatedJob,
+          capture_result: result,
+        });
+        return;
+      }
+
+      // POST /capture-jobs/:id/complete
+      if (request.method === "POST" && url.pathname.match(/^\/capture-jobs\/[^/]+\/complete$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const captureJobId = url.pathname.split("/")[2];
+        const job = await persistence.getCaptureJob(captureJobId);
+
+        if (!job) {
+          writeJson(response, 404, { error: "capture job not found" });
+          return;
+        }
+
+        if (job.status !== "running") {
+          writeJson(response, 400, { error: `cannot complete job in ${job.status} status` });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as {
+          error_code?: string;
+          error_message?: string;
+        };
+
+        await persistence.completeCaptureJob(captureJobId, body.error_code, body.error_message);
+
+        const updatedJob = await persistence.getCaptureJob(captureJobId);
+        writeJson(response, 200, { capture_job: updatedJob });
+        return;
+      }
+
+      // GET /capture-jobs/:id/snapshots
+      if (request.method === "GET" && url.pathname.match(/^\/capture-jobs\/[^/]+\/snapshots$/)) {
+        const captureJobId = url.pathname.split("/")[2];
+        const job = await persistence.getCaptureJob(captureJobId);
+
+        if (!job) {
+          writeJson(response, 404, { error: "capture job not found" });
+          return;
+        }
+
+        const snapshots = await persistence.listCaptureSnapshots(captureJobId);
+        writeJson(response, 200, { snapshots });
+        return;
+      }
+
+      // POST /capture-jobs/:id/freeze
+      if (request.method === "POST" && url.pathname.match(/^\/capture-jobs\/[^/]+\/freeze$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const captureJobId = url.pathname.split("/")[2];
+        const job = await persistence.getCaptureJob(captureJobId);
+
+        if (!job) {
+          writeJson(response, 404, { error: "capture job not found" });
+          return;
+        }
+
+        if (job.status !== "completed") {
+          writeJson(response, 400, { error: "can only freeze completed capture jobs" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as { notes?: string };
+
+        const frozenCount = await persistence.freezeSnapshots(captureJobId);
+
+        if (frozenCount === 0) {
+          await persistence.updateCaptureJobFreezeStatus(captureJobId, "frozen");
+        }
+
+        const freezeId = await persistence.createEvidenceFreeze(
+          captureJobId,
+          job.incident_id,
+          job.source_type,
+          getSourceDisplayName(job.source_type),
+          authContext.user.user_id,
+          body.notes,
+        );
+
+        const evidenceFreeze = await persistence.getEvidenceFreeze(captureJobId);
+        const updatedJob = await persistence.getCaptureJob(captureJobId);
+
+        writeJson(response, 200, {
+          freeze_id: freezeId,
+          snapshots_frozen: frozenCount,
+          capture_job: updatedJob,
+          evidence_freeze: evidenceFreeze,
+        });
+        return;
+      }
+
+      // GET /incidents/:id/evidence
+      if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/evidence$/)) {
+        const incidentId = url.pathname.split("/")[2];
+        const evidenceList = await persistence.listEvidenceFreeze(incidentId);
+        const captureStatus = await persistence.getIncidentCaptureStatus(incidentId);
+
+        writeJson(response, 200, {
+          evidence: evidenceList,
+          capture_status: captureStatus,
+        });
+        return;
+      }
+
+      // GET /incidents/:id/capture-status
+      if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/capture-status$/)) {
+        const incidentId = url.pathname.split("/")[2];
+        const captureStatus = await persistence.getIncidentCaptureStatus(incidentId);
+
+        if (!captureStatus) {
+          writeJson(response, 200, {
+            incident_id: incidentId,
+            total_jobs: 0,
+            completed_jobs: 0,
+            active_jobs: 0,
+            failed_jobs: 0,
+            total_snapshots: 0,
+            has_frozen_evidence: false,
+            sources_captured: [],
+            sources_frozen: [],
+          });
+          return;
+        }
+
+        writeJson(response, 200, captureStatus);
+        return;
+      }
+
+      // GET /inferences
+      if (request.method === "GET" && url.pathname === "/inferences") {
+        const inferenceType = url.searchParams.get("type") ?? undefined;
+        const status = url.searchParams.get("status") ?? undefined;
+        const startTime = url.searchParams.get("start_time") ?? undefined;
+        const endTime = url.searchParams.get("end_time") ?? undefined;
+
+        const inferences = await persistence.listInferredEvents({
+          inference_type: inferenceType,
+          status,
+          start_time: startTime,
+          end_time: endTime,
+        });
+
+        writeJson(response, 200, { inferences });
+        return;
+      }
+
+      // POST /inferences
+      if (request.method === "POST" && url.pathname === "/inferences") {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as {
+          inference_type: string;
+          time_window_start: string;
+          time_window_end: string;
+          aoi?: Record<string, unknown>;
+          related_source_ids?: string[];
+          related_object_ids?: string[];
+          related_event_ids?: string[];
+          evidence_summary: string;
+          details: Record<string, unknown>;
+        };
+
+        if (
+          !body.inference_type ||
+          !body.evidence_summary ||
+          !body.time_window_start ||
+          !body.time_window_end
+        ) {
+          writeJson(response, 400, {
+            error:
+              "inference_type, evidence_summary, time_window_start, and time_window_end are required",
+          });
+          return;
+        }
+
+        const validTypes = [
+          "nav_degradation",
+          "route_redirection",
+          "holding_pattern",
+          "absence_signal",
+          "anomaly",
+        ];
+        if (!validTypes.includes(body.inference_type)) {
+          writeJson(response, 400, {
+            error: `inference_type must be one of: ${validTypes.join(", ")}`,
+          });
+          return;
+        }
+
+        const confidence =
+          typeof body.details?.confidence === "number" ? body.details.confidence : 0.5;
+        const confidenceLevel =
+          confidence >= 0.9
+            ? "very_high"
+            : confidence >= 0.7
+              ? "high"
+              : confidence >= 0.5
+                ? "medium"
+                : "low";
+
+        const inferenceId = await persistence.createInferredEvent({
+          inference_type: body.inference_type,
+          confidence,
+          confidence_level: confidenceLevel,
+          time_window_start: body.time_window_start,
+          time_window_end: body.time_window_end,
+          aoi: body.aoi,
+          related_source_ids: body.related_source_ids,
+          related_object_ids: body.related_object_ids,
+          related_event_ids: body.related_event_ids,
+          evidence_summary: body.evidence_summary,
+          details: body.details,
+        });
+
+        const inference = await persistence.getInferredEvent(inferenceId);
+        writeJson(response, 201, { inference });
+        return;
+      }
+
+      // GET /inferences/:id
+      if (request.method === "GET" && url.pathname.match(/^\/inferences\/[^/]+$/)) {
+        const inferenceId = url.pathname.replace("/inferences/", "");
+        const inference = await persistence.getInferredEvent(inferenceId);
+
+        if (!inference) {
+          writeJson(response, 404, { error: "inference not found" });
+          return;
+        }
+
+        writeJson(response, 200, { inference });
+        return;
+      }
+
+      // PATCH /inferences/:id
+      if (request.method === "PATCH" && url.pathname.match(/^\/inferences\/[^/]+$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const inferenceId = url.pathname.replace("/inferences/", "");
+        const existing = await persistence.getInferredEvent(inferenceId);
+
+        if (!existing) {
+          writeJson(response, 404, { error: "inference not found" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as { status?: string };
+
+        if (body.status) {
+          const validStatuses = ["active", "resolved", "expired", "invalidated"];
+          if (!validStatuses.includes(body.status)) {
+            writeJson(response, 400, {
+              error: `status must be one of: ${validStatuses.join(", ")}`,
+            });
+            return;
+          }
+
+          await persistence.updateInferenceStatus(inferenceId, body.status);
+        }
+
+        const inference = await persistence.getInferredEvent(inferenceId);
+        writeJson(response, 200, { inference });
+        return;
+      }
+
+      // GET /inferences/timeline
+      if (request.method === "GET" && url.pathname === "/inferences/timeline") {
+        const incidentId = url.searchParams.get("incident_id") ?? undefined;
+        const markers = await persistence.listInferenceTimelineMarkers(incidentId);
+
+        writeJson(response, 200, { markers });
+        return;
+      }
+
+      // GET /degradation-zones
+      if (request.method === "GET" && url.pathname === "/degradation-zones") {
+        const zones = await persistence.listActiveDegradationZones();
+
+        writeJson(response, 200, {
+          zones,
+          generated_at: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // POST /inferences/:id/link-incident
+      if (request.method === "POST" && url.pathname.match(/^\/inferences\/[^/]+\/link-incident$/)) {
+        if (!authContext.isAuthenticated || !authContext.user) {
+          writeJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const inferenceId = url.pathname.split("/")[2];
+        const body = (await readJsonBody(request)) as { incident_id: string };
+
+        if (!body.incident_id) {
+          writeJson(response, 400, { error: "incident_id is required" });
+          return;
+        }
+
+        await persistence.linkInferenceToIncident(
+          inferenceId,
+          body.incident_id,
+          authContext.user.user_id,
+        );
+
+        writeJson(response, 200, { linked: true });
         return;
       }
 
