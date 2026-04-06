@@ -452,11 +452,12 @@ function initCesium() {
     animation: false,
     timeline: false,
     fullscreenButton: false,
+    imageryProvider: new Cesium.IonImageryProvider({ ionAssetId: 2 }),
   });
 
-  // Set initial view to Sydney, Australia
+  // Set initial view to full globe
   viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(151.2093, -33.8688, 10000),
+    destination: Cesium.Cartesian3.fromDegrees(0, 0, 20000000),
   });
 
   // Handle object selection
@@ -3035,8 +3036,10 @@ async function loadInferences(incidentId = null) {
     inferenceState.inferences = Array.isArray(inferences) ? inferences : [];
 
     for (const inference of inferenceState.inferences) {
-      switch (inference.type) {
+      const type = inference.type || inference.inference_type || "unknown";
+      switch (type) {
         case "navigation_degradation":
+        case "nav_degradation":
         case "degradation":
           inferenceState.degradationZones.push(inference);
           break;
@@ -3086,17 +3089,13 @@ function renderInferenceList() {
 
   dom.inferenceList.innerHTML = inferenceState.inferences
     .map((inference) => {
-      const type = inference.type || "unknown";
+      const type = inference.type || inference.inference_type || "unknown";
       const confidence = inference.confidence || "low";
       const confidenceLabel =
         confidence === "high" ? "HIGH" : confidence === "medium" ? "MED" : "LOW";
       const time = inference.detected_at || inference.created_at || "";
       const description = inference.description || inference.summary || `Detected ${type}`;
-      const evidence = inference.evidence
-        ? Array.isArray(inference.evidence)
-          ? inference.evidence.join(", ")
-          : inference.evidence
-        : "";
+      const evidence = inference.evidence_summary ? inference.evidence_summary : "";
 
       return `
         <div class="inference-item ${type.replace("_", "")}" data-inference-id="${inference.inference_id || inference.id}">
