@@ -1454,6 +1454,15 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
           return;
         }
 
+        // GET /inferences/timeline (must come before /inferences/:id)
+        if (request.method === "GET" && url.pathname === "/inferences/timeline") {
+          const incidentId = url.searchParams.get("incident_id") ?? undefined;
+          const markers = await persistence.listInferenceTimelineMarkers(incidentId);
+
+          writeJson(response, 200, { markers });
+          return;
+        }
+
         // GET /inferences/:id
         if (request.method === "GET" && url.pathname.match(/^\/inferences\/[^/]+$/)) {
           const inferenceId = url.pathname.replace("/inferences/", "");
@@ -1499,15 +1508,6 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
 
           const inference = await persistence.getInferredEvent(inferenceId);
           writeJson(response, 200, { inference });
-          return;
-        }
-
-        // GET /inferences/timeline
-        if (request.method === "GET" && url.pathname === "/inferences/timeline") {
-          const incidentId = url.searchParams.get("incident_id") ?? undefined;
-          const markers = await persistence.listInferenceTimelineMarkers(incidentId);
-
-          writeJson(response, 200, { markers });
           return;
         }
 

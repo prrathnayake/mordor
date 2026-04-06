@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: builder
+      target: runner
     container_name: mordor-api
     environment:
       NODE_ENV: production
@@ -33,10 +33,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "
-        npx tsx apps/api/src/server.ts
-      "
+    command: npx tsx apps/api/src/server.ts
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
       interval: 10s
@@ -47,20 +44,31 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.web
+      dockerfile: Dockerfile
+      target: builder
     container_name: mordor-web
     environment:
+      NODE_ENV: production
       API_BASE_URL: http://localhost:3001
+      PORT: 8080
     ports:
       - "8080:8080"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    command: npx tsx apps/web/src/server.ts
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-      target: builder
+      target: runner
     container_name: mordor-worker
     environment:
       NODE_ENV: production
@@ -73,10 +81,7 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
-    command: >
-      sh -c "
-        npx tsx apps/worker/src/index.ts
-      "
+    command: npx tsx apps/worker/src/index.ts
 
 volumes:
   postgres_data:

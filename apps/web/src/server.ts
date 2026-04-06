@@ -96,7 +96,7 @@ export async function startWebServer(options: {
 
   await new Promise<void>((resolve, reject) => {
     runningServer.server.once("error", reject);
-    runningServer.server.listen(options.port ?? 0, "127.0.0.1", () => resolve());
+    runningServer.server.listen(options.port ?? 0, "0.0.0.0", () => resolve());
   });
 
   const address = runningServer.server.address();
@@ -113,9 +113,9 @@ export async function startWebServer(options: {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const apiBaseUrl = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
-  const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
+  const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 8080;
 
   startWebServer({ api_base_url: apiBaseUrl, port }).then(({ port: boundPort }) => {
-    console.log(`Web server listening on http://127.0.0.1:${boundPort}`);
+    console.log(`Web server listening on http://0.0.0.0:${boundPort}`);
   });
 }
