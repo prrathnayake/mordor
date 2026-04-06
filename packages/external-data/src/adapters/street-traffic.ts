@@ -11,12 +11,7 @@
  */
 
 import { createHttpClient } from "../http-client.js";
-import type {
-  AdapterConfig,
-  ExternalDataEvent,
-  ExternalDataSource,
-  FetchResult,
-} from "../types.js";
+import type { ExternalDataEvent, ExternalDataSource, FetchResult } from "../types.js";
 
 /**
  * TomTom Traffic Incident (simplified)
@@ -51,7 +46,6 @@ export class StreetTrafficAdapter {
   };
 
   private httpClient: ReturnType<typeof createHttpClient> | null = null;
-  private hasAttemptedFetch = false;
 
   constructor(private apiKey?: string) {
     if (apiKey) {
@@ -75,7 +69,6 @@ export class StreetTrafficAdapter {
     maxLon: number;
   }): Promise<FetchResult> {
     const startTime = Date.now();
-    this.hasAttemptedFetch = true;
 
     if (!this.apiKey || !this.httpClient) {
       return {

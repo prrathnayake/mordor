@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
-import { PostgresPersistenceGateway } from "../../packages/persistence/src/index.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "../../packages/persistence/src/database.js";
+import { PostgresPersistenceGateway } from "../../packages/persistence/src/index.js";
 
 // Skip these tests if running in CI without Docker
 const describeIfDocker = process.env.CI && !process.env.DOCKER_HOST ? describe.skip : describe;

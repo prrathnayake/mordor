@@ -10,12 +10,7 @@
  */
 
 import { createHttpClient } from "../http-client.js";
-import type {
-  AdapterConfig,
-  ExternalDataEvent,
-  ExternalDataSource,
-  FetchResult,
-} from "../types.js";
+import type { ExternalDataEvent, ExternalDataSource, FetchResult } from "../types.js";
 
 /**
  * USGS GeoJSON Feature structure

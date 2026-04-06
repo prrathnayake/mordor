@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("External Data Layers E2E", () => {
   test.beforeEach(async ({ page }) => {
@@ -97,7 +97,7 @@ test.describe("External Data Layers E2E", () => {
     await page.waitForSelector("#layer-status-earthquakes");
 
     // Get initial status
-    const initialStatus = await page.locator("#layer-status-earthquakes").textContent();
+    const _initialStatus = await page.locator("#layer-status-earthquakes").textContent();
 
     // Wait for potential refresh
     await page.waitForTimeout(2000);

@@ -240,22 +240,22 @@ export class CelesTrakAdapter {
     const noradId = line1.substring(2, 7).trim();
     const classification = line1.substring(7, 8).trim() || "U";
     const intDesignator = line1.substring(9, 17).trim();
-    const epochYear = Number.parseInt(line1.substring(18, 20));
+    const epochYear = Number.parseInt(line1.substring(18, 20), 10);
     const epochDay = Number.parseFloat(line1.substring(20, 32));
     const firstDerivative = Number.parseFloat(line1.substring(33, 43));
     const secondDerivative = this.parseScientific(line1.substring(44, 52));
     const bstar = this.parseScientific(line1.substring(53, 61));
-    const ephemerisType = Number.parseInt(line1.substring(62, 63));
-    const elementNumber = Number.parseInt(line1.substring(64, 68));
+    const ephemerisType = Number.parseInt(line1.substring(62, 63), 10);
+    const elementNumber = Number.parseInt(line1.substring(64, 68), 10);
 
     // Parse line 2
     const inclination = Number.parseFloat(line2.substring(8, 16));
     const raan = Number.parseFloat(line2.substring(17, 25));
-    const eccentricity = Number.parseFloat("0." + line2.substring(26, 33).trim());
+    const eccentricity = Number.parseFloat(`0.${line2.substring(26, 33).trim()}`);
     const argPerigee = Number.parseFloat(line2.substring(34, 42));
     const meanAnomaly = Number.parseFloat(line2.substring(43, 51));
     const meanMotion = Number.parseFloat(line2.substring(52, 63));
-    const revNumber = Number.parseInt(line2.substring(63, 68));
+    const revNumber = Number.parseInt(line2.substring(63, 68), 10);
 
     return {
       name,
@@ -287,7 +287,7 @@ export class CelesTrakAdapter {
   private parseScientific(str: string): number {
     const mantissa = str.substring(0, 6);
     const exponent = str.substring(6, 8);
-    const value = Number.parseFloat(mantissa) * 10 ** Number.parseInt(exponent);
+    const value = Number.parseFloat(mantissa) * 10 ** Number.parseInt(exponent, 10);
     return value;
   }
 
@@ -310,7 +310,7 @@ export class CelesTrakAdapter {
       // Semi-major axis from mean motion (simplified)
       const mu = 398600.4418; // Earth's gravitational parameter km^3/s^2
       const n = (tle.meanMotion * 2 * Math.PI) / 86400; // Convert to rad/s
-      const a = Math.pow(mu / (n * n), 1 / 3); // Semi-major axis in km
+      const a = (mu / (n * n)) ** (1 / 3); // Semi-major axis in km
 
       // Position in orbital plane
       const r = a * (1 - tle.eccentricity * Math.cos(meanAnomalyRad));

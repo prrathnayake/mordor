@@ -51,7 +51,7 @@ const externalLayerState = {
 };
 
 // Layer status colors for UI
-const LAYER_STATUS_COLORS = {
+const _LAYER_STATUS_COLORS = {
   real: "#22c55e", // Green
   degraded: "#f59e0b", // Amber
   unavailable: "#ef4444", // Red

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ExternalDataCache,
   calculateFreshness,
   createCacheKey,
+  ExternalDataCache,
 } from "../../../packages/external-data/src/cache.js";
 import type { ExternalDataEvent } from "../../../packages/external-data/src/types.js";
 

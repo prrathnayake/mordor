@@ -5,7 +5,7 @@
  * Provides caching for external data events with expiration.
  */
 
-import type { CacheEntry, ExternalDataEvent, LayerState } from "./types.js";
+import type { CacheEntry, ExternalDataEvent } from "./types.js";
 
 export class ExternalDataCache {
   private cache = new Map<string, CacheEntry>();
@@ -13,7 +13,7 @@ export class ExternalDataCache {
   /**
    * Get cached events for a layer if not expired.
    */
-  get(layerId: string, maxAgeMs: number): ExternalDataEvent[] | null {
+  get(layerId: string, _maxAgeMs: number): ExternalDataEvent[] | null {
     const entry = this.cache.get(layerId);
     if (!entry) {
       return null;

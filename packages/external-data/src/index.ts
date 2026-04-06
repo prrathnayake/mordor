@@ -6,6 +6,28 @@
  * real, degraded, or unavailable.
  */
 
+export {
+  CelesTrakAdapter,
+  createCelesTrakAdapter,
+  type SatelliteCategory,
+  type SatellitePosition,
+  type TLESet,
+} from "./adapters/celestrak-satellites.js";
+export { CityBikesAdapter, createCityBikesAdapter } from "./adapters/citybikes.js";
+export {
+  createMilitaryFlightsAdapter,
+  MilitaryFlightsAdapter,
+} from "./adapters/military-flights.js";
+export { createNOAAWeatherAdapter, NOAAWeatherAdapter } from "./adapters/noaa-weather.js";
+export { createStreetTrafficAdapter, StreetTrafficAdapter } from "./adapters/street-traffic.js";
+// Adapters
+export {
+  createUSGSEarthquakeAdapter,
+  USGSEarthquakeAdapter,
+} from "./adapters/usgs-earthquakes.js";
+export { calculateFreshness, createCacheKey, ExternalDataCache } from "./cache.js";
+// Core utilities
+export { createHttpClient, RateLimitedHttpClient } from "./http-client.js";
 // Types
 export type {
   AdapterConfig,
@@ -18,40 +40,16 @@ export type {
   SourceHealth,
 } from "./types.js";
 
-// Core utilities
-export { RateLimitedHttpClient, createHttpClient } from "./http-client.js";
-export { ExternalDataCache, calculateFreshness, createCacheKey } from "./cache.js";
-
-// Adapters
-export {
-  USGSEarthquakeAdapter,
-  createUSGSEarthquakeAdapter,
-} from "./adapters/usgs-earthquakes.js";
-export {
-  CelesTrakAdapter,
-  createCelesTrakAdapter,
-  type SatelliteCategory,
-  type SatellitePosition,
-  type TLESet,
-} from "./adapters/celestrak-satellites.js";
-export { NOAAWeatherAdapter, createNOAAWeatherAdapter } from "./adapters/noaa-weather.js";
-export { CityBikesAdapter, createCityBikesAdapter } from "./adapters/citybikes.js";
-export {
-  MilitaryFlightsAdapter,
-  createMilitaryFlightsAdapter,
-} from "./adapters/military-flights.js";
-export { StreetTrafficAdapter, createStreetTrafficAdapter } from "./adapters/street-traffic.js";
-
 // Default configurations
 export { DEFAULT_ADAPTER_CONFIG } from "./types.js";
 
-import { CityBikesAdapter } from "./adapters/citybikes.js";
 import { CelesTrakAdapter } from "./adapters/celestrak-satellites.js";
+import { CityBikesAdapter } from "./adapters/citybikes.js";
 import { MilitaryFlightsAdapter } from "./adapters/military-flights.js";
 import { NOAAWeatherAdapter } from "./adapters/noaa-weather.js";
 import { StreetTrafficAdapter } from "./adapters/street-traffic.js";
 import { USGSEarthquakeAdapter } from "./adapters/usgs-earthquakes.js";
-import type { LayerState } from "./types.js";
+import type { ExternalDataEvent, LayerState } from "./types.js";
 
 /**
  * Registry of all external data adapters.
@@ -87,7 +85,13 @@ export class ExternalDataRegistry {
     const adapter = this.adapters[layerId];
     const source = adapter.source;
 
-    let result;
+    let result: {
+      success: boolean;
+      events: ExternalDataEvent[];
+      error?: string;
+      fetchedAt: string;
+      durationMs: number;
+    };
     switch (layerId) {
       case "earthquakes":
         result = await (adapter as USGSEarthquakeAdapter).fetch();
@@ -104,7 +108,6 @@ export class ExternalDataRegistry {
       case "traffic":
         result = await (adapter as StreetTrafficAdapter).fetchIncidents();
         break;
-      case "military":
       default:
         result = await (adapter as MilitaryFlightsAdapter).fetch();
         break;

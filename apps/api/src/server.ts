@@ -5,6 +5,15 @@ import { authenticate, validateToken } from "../../../packages/auth/src/index.js
 import { getConfigFromEnv, validateConfig } from "../../../packages/config/src/index.js";
 import { applyCanonicalEventToObjectState } from "../../../packages/domain/src/index.js";
 import {
+  createCelesTrakAdapter,
+  createCityBikesAdapter,
+  createMilitaryFlightsAdapter,
+  createNOAAWeatherAdapter,
+  createStreetTrafficAdapter,
+  createUSGSEarthquakeAdapter,
+  type ExternalDataEvent,
+} from "../../../packages/external-data/src/index.js";
+import {
   type Clock,
   ingestCameraObservationBatch,
   ingestFixtureTelemetryBatch,
@@ -12,6 +21,7 @@ import {
   validateCameraObservationIngestionInput,
   validateFixtureTelemetryIngestionInput,
 } from "../../../packages/ingestion/src/index.js";
+import type { Logger } from "../../../packages/logging/src/index.js";
 import { createLogger } from "../../../packages/logging/src/index.js";
 import {
   PostgresPersistenceGateway,
@@ -22,16 +32,6 @@ import {
   validateReplayQueryRequest,
 } from "../../../packages/replay/src/index.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
-import {
-  createCityBikesAdapter,
-  createCelesTrakAdapter,
-  createMilitaryFlightsAdapter,
-  createNOAAWeatherAdapter,
-  createStreetTrafficAdapter,
-  createUSGSEarthquakeAdapter,
-  type ExternalDataEvent,
-} from "../../../packages/external-data/src/index.js";
-import type { Logger } from "../../../packages/logging/src/index.js";
 
 // Layer ID to display label mapping
 function getLayerLabel(layerId: string): string {

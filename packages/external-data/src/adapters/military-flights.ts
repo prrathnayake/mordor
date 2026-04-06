@@ -11,7 +11,7 @@
  * as unavailable with an honest explanation.
  */
 
-import type { ExternalDataEvent, ExternalDataSource, FetchResult } from "../types.js";
+import type { ExternalDataSource, FetchResult } from "../types.js";
 
 /**
  * Military Flights Adapter (Unavailable)
