@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chrona/contracts/tracked-object/1.0.0",
+  "title": "TrackedObject",
+  "type": "object",
+  "x-contract-name": "trackedObject",
+  "x-schema-version": "1.0.0",
+  "additionalProperties": false,
+  "required": [
+    "object_id",
+    "object_type",
+    "display_name",
+    "source_primary",
+    "latest_state_ref",
+    "created_at",
+    "updated_at",
+    "tags"
+  ],
+  "properties": {
+    "object_id": { "type": "string", "minLength": 1 },
+    "object_type": { "type": "string", "minLength": 1 },
+    "display_name": { "type": "string", "minLength": 1 },
+    "source_primary": { "type": "string", "minLength": 1 },
+    "latest_state_ref": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

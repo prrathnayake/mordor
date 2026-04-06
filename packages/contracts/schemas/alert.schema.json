@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chrona/contracts/alert/1.0.0",
+  "title": "Alert",
+  "type": "object",
+  "x-contract-name": "alert",
+  "x-schema-version": "1.0.0",
+  "additionalProperties": false,
+  "required": [
+    "alert_id",
+    "rule_id",
+    "severity",
+    "status",
+    "opened_at",
+    "updated_at",
+    "closed_at",
+    "schema_version",
+    "evidence_event_ids",
+    "evidence_object_ids",
+    "summary",
+    "explanation",
+    "confidence"
+  ],
+  "properties": {
+    "alert_id": { "type": "string", "minLength": 1 },
+    "rule_id": { "type": "string", "minLength": 1 },
+    "severity": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "opened_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "closed_at": { "type": ["string", "null"] },
+    "schema_version": { "const": "1.0.0" },
+    "evidence_event_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "evidence_object_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "explanation": { "type": "string", "minLength": 1 },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

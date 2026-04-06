@@ -1,0 +1,74 @@
+{
+  "events": [
+    {
+      "event_id": "evt_veh_42_20260405T101530Z_position_observed",
+      "event_type": "position_observed",
+      "object_id": "veh_42",
+      "source_id": "src_campus_gps_1",
+      "observed_at": "2026-04-05T10:15:30.000Z",
+      "ingested_at": "2026-04-05T10:15:32.000Z",
+      "processed_at": "2026-04-05T10:16:00.000Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "lat": -33.8688,
+        "lon": 151.2093,
+        "speed_mps": 13.4,
+        "heading_deg": 91.2,
+        "status": "moving"
+      },
+      "provenance": {
+        "adapter": "fixture_telemetry_adapter",
+        "adapter_version": "1.0.0",
+        "raw_ref": "pending_raw_ref",
+        "transformation_notes": ["tracker_id veh-42 normalized to object_id veh_42"]
+      },
+      "confidence": 0.99,
+      "dedupe_key": "src_campus_gps_1:veh_42:2026-04-05T10:15:30.000Z:position_observed",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [151.2093, -33.8688]
+      },
+      "altitude_m": null,
+      "heading_deg": 91.2,
+      "speed_mps": 13.4,
+      "related_object_ids": [],
+      "parent_event_id": null,
+      "trace_id": null
+    },
+    {
+      "event_id": "evt_veh_42_20260405T101535Z_position_observed",
+      "event_type": "position_observed",
+      "object_id": "veh_42",
+      "source_id": "src_campus_gps_1",
+      "observed_at": "2026-04-05T10:15:35.000Z",
+      "ingested_at": "2026-04-05T10:15:36.000Z",
+      "processed_at": "2026-04-05T10:16:00.000Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "lat": -33.8686,
+        "lon": 151.2096,
+        "speed_mps": 8.1,
+        "heading_deg": 89.4,
+        "status": "slowing"
+      },
+      "provenance": {
+        "adapter": "fixture_telemetry_adapter",
+        "adapter_version": "1.0.0",
+        "raw_ref": "pending_raw_ref",
+        "transformation_notes": ["tracker_id veh-42 normalized to object_id veh_42"]
+      },
+      "confidence": 0.99,
+      "dedupe_key": "src_campus_gps_1:veh_42:2026-04-05T10:15:35.000Z:position_observed",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [151.2096, -33.8686]
+      },
+      "altitude_m": null,
+      "heading_deg": 89.4,
+      "speed_mps": 8.1,
+      "related_object_ids": [],
+      "parent_event_id": null,
+      "trace_id": null
+    }
+  ]
+}

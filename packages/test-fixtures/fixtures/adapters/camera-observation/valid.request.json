@@ -1,0 +1,40 @@
+{
+  "source": {
+    "source_id": "cam_entrance_1",
+    "source_type": "camera_feed",
+    "name": "Entrance Camera 1",
+    "location_lat": -33.8688,
+    "location_lon": 151.2093
+  },
+  "records": [
+    {
+      "camera_id": "cam_entrance_1",
+      "timestamp": "2026-04-05T10:20:00Z",
+      "frame_id": "frame_001",
+      "object_detected": "person_001",
+      "object_type": "person",
+      "confidence": 0.95,
+      "bounding_box": {
+        "x": 120,
+        "y": 80,
+        "width": 60,
+        "height": 180
+      }
+    },
+    {
+      "camera_id": "cam_entrance_1",
+      "timestamp": "2026-04-05T10:20:05Z",
+      "frame_id": "frame_002",
+      "object_detected": "vehicle_001",
+      "object_type": "car",
+      "confidence": 0.88,
+      "bounding_box": {
+        "x": 200,
+        "y": 150,
+        "width": 120,
+        "height": 80
+      }
+    }
+  ],
+  "trace_id": "trace_camera_observation_001"
+}

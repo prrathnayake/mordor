@@ -1,0 +1,14 @@
+{
+  "records": [
+    {
+      "tracker_id": "veh-99",
+      "lat": 90,
+      "lng": 180,
+      "speed": 0,
+      "heading": 0,
+      "ts": "2026-04-05T10:20:00Z",
+      "received_at": "2026-04-05T10:20:01Z",
+      "status": "idle"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "event_id": "evt_invalid_missing_provenance",
+  "event_type": "position_observed",
+  "object_id": "veh_42",
+  "source_id": "src_campus_gps_1",
+  "observed_at": "2026-04-05T10:15:30Z",
+  "ingested_at": "2026-04-05T10:15:32Z",
+  "processed_at": "2026-04-05T10:15:33Z",
+  "schema_version": "1.0.0",
+  "payload": {
+    "lat": -33.8688,
+    "lon": 151.2093
+  },
+  "confidence": 0.98,
+  "dedupe_key": "src_campus_gps_1:veh_42:2026-04-05T10:15:30Z"
+}

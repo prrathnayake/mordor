@@ -1,0 +1,162 @@
+{
+  "name": "campus-after-hours-incident",
+  "description": "Replay ordering fixture with delayed ingest times and derived events sharing the same observed timestamp.",
+  "events": [
+    {
+      "event_id": "evt_position_001",
+      "event_type": "position_observed",
+      "object_id": "veh_42",
+      "source_id": "src_campus_gps_1",
+      "observed_at": "2026-04-05T21:59:59Z",
+      "ingested_at": "2026-04-05T22:00:05Z",
+      "processed_at": "2026-04-05T22:00:06Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "lat": -33.8687,
+        "lon": 151.2091,
+        "speed_mps": 8.1,
+        "heading_deg": 82.5,
+        "status": "moving"
+      },
+      "provenance": {
+        "adapter": "telemetry_adapter",
+        "adapter_version": "1.0.0",
+        "raw_ref": "raw_position_001"
+      },
+      "confidence": 0.99,
+      "dedupe_key": "src_campus_gps_1:veh_42:2026-04-05T21:59:59Z",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [151.2091, -33.8687]
+      },
+      "altitude_m": 0,
+      "heading_deg": 82.5,
+      "speed_mps": 8.1,
+      "related_object_ids": ["zone_restricted_a"],
+      "parent_event_id": null,
+      "trace_id": "trace_incident_001"
+    },
+    {
+      "event_id": "evt_camera_001",
+      "event_type": "camera_observed",
+      "object_id": "veh_42",
+      "source_id": "src_campus_camera_1",
+      "observed_at": "2026-04-05T22:00:00Z",
+      "ingested_at": "2026-04-05T22:00:09Z",
+      "processed_at": "2026-04-05T22:00:10Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "lat": -33.8686,
+        "lon": 151.2094,
+        "status": "visual_confirmation",
+        "camera_id": "cam_gate_7"
+      },
+      "provenance": {
+        "adapter": "camera_metadata_adapter",
+        "adapter_version": "1.0.0",
+        "raw_ref": "raw_camera_001"
+      },
+      "confidence": 0.92,
+      "dedupe_key": "src_campus_camera_1:veh_42:2026-04-05T22:00:00Z",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [151.2094, -33.8686]
+      },
+      "altitude_m": 0,
+      "heading_deg": null,
+      "speed_mps": null,
+      "related_object_ids": ["cam_gate_7"],
+      "parent_event_id": null,
+      "trace_id": "trace_incident_001"
+    },
+    {
+      "event_id": "evt_position_002",
+      "event_type": "position_observed",
+      "object_id": "veh_42",
+      "source_id": "src_campus_gps_1",
+      "observed_at": "2026-04-05T22:00:00Z",
+      "ingested_at": "2026-04-05T22:00:01Z",
+      "processed_at": "2026-04-05T22:00:02Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "lat": -33.8685,
+        "lon": 151.2095,
+        "speed_mps": 3.2,
+        "heading_deg": 90,
+        "status": "slow_moving"
+      },
+      "provenance": {
+        "adapter": "telemetry_adapter",
+        "adapter_version": "1.0.0",
+        "raw_ref": "raw_position_002"
+      },
+      "confidence": 0.98,
+      "dedupe_key": "src_campus_gps_1:veh_42:2026-04-05T22:00:00Z",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [151.2095, -33.8685]
+      },
+      "altitude_m": 0,
+      "heading_deg": 90,
+      "speed_mps": 3.2,
+      "related_object_ids": ["zone_restricted_a"],
+      "parent_event_id": null,
+      "trace_id": "trace_incident_001"
+    },
+    {
+      "event_id": "evt_zone_entered_001",
+      "event_type": "zone_entered",
+      "object_id": "veh_42",
+      "source_id": "src_rule_engine_1",
+      "observed_at": "2026-04-05T22:00:00Z",
+      "ingested_at": "2026-04-05T22:00:03Z",
+      "processed_at": "2026-04-05T22:00:03Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "zone_id": "zone_restricted_a",
+        "status": "entered_restricted_zone"
+      },
+      "provenance": {
+        "adapter": "rule_projection",
+        "adapter_version": "1.0.0",
+        "raw_ref": "derived_from_evt_position_002"
+      },
+      "confidence": 0.97,
+      "dedupe_key": "src_rule_engine_1:veh_42:2026-04-05T22:00:00Z:zone_entered",
+      "related_object_ids": ["zone_restricted_a"],
+      "parent_event_id": "evt_position_002",
+      "trace_id": "trace_incident_001"
+    },
+    {
+      "event_id": "evt_alert_opened_001",
+      "event_type": "alert_opened",
+      "object_id": "veh_42",
+      "source_id": "src_rule_engine_1",
+      "observed_at": "2026-04-05T22:00:00Z",
+      "ingested_at": "2026-04-05T22:00:04Z",
+      "processed_at": "2026-04-05T22:00:04Z",
+      "schema_version": "1.0.0",
+      "payload": {
+        "rule_id": "after_hours_zone_v1",
+        "status": "alert_open"
+      },
+      "provenance": {
+        "adapter": "rule_projection",
+        "adapter_version": "1.0.0",
+        "raw_ref": "derived_from_evt_zone_entered_001"
+      },
+      "confidence": 0.95,
+      "dedupe_key": "src_rule_engine_1:veh_42:2026-04-05T22:00:00Z:alert_opened",
+      "related_object_ids": ["zone_restricted_a"],
+      "parent_event_id": "evt_zone_entered_001",
+      "trace_id": "trace_incident_001"
+    }
+  ],
+  "expected_event_order": [
+    "evt_position_001",
+    "evt_camera_001",
+    "evt_position_002",
+    "evt_zone_entered_001",
+    "evt_alert_opened_001"
+  ]
+}

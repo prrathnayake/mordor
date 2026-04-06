@@ -1,0 +1,15 @@
+{
+  "alert_id": "alrt_after_hours_zone_001",
+  "rule_id": "after_hours_zone_v1",
+  "severity": "high",
+  "status": "open",
+  "opened_at": "2026-04-05T22:00:04Z",
+  "updated_at": "2026-04-05T22:00:04Z",
+  "closed_at": null,
+  "schema_version": "1.0.0",
+  "evidence_event_ids": ["evt_zone_entered_001", "evt_alert_opened_001"],
+  "evidence_object_ids": ["veh_42", "zone_restricted_a"],
+  "summary": "Vehicle entered a restricted zone after hours.",
+  "explanation": "Rule after_hours_zone_v1 matched vehicle veh_42 entering zone_restricted_a at 22:00 UTC.",
+  "confidence": 0.94
+}

@@ -1,0 +1,13 @@
+export const SOURCE_SCHEMA_VERSION = "1.0.0";
+export const TRACKED_OBJECT_SCHEMA_VERSION = "1.0.0";
+export const CANONICAL_EVENT_SCHEMA_VERSION = "1.0.0";
+export const OBJECT_STATE_SCHEMA_VERSION = "1.0.0";
+export const ALERT_SCHEMA_VERSION = "1.0.0";
+
+export const SCHEMA_VERSIONS = {
+  source: SOURCE_SCHEMA_VERSION,
+  trackedObject: TRACKED_OBJECT_SCHEMA_VERSION,
+  canonicalEvent: CANONICAL_EVENT_SCHEMA_VERSION,
+  objectState: OBJECT_STATE_SCHEMA_VERSION,
+  alert: ALERT_SCHEMA_VERSION,
+} as const;

@@ -1,0 +1,1899 @@
+/**
+ * MORDOR Tactical Operations Center
+ * Main application logic for the tactical UI
+ * Integrates with existing Chrona Twin backend functionality
+ */
+
+const apiBaseUrl = window.__APP_CONFIG__.apiBaseUrl;
+
+// ===== STATE =====
+let viewer;
+const objectEntities = new Map();
+let trackEntity = null;
+let selectedObjectId = null;
+let currentMode = "replay";
+let eventSource = null;
+let lastSequence = 0;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+const latestStates = new Map();
+let _connectionState = "disconnected";
+
+const sessionState = {
+  token: null,
+  user: null,
+  role: null,
+  isAuthenticated: false,
+};
+
+const replayState = {
+  items: [],
+  currentIndex: 0,
+  intervalId: null,
+  isPlaying: false,
+};
+
+const layerState = {
+  flights: true,
+  military: false,
+  earthquakes: false,
+  satellites: false,
+  traffic: false,
+  weather: false,
+  cctv: true,
+  bikeshare: false,
+};
+
+// External data layer state
+const externalLayerState = {
+  layers: new Map(), // layerId -> { status, count, lastUpdate, enabled, provider, errorMessage }
+  entities: new Map(), // layerId -> Map of entityId -> Cesium entity
+};
+
+// Layer status colors for UI
+const LAYER_STATUS_COLORS = {
+  real: "#22c55e", // Green
+  degraded: "#f59e0b", // Amber
+  unavailable: "#ef4444", // Red
+};
+
+const visualState = {
+  preset: "crt",
+  bloom: 20,
+  sharpen: 30,
+  pixelate: 0,
+  distortion: 10,
+  instability: 5,
+  hud: true,
+  layout: "expanded",
+  detect: false,
+  panoptic: false,
+};
+
+// ===== DOM REFERENCES =====
+const dom = {
+  // Header
+  modeValue: document.getElementById("mode-value"),
+  statusMessage: document.getElementById("status-message"),
+  connectionText: document.getElementById("connection-text"),
+  sessionBadge: document.getElementById("session-badge"),
+  authButton: document.getElementById("auth-button"),
+  timeDisplay: document.getElementById("time-display"),
+  activeLayersCount: document.getElementById("active-layers-count"),
+
+  // Login Modal
+  loginModal: document.getElementById("login-modal"),
+  closeLogin: document.getElementById("close-login"),
+  usernameInput: document.getElementById("username"),
+  passwordInput: document.getElementById("password"),
+  submitLogin: document.getElementById("submit-login"),
+  cancelLogin: document.getElementById("cancel-login"),
+
+  // Query Modal
+  queryModal: document.getElementById("query-modal"),
+  closeQuery: document.getElementById("close-query"),
+  startAt: document.getElementById("start-at"),
+  endAt: document.getElementById("end-at"),
+  objectId: document.getElementById("object-id"),
+  loadReplayBtn: document.getElementById("load-replay"),
+  cancelQuery: document.getElementById("cancel-query"),
+  queryFormToggle: document.getElementById("query-form-toggle"),
+
+  // Alert Modal
+  alertModal: document.getElementById("alert-modal"),
+  closeAlert: document.getElementById("close-alert"),
+  alertDetailContent: document.getElementById("alert-detail-content"),
+  alertActions: document.getElementById("alert-actions"),
+
+  // Footer Controls
+  playReplay: document.getElementById("play-replay"),
+  pauseReplay: document.getElementById("pause-replay"),
+  stepReplay: document.getElementById("step-replay"),
+  resetReplay: document.getElementById("reset-replay"),
+  timelineSlider: document.getElementById("timeline-slider"),
+  timelinePosition: document.getElementById("timeline-position"),
+  replayTimestamp: document.getElementById("replay-timestamp"),
+  modeLive: document.getElementById("mode-live"),
+  modeReplay: document.getElementById("mode-replay"),
+  loadReplayButton: document.getElementById("load-replay-btn"),
+
+  // Alerts Strip
+  alertsCount: document.getElementById("alerts-count"),
+  alertsListMini: document.getElementById("alerts-list-mini"),
+
+  // Source Health
+  sourceList: document.getElementById("source-list"),
+  healthIndicator: document.getElementById("health-indicator"),
+
+  // Layers
+  layerFlights: document.getElementById("layer-flights"),
+  layerMilitary: document.getElementById("layer-military"),
+  layerEarthquakes: document.getElementById("layer-earthquakes"),
+  layerSatellites: document.getElementById("layer-satellites"),
+  layerTraffic: document.getElementById("layer-traffic"),
+  layerWeather: document.getElementById("layer-weather"),
+  layerCctv: document.getElementById("layer-cctv"),
+  layerBikeshare: document.getElementById("layer-bikeshare"),
+
+  // Visual Controls
+  presetButtons: document.querySelectorAll(".preset-button"),
+  bloomSlider: document.getElementById("bloom-slider"),
+  sharpenSlider: document.getElementById("sharpen-slider"),
+  pixelateSlider: document.getElementById("pixelate-slider"),
+  distortionSlider: document.getElementById("distortion-slider"),
+  instabilitySlider: document.getElementById("instability-slider"),
+  toggleHud: document.getElementById("toggle-hud"),
+  layoutSelect: document.getElementById("layout-select"),
+  toggleDetect: document.getElementById("toggle-detect"),
+  togglePanoptic: document.getElementById("toggle-panoptic"),
+
+  // Inspector
+  inspectorContent: document.getElementById("inspector-content"),
+
+  // CCTV
+  cctvContent: document.getElementById("cctv-content"),
+
+  // Events Panel
+  eventsPanel: document.getElementById("events-panel"),
+  closeEvents: document.getElementById("close-events"),
+  eventList: document.getElementById("event-list"),
+
+  // Viewport
+  coordinates: document.getElementById("coordinates"),
+  zoomLevel: document.getElementById("zoom-level"),
+};
+
+// ===== UTILITY FUNCTIONS =====
+function formatTime(date) {
+  return date.toLocaleTimeString("en-US", { hour12: false });
+}
+
+function updateTime() {
+  dom.timeDisplay.textContent = formatTime(new Date());
+}
+
+function updateStatus(message) {
+  dom.statusMessage.textContent = message.toUpperCase();
+}
+
+function updateConnectionStatus(state, details = "") {
+  _connectionState = state;
+  const stateLabels = {
+    disconnected: "DISCONNECTED",
+    connecting: "CONNECTING...",
+    connected: "CONNECTED",
+    reconnecting: `RECONNECTING ${reconnectAttempts}/${maxReconnectAttempts}`,
+    error: "CONNECTION ERROR",
+  };
+  dom.connectionText.textContent = details
+    ? `${stateLabels[state]}: ${details}`.toUpperCase()
+    : stateLabels[state];
+}
+
+function getAuthHeaders() {
+  if (!sessionState.token) return {};
+  return { Authorization: `Bearer ${sessionState.token}` };
+}
+
+function canManageAlerts() {
+  return (
+    sessionState.isAuthenticated &&
+    (sessionState.role === "operator" || sessionState.role === "admin")
+  );
+}
+
+function updateActiveLayersCount() {
+  const activeCount = Object.values(layerState).filter(Boolean).length;
+  dom.activeLayersCount.textContent = `${activeCount}/8`;
+}
+
+// ===== AUTHENTICATION =====
+function updateSessionUI() {
+  // Query fresh from document to handle any DOM changes
+  const sessionStatus = document.querySelector("#session-badge .session-status");
+  const authButton = document.querySelector("#auth-button");
+
+  if (sessionState.isAuthenticated && sessionState.user) {
+    if (sessionStatus)
+      sessionStatus.textContent = `${sessionState.user.username.toUpperCase()} (${sessionState.role.toUpperCase()})`;
+    if (authButton) authButton.textContent = "LOGOUT";
+  } else {
+    if (sessionStatus) sessionStatus.textContent = "NO SESSION";
+    if (authButton) authButton.textContent = "LOGIN";
+  }
+  loadAlerts();
+}
+
+function handleAuthClick() {
+  if (sessionState.isAuthenticated) {
+    logout();
+  } else {
+    dom.loginModal.classList.remove("hidden");
+  }
+}
+
+async function login(username, password) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await response.json();
+    if (response.ok && data.token) {
+      sessionState.token = data.token;
+      sessionState.user = data.user;
+      sessionState.role = data.user.role;
+      sessionState.isAuthenticated = true;
+      localStorage.setItem("auth_token", data.token);
+      updateSessionUI();
+      dom.loginModal.classList.add("hidden");
+      updateStatus("AUTHENTICATED");
+    } else {
+      alert(data.error || "Login failed");
+    }
+  } catch (error) {
+    alert(`Login failed: ${error.message}`);
+  }
+}
+
+function logout() {
+  if (sessionState.token) {
+    fetch(`${apiBaseUrl}/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ token: sessionState.token }),
+    }).catch(() => {});
+  }
+  sessionState.token = null;
+  sessionState.user = null;
+  sessionState.role = null;
+  sessionState.isAuthenticated = false;
+  localStorage.removeItem("auth_token");
+  updateSessionUI();
+  updateStatus("LOGGED OUT");
+}
+
+function handleUnauthorized(response) {
+  if (response.status === 401 || response.status === 403) {
+    logout();
+    return true;
+  }
+  return false;
+}
+
+async function validateSession(token) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/auth/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return { valid: true, user: data.user };
+    } else if (response.status === 401) {
+      return { valid: false };
+    }
+  } catch {
+    return { valid: false };
+  }
+  return { valid: false };
+}
+
+async function initSession() {
+  const savedToken = localStorage.getItem("auth_token");
+  if (savedToken) {
+    const validation = await validateSession(savedToken);
+    if (validation.valid && validation.user) {
+      sessionState.token = savedToken;
+      sessionState.user = validation.user;
+      sessionState.role = validation.user.role;
+      sessionState.isAuthenticated = true;
+      updateSessionUI();
+      updateStatus("SESSION RESTORED");
+    } else {
+      localStorage.removeItem("auth_token");
+      sessionState.isAuthenticated = false;
+      updateSessionUI();
+    }
+  }
+
+  // Auth button event
+  document.getElementById("auth-button").addEventListener("click", handleAuthClick);
+
+  // Login modal events
+  dom.submitLogin.addEventListener("click", () => {
+    const username = dom.usernameInput.value.trim();
+    const password = dom.passwordInput.value;
+    if (username && password) {
+      login(username, password);
+    }
+  });
+
+  dom.cancelLogin.addEventListener("click", () => {
+    dom.loginModal.classList.add("hidden");
+    dom.usernameInput.value = "";
+    dom.passwordInput.value = "";
+  });
+
+  dom.closeLogin.addEventListener("click", () => {
+    dom.loginModal.classList.add("hidden");
+  });
+}
+
+// ===== CESIUM / MAP FUNCTIONS =====
+function cartesianFromLatLon(lat, lon, height = 0) {
+  return Cesium.Cartesian3.fromDegrees(lon, lat, height);
+}
+
+function initCesium() {
+  Cesium.Ion.defaultAccessToken =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE3ZjdjZS03YmEwLTQwNzctOWQyMy04NzkyOTYxMTQxMGEiLCJpZCI6MjcwMTY1LCJpYXQiOjE3MzQwMjE1NjN9.tlt-e_ImR_hYVpPJmxc6gd4Z7bF0sWb8rHbREgyU6N8";
+
+  viewer = new Cesium.Viewer("cesiumContainer", {
+    terrain: Cesium.Terrain.fromWorldTerrain(),
+    sceneMode: Cesium.SceneMode.SCENE3D,
+    baseLayerPicker: true,
+    geocoder: true,
+    homeButton: true,
+    sceneModePicker: true,
+    navigationHelpButton: true,
+    animation: false,
+    timeline: false,
+    fullscreenButton: false,
+  });
+
+  // Set initial view to Sydney, Australia
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(151.2093, -33.8688, 10000),
+  });
+
+  // Handle object selection
+  const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+  handler.setInputAction((click) => {
+    const pickedObject = viewer.scene.pick(click.position);
+    if (Cesium.defined(pickedObject) && pickedObject.id?.properties) {
+      const objectId = pickedObject.id.properties.objectId.getValue();
+      if (objectId) {
+        selectObject(objectId);
+      }
+    }
+  }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  // Update coordinates display
+  viewer.camera.changed.addEventListener(() => {
+    const cartographic = viewer.camera.positionCartographic;
+    const lat = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
+    const lon = Cesium.Math.toDegrees(cartographic.longitude).toFixed(4);
+    dom.coordinates.textContent = `${lat}, ${lon}`;
+
+    // Approximate zoom level
+    const height = cartographic.height;
+    const zoom = Math.max(1, Math.min(20, Math.round(20 - Math.log2(height / 100))));
+    dom.zoomLevel.textContent = `ZOOM: ${zoom}`;
+  });
+}
+
+function renderMapMarkers() {
+  // Remove all existing object entities
+  for (const entity of objectEntities.values()) {
+    viewer.entities.remove(entity);
+  }
+  objectEntities.clear();
+
+  // Only render if flights layer is enabled
+  if (!layerState.flights) return;
+
+  const states = currentMode === "live" ? latestStates : getReplayStatesAtCurrentIndex();
+
+  for (const [objectId, state] of states) {
+    if (!state.position) continue;
+
+    const isSelected = selectedObjectId === objectId;
+
+    let color;
+    if (currentMode === "live") {
+      color = Cesium.Color.fromCssColorString("#00ff41");
+    } else {
+      color = Cesium.Color.fromCssColorString("#f3d27a");
+    }
+
+    if (visualState.preset === "nvg") {
+      color = Cesium.Color.fromCssColorString("#39ff14");
+    } else if (visualState.preset === "flir") {
+      color = Cesium.Color.fromCssColorString(isSelected ? "#ff6b35" : "#ffaa00");
+    }
+
+    const outlineColor = isSelected
+      ? Cesium.Color.fromCssColorString("#ffffff")
+      : Cesium.Color.fromCssColorString("#1b1b18");
+
+    const entity = viewer.entities.add({
+      position: cartesianFromLatLon(state.position.lat, state.position.lon),
+      ellipse: {
+        semiMinorAxis: isSelected ? 25 : 20,
+        semiMajorAxis: isSelected ? 25 : 20,
+        material: color,
+        outline: true,
+        outlineColor: outlineColor,
+        outlineWidth: isSelected ? 4 : 2,
+      },
+      properties: {
+        objectId: objectId,
+      },
+    });
+
+    objectEntities.set(objectId, entity);
+  }
+}
+
+function getReplayStatesAtCurrentIndex() {
+  const states = new Map();
+  if (replayState.items.length === 0) return states;
+
+  for (let i = 0; i <= replayState.currentIndex; i++) {
+    const item = replayState.items[i];
+    if (item?.state_after_event) {
+      states.set(item.event.object_id, item.state_after_event);
+    }
+  }
+  return states;
+}
+
+function renderTrack() {
+  if (trackEntity) {
+    viewer.entities.remove(trackEntity);
+    trackEntity = null;
+  }
+
+  if (!layerState.flights) return;
+  if (replayState.items.length === 0 && currentMode === "replay") return;
+
+  const objectId = dom.objectId.value.trim() || "veh_42";
+  const trackPoints = [];
+
+  if (currentMode === "replay") {
+    for (let i = 0; i <= replayState.currentIndex; i++) {
+      const item = replayState.items[i];
+      if (!item || item.event.object_id !== objectId) continue;
+      const pos = item.state_after_event?.position;
+      if (pos) trackPoints.push(cartesianFromLatLon(pos.lat, pos.lon));
+    }
+  } else {
+    const state = latestStates.get(objectId);
+    if (state?.position) {
+      trackPoints.push(cartesianFromLatLon(state.position.lat, state.position.lon));
+    }
+  }
+
+  if (trackPoints.length < 2) return;
+
+  let trackColor =
+    currentMode === "live"
+      ? Cesium.Color.fromCssColorString("#00ff41")
+      : Cesium.Color.fromCssColorString("#745c2a");
+
+  if (visualState.preset === "nvg") {
+    trackColor = Cesium.Color.fromCssColorString("#39ff14");
+  } else if (visualState.preset === "flir") {
+    trackColor = Cesium.Color.fromCssColorString("#ff6b35");
+  }
+
+  trackEntity = viewer.entities.add({
+    polyline: {
+      positions: trackPoints,
+      width: 3,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: trackColor,
+      }),
+    },
+  });
+}
+
+function selectObject(objectId) {
+  selectedObjectId = objectId;
+  const state = currentMode === "live" ? latestStates.get(objectId) : getCurrentReplayState();
+  if (state) {
+    updateInspectorFromState(objectId, state);
+    updateCCTVSection(objectId, state);
+  }
+  renderMapMarkers();
+}
+
+function getCurrentReplayState() {
+  if (replayState.items.length === 0) return null;
+  const safeIndex = Math.min(replayState.currentIndex, replayState.items.length - 1);
+  return replayState.items[safeIndex]?.state_after_event;
+}
+
+// ===== INSPECTOR =====
+function updateInspectorFromState(objectId, state) {
+  let html = `
+    <div class="inspector-field">
+      <span class="inspector-label">Object ID</span>
+      <span class="inspector-value">${objectId}</span>
+    </div>
+  `;
+
+  if (state) {
+    html += `
+      <div class="inspector-field">
+        <span class="inspector-label">As Of</span>
+        <span class="inspector-value">${state.as_of || "--"}</span>
+      </div>
+    `;
+
+    if (state.position) {
+      html += `
+        <div class="inspector-field">
+          <span class="inspector-label">Position</span>
+          <span class="inspector-value">${state.position.lat.toFixed(6)}, ${state.position.lon.toFixed(6)}</span>
+        </div>
+      `;
+    }
+
+    if (state.velocity) {
+      html += `
+        <div class="inspector-field">
+          <span class="inspector-label">Velocity</span>
+          <span class="inspector-value">
+            ${state.velocity.speed_mps ? `${state.velocity.speed_mps.toFixed(1)} m/s` : "N/A"}
+            ${state.velocity.heading_deg ? `${state.velocity.heading_deg.toFixed(1)}°` : ""}
+          </span>
+        </div>
+      `;
+    }
+
+    if (state.status) {
+      html += `
+        <div class="inspector-field">
+          <span class="inspector-label">Status</span>
+          <span class="inspector-value">${state.status}</span>
+        </div>
+      `;
+    }
+
+    if (state.source_id) {
+      html += `
+        <div class="inspector-field">
+          <span class="inspector-label">Source</span>
+          <span class="inspector-value">${state.source_id}</span>
+        </div>
+      `;
+    }
+
+    if (state.last_event_id) {
+      html += `
+        <div class="inspector-field">
+          <span class="inspector-label">Last Event</span>
+          <span class="inspector-value">${state.last_event_id}</span>
+        </div>
+      `;
+    }
+  }
+
+  dom.inspectorContent.innerHTML = html;
+}
+
+// ===== CCTV SECTION =====
+function updateCCTVSection(objectId, state) {
+  // Check if CCTV layer is enabled
+  if (!layerState.cctv) {
+    dom.cctvContent.innerHTML = `
+      <div class="cctv-placeholder">
+        <div class="placeholder-icon">📷</div>
+        <div class="placeholder-text">CCTV layer disabled</div>
+        <div class="placeholder-hint">Enable CCTV Mesh layer to view camera data</div>
+      </div>
+    `;
+    return;
+  }
+
+  // Check if there's a camera source associated
+  const hasCameraSource = state?.source_id?.includes("camera") || state?.source_id?.includes("cam");
+  const isCameraObject = objectId.includes("camera") || objectId.includes("cam");
+
+  if (hasCameraSource || isCameraObject) {
+    const sourceId = state?.source_id || objectId;
+    dom.cctvContent.innerHTML = `
+      <div class="cctv-info">
+        <div class="cctv-source">SOURCE: ${sourceId}</div>
+        <div class="cctv-status">Status: SNAPSHOT ONLY</div>
+      </div>
+      <div class="cctv-placeholder">
+        <div class="placeholder-icon">📷</div>
+        <div class="placeholder-text">NO LIVE VIEW AVAILABLE</div>
+        <div class="placeholder-hint">Camera snapshots only - no real-time video stream</div>
+        <div class="placeholder-hint" style="margin-top: 8px; color: var(--accent-primary);">
+          Nearest source: ${sourceId}
+        </div>
+        <div class="placeholder-hint" style="margin-top: 4px;">
+          Last update: ${state?.as_of || "Unknown"}
+        </div>
+      </div>
+    `;
+  } else {
+    dom.cctvContent.innerHTML = `
+      <div class="cctv-placeholder">
+        <div class="placeholder-icon">📷</div>
+        <div class="placeholder-text">NO CAMERA ASSOCIATED</div>
+        <div class="placeholder-hint">Selected object has no linked camera source</div>
+        ${
+          state?.source_id
+            ? `
+          <div class="placeholder-hint" style="margin-top: 8px; color: var(--accent-primary);">
+            Nearest source: ${state.source_id}
+          </div>
+        `
+            : ""
+        }
+      </div>
+    `;
+  }
+}
+
+// ===== REPLAY FUNCTIONS =====
+function stopPlayback() {
+  if (replayState.intervalId) {
+    window.clearInterval(replayState.intervalId);
+    replayState.intervalId = null;
+  }
+  replayState.isPlaying = false;
+}
+
+function renderReplay() {
+  const itemCount = replayState.items.length;
+  const safeIndex = Math.min(replayState.currentIndex, Math.max(itemCount - 1, 0));
+  replayState.currentIndex = safeIndex;
+
+  dom.timelineSlider.max = String(Math.max(itemCount - 1, 0));
+  dom.timelineSlider.value = String(safeIndex);
+  dom.timelinePosition.textContent = `EVT ${itemCount === 0 ? 0 : safeIndex + 1}/${itemCount}`;
+
+  const currentItem = replayState.items[safeIndex];
+
+  if (currentItem) {
+    const timestamp = new Date(currentItem.event.observed_at);
+    dom.replayTimestamp.textContent = timestamp.toLocaleTimeString("en-US", { hour12: false });
+  } else {
+    dom.replayTimestamp.textContent = "--:--:--";
+  }
+
+  dom.eventList.innerHTML = replayState.items
+    .map((item, index) => {
+      const isActive = index === safeIndex;
+      return `
+        <li class="${isActive ? "active-item" : ""}" data-index="${index}">
+          ${item.sequence}. ${item.event.event_id}
+        </li>
+      `;
+    })
+    .join("");
+
+  // Add click handlers to event list items
+  dom.eventList.querySelectorAll("li").forEach((li) => {
+    li.addEventListener("click", () => {
+      replayState.currentIndex = parseInt(li.dataset.index, 10);
+      renderReplay();
+    });
+  });
+
+  renderMapMarkers();
+  renderTrack();
+}
+
+async function loadReplay() {
+  stopPlayback();
+  updateStatus("LOADING REPLAY...");
+
+  const requestBody = {
+    start_at: dom.startAt.value.trim(),
+    end_at: dom.endAt.value.trim(),
+    object_id: dom.objectId.value.trim() || undefined,
+  };
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/replay/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      replayState.items = [];
+      replayState.currentIndex = 0;
+      updateStatus(payload.message || payload.error || "REPLAY FAILED");
+      renderReplay();
+      return;
+    }
+
+    replayState.items = payload.items;
+    replayState.currentIndex = 0;
+    updateStatus(`LOADED ${payload.item_count} ITEMS`);
+    renderReplay();
+
+    // Show events panel
+    dom.eventsPanel.classList.remove("hidden");
+
+    if (replayState.items.length > 0) {
+      const firstItem = replayState.items[0];
+      if (firstItem.state_after_event?.position) {
+        const pos = firstItem.state_after_event.position;
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(pos.lon, pos.lat, 1000),
+          duration: 1,
+        });
+      }
+    }
+  } catch (error) {
+    replayState.items = [];
+    replayState.currentIndex = 0;
+    updateStatus(error instanceof Error ? error.message.toUpperCase() : "LOAD FAILED");
+    renderReplay();
+  }
+}
+
+function stepReplay() {
+  if (replayState.items.length === 0) {
+    updateStatus("NO REPLAY LOADED");
+    return;
+  }
+
+  replayState.currentIndex = Math.min(replayState.currentIndex + 1, replayState.items.length - 1);
+  renderReplay();
+}
+
+function playReplay() {
+  if (replayState.items.length === 0) {
+    updateStatus("NO REPLAY LOADED");
+    return;
+  }
+
+  stopPlayback();
+  updateStatus("PLAYING");
+  replayState.isPlaying = true;
+
+  replayState.intervalId = window.setInterval(() => {
+    if (replayState.currentIndex >= replayState.items.length - 1) {
+      stopPlayback();
+      updateStatus("REPLAY ENDED");
+      return;
+    }
+
+    stepReplay();
+  }, 1000);
+}
+
+function pauseReplay() {
+  stopPlayback();
+  updateStatus("PAUSED");
+}
+
+function resetReplay() {
+  stopPlayback();
+  replayState.currentIndex = 0;
+  renderReplay();
+  updateStatus("REPLAY RESET");
+}
+
+// ===== MODE SWITCHING =====
+function switchToLiveMode() {
+  currentMode = "live";
+  dom.modeLive.classList.add("active");
+  dom.modeReplay.classList.remove("active");
+  dom.modeValue.textContent = "LIVE";
+  dom.modeValue.classList.add("live");
+
+  // Hide replay-specific UI
+  dom.eventsPanel.classList.add("hidden");
+
+  updateStatus("CONNECTING TO LIVE FEED...");
+  connectToLiveEvents();
+  loadLatestState();
+  loadSourceHealth();
+  renderMapMarkers();
+}
+
+function switchToReplayMode() {
+  currentMode = "replay";
+  dom.modeLive.classList.remove("active");
+  dom.modeReplay.classList.add("active");
+  dom.modeValue.textContent = "REPLAY";
+  dom.modeValue.classList.remove("live");
+
+  disconnectFromLiveEvents();
+  updateStatus("REPLAY MODE");
+  renderReplay();
+}
+
+// ===== LIVE EVENTS =====
+function connectToLiveEvents() {
+  disconnectFromLiveEvents();
+  updateConnectionStatus("connecting");
+
+  const url = `${apiBaseUrl}/live/events${lastSequence > 0 ? `?since_sequence=${lastSequence}` : ""}`;
+  eventSource = new EventSource(url);
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "connection_info") {
+        if (lastSequence === 0) {
+          loadLatestState();
+        }
+        updateConnectionStatus("connected");
+        reconnectAttempts = 0;
+        lastSequence = data.payload.server_sequence;
+        updateStatus("LIVE FEED CONNECTED");
+      } else if (data.type === "object_state_update") {
+        if (data.sequence) {
+          lastSequence = data.sequence;
+        }
+        handleLiveStateUpdate(data.payload);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  };
+
+  eventSource.onerror = () => {
+    eventSource?.close();
+    eventSource = null;
+
+    if (reconnectAttempts < maxReconnectAttempts) {
+      reconnectAttempts++;
+      updateConnectionStatus("reconnecting");
+
+      const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000);
+      setTimeout(() => {
+        if (currentMode === "live") {
+          connectToLiveEvents();
+        }
+      }, delay);
+    } else {
+      updateConnectionStatus("error", "max attempts");
+      updateStatus("LIVE FEED DISCONNECTED");
+    }
+  };
+
+  eventSource.onopen = () => {
+    if (reconnectAttempts === 0) {
+      updateConnectionStatus("connected");
+    }
+  };
+}
+
+function disconnectFromLiveEvents() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  reconnectAttempts = 0;
+  updateConnectionStatus("disconnected");
+}
+
+function handleLiveStateUpdate(state) {
+  latestStates.set(state.object_id, state);
+
+  if (selectedObjectId === state.object_id) {
+    updateInspectorFromState(state.object_id, state);
+    updateCCTVSection(state.object_id, state);
+  }
+
+  renderMapMarkers();
+  renderTrack();
+}
+
+async function loadLatestState() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/state/latest`);
+    const payload = await response.json();
+
+    if (payload.states) {
+      latestStates.clear();
+      for (const state of payload.states) {
+        latestStates.set(state.object_id, state);
+      }
+      renderMapMarkers();
+    }
+  } catch (error) {
+    console.error("Failed to load latest state:", error);
+  }
+}
+
+// ===== SOURCE HEALTH =====
+async function loadSourceHealth() {
+  try {
+    dom.sourceList.innerHTML = '<div class="source-item loading">Loading...</div>';
+    const response = await fetch(`${apiBaseUrl}/health/sources`);
+    const payload = await response.json();
+
+    if (payload.sources && payload.sources.length > 0) {
+      const activeSources = payload.sources.filter((s) => s.status === "active").length;
+      dom.healthIndicator.textContent = `${activeSources}/${payload.sources.length}`;
+
+      dom.sourceList.innerHTML = payload.sources
+        .map(
+          (s) => `
+            <div class="source-item">
+              <span class="source-id">${s.source_id}</span>
+              <span class="source-status ${s.status}">${s.status}</span>
+            </div>
+          `,
+        )
+        .join("");
+    } else {
+      dom.healthIndicator.textContent = "0/0";
+      dom.sourceList.innerHTML = '<div class="source-item">No sources</div>';
+    }
+  } catch (error) {
+    console.error("Failed to load source health:", error);
+    dom.healthIndicator.textContent = "ERR";
+    dom.sourceList.innerHTML = '<div class="source-item error">Failed to load</div>';
+  }
+}
+
+// ===== ALERTS =====
+async function loadAlerts() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/alerts?status=open&limit=10`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (handleUnauthorized(response)) {
+      dom.alertsCount.textContent = "0";
+      dom.alertsCount.classList.add("zero");
+      dom.alertsListMini.innerHTML = '<span class="no-alerts">Auth required</span>';
+      return;
+    }
+
+    const data = await response.json();
+
+    if (data.alerts && data.alerts.length > 0) {
+      dom.alertsCount.textContent = String(data.alerts.length);
+      dom.alertsCount.classList.remove("zero");
+
+      dom.alertsListMini.innerHTML = data.alerts
+        .slice(0, 5)
+        .map(
+          (alert) => `
+            <div class="alert-chip ${alert.severity}" data-alert-id="${alert.alert_id}">
+              ${alert.severity}
+            </div>
+          `,
+        )
+        .join("");
+
+      // Add click handlers
+      dom.alertsListMini.querySelectorAll(".alert-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          showAlertDetail(chip.dataset.alertId);
+        });
+      });
+    } else {
+      dom.alertsCount.textContent = "0";
+      dom.alertsCount.classList.add("zero");
+      dom.alertsListMini.innerHTML = '<span class="no-alerts">No active alerts</span>';
+    }
+  } catch (error) {
+    console.error("Failed to load alerts:", error);
+    dom.alertsCount.textContent = "ERR";
+    dom.alertsListMini.innerHTML = '<span class="no-alerts">Error loading</span>';
+  }
+}
+
+async function showAlertDetail(alertId) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/alerts/${alertId}`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (handleUnauthorized(response)) {
+      alert("Session expired. Please login again.");
+      return;
+    }
+
+    const alertData = await response.json();
+
+    const evidenceObjects = alertData.evidence_object_ids?.join(", ") || "None";
+
+    let triggeringEventsHtml = "";
+    if (alertData.evidence_event_ids && alertData.evidence_event_ids.length > 0) {
+      triggeringEventsHtml = `<div class="alert-event-list">
+        ${alertData.evidence_event_ids
+          .map(
+            (eventId) => `
+              <button class="alert-event-link" data-event-id="${eventId}">${eventId}</button>
+            `,
+          )
+          .join("")}
+      </div>`;
+    } else {
+      triggeringEventsHtml = "<p>None</p>";
+    }
+
+    dom.alertDetailContent.innerHTML = `
+      <div class="alert-detail-summary">${alertData.summary}</div>
+      <div class="alert-detail-meta">
+        <span class="alert-severity ${alertData.severity}">${alertData.severity}</span>
+        <span class="alert-status ${alertData.status}">${alertData.status}</span>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Explanation</div>
+        <div class="alert-detail-value">${alertData.explanation}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Rule</div>
+        <div class="alert-detail-value">${alertData.rule_id}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Triggering Events</div>
+        ${triggeringEventsHtml}
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Related Objects</div>
+        <div class="alert-detail-value">${evidenceObjects}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Opened</div>
+        <div class="alert-detail-value">${new Date(alertData.opened_at).toLocaleString()}</div>
+      </div>
+      ${
+        alertData.acknowledged_at
+          ? `
+          <div class="alert-detail-section">
+            <div class="alert-detail-label">Acknowledged</div>
+            <div class="alert-detail-value">${new Date(alertData.acknowledged_at).toLocaleString()}</div>
+          </div>
+          `
+          : ""
+      }
+    `;
+
+    // Add event click handlers
+    dom.alertDetailContent.querySelectorAll(".alert-event-link").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        showEventDetail(btn.dataset.eventId);
+      });
+    });
+
+    // Build actions
+    let actionsHtml = "";
+
+    if (canManageAlerts() && alertData.status !== "closed") {
+      if (alertData.status === "open") {
+        actionsHtml += `<button type="button" class="alert-action-btn acknowledge" id="ack-alert">ACKNOWLEDGE</button>`;
+      }
+      actionsHtml += `<button type="button" class="alert-action-btn close" id="close-alert-btn">CLOSE</button>`;
+    }
+
+    if (alertData.evidence_object_ids && alertData.evidence_object_ids.length > 0) {
+      actionsHtml += `<button type="button" class="alert-action-btn jump" id="jump-replay">JUMP TO REPLAY</button>`;
+    }
+
+    actionsHtml += `<button class="alert-action-btn back" id="back-alerts">BACK</button>`;
+
+    dom.alertActions.innerHTML = actionsHtml;
+
+    // Add action handlers
+    if (document.getElementById("ack-alert")) {
+      document
+        .getElementById("ack-alert")
+        .addEventListener("click", () => acknowledgeAlert(alertId));
+    }
+    if (document.getElementById("close-alert-btn")) {
+      document
+        .getElementById("close-alert-btn")
+        .addEventListener("click", () => closeAlert(alertId));
+    }
+    if (document.getElementById("jump-replay")) {
+      document
+        .getElementById("jump-replay")
+        .addEventListener("click", () => jumpToReplayFromAlert(alert));
+    }
+    document.getElementById("back-alerts").addEventListener("click", () => {
+      dom.alertModal.classList.add("hidden");
+    });
+
+    dom.alertModal.classList.remove("hidden");
+  } catch (error) {
+    console.error("Failed to load alert detail:", error);
+  }
+}
+
+function jumpToReplayFromAlert(alert) {
+  if (alert.evidence_object_ids && alert.evidence_object_ids.length > 0) {
+    const objectId = alert.evidence_object_ids[0];
+    const openedAt = new Date(alert.opened_at);
+    const startTime = new Date(openedAt.getTime() - 5 * 60 * 1000);
+    const endTime = new Date(openedAt.getTime() + 5 * 60 * 1000);
+
+    dom.startAt.value = startTime.toISOString();
+    dom.endAt.value = endTime.toISOString();
+    dom.objectId.value = objectId;
+
+    switchToReplayMode();
+    dom.alertModal.classList.add("hidden");
+    loadReplay();
+  }
+}
+
+async function closeAlert(alertId) {
+  if (!canManageAlerts()) {
+    alert("You must be logged in as an operator to close alerts.");
+    return;
+  }
+  try {
+    const response = await fetch(`${apiBaseUrl}/alerts/${alertId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ status: "closed" }),
+    });
+    if (response.ok) {
+      dom.alertModal.classList.add("hidden");
+      loadAlerts();
+    } else if (handleUnauthorized(response)) {
+      alert("Session expired. Please login again.");
+    } else if (response.status === 403) {
+      alert("You don't have permission to close alerts.");
+    } else {
+      alert("Failed to close alert.");
+    }
+  } catch (error) {
+    alert(`Error closing alert: ${error.message}`);
+  }
+}
+
+async function acknowledgeAlert(alertId) {
+  if (!canManageAlerts()) {
+    alert("You must be logged in as an operator to acknowledge alerts.");
+    return;
+  }
+  try {
+    const response = await fetch(`${apiBaseUrl}/alerts/${alertId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+    if (response.ok) {
+      showAlertDetail(alertId);
+      loadAlerts();
+    } else if (handleUnauthorized(response)) {
+      alert("Session expired. Please login again.");
+    } else if (response.status === 403) {
+      alert("You don't have permission to acknowledge alerts.");
+    } else {
+      alert("Failed to acknowledge alert.");
+    }
+  } catch (error) {
+    alert(`Error acknowledging alert: ${error.message}`);
+  }
+}
+
+async function showEventDetail(eventId) {
+  try {
+    updateStatus("LOADING EVENT...");
+    const response = await fetch(`${apiBaseUrl}/events/${eventId}`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      updateStatus("EVENT NOT FOUND");
+      return;
+    }
+
+    const event = await response.json();
+
+    // Update alert detail content to show event
+    dom.alertDetailContent.innerHTML = `
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Event ID</div>
+        <div class="alert-detail-value">${event.event_id}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Object ID</div>
+        <div class="alert-detail-value">${event.object_id}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Event Type</div>
+        <div class="alert-detail-value">${event.event_type}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Observed At</div>
+        <div class="alert-detail-value">${new Date(event.observed_at).toLocaleString()}</div>
+      </div>
+      <div class="alert-detail-section">
+        <div class="alert-detail-label">Source</div>
+        <div class="alert-detail-value">${event.source_id}</div>
+      </div>
+      ${
+        event.position
+          ? `
+          <div class="alert-detail-section">
+            <div class="alert-detail-label">Position</div>
+            <div class="alert-detail-value">${event.position.lat.toFixed(6)}, ${event.position.lon.toFixed(6)}</div>
+          </div>
+          `
+          : ""
+      }
+      ${
+        event.velocity
+          ? `
+          <div class="alert-detail-section">
+            <div class="alert-detail-label">Velocity</div>
+            <div class="alert-detail-value">${event.velocity.speed_mps?.toFixed(1) ?? "N/A"} m/s, ${event.velocity.heading_deg?.toFixed(1) ?? "N/A"}°</div>
+          </div>
+          `
+          : ""
+      }
+    `;
+
+    updateStatus("EVENT LOADED");
+  } catch (error) {
+    console.error("Failed to load event:", error);
+    updateStatus("FAILED TO LOAD EVENT");
+  }
+}
+
+// ===== VISUAL CONTROLS =====
+function applyStylePreset(preset) {
+  visualState.preset = preset;
+  document.body.setAttribute("data-theme", preset);
+
+  // Update button states
+  dom.presetButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.preset === preset);
+  });
+
+  renderMapMarkers();
+  renderTrack();
+}
+
+function updateVisualEffects() {
+  visualState.bloom = parseInt(dom.bloomSlider.value, 10);
+  visualState.sharpen = parseInt(dom.sharpenSlider.value, 10);
+  visualState.pixelate = parseInt(dom.pixelateSlider.value, 10);
+  visualState.distortion = parseInt(dom.distortionSlider.value, 10);
+  visualState.instability = parseInt(dom.instabilitySlider.value, 10);
+
+  // Update slider value displays
+  dom.bloomSlider.nextElementSibling.textContent = `${visualState.bloom}%`;
+  dom.sharpenSlider.nextElementSibling.textContent = `${visualState.sharpen}%`;
+  dom.pixelateSlider.nextElementSibling.textContent =
+    visualState.pixelate === 0 ? "OFF" : `${visualState.pixelate}%`;
+  dom.distortionSlider.nextElementSibling.textContent = `${visualState.distortion}%`;
+  dom.instabilitySlider.nextElementSibling.textContent = `${visualState.instability}%`;
+}
+
+// ===== EVENT LISTENERS =====
+function initEventListeners() {
+  // Mode switching
+  dom.modeLive.addEventListener("click", switchToLiveMode);
+  dom.modeReplay.addEventListener("click", switchToReplayMode);
+
+  // Replay controls
+  dom.playReplay.addEventListener("click", playReplay);
+  dom.pauseReplay.addEventListener("click", pauseReplay);
+  dom.stepReplay.addEventListener("click", stepReplay);
+  dom.resetReplay.addEventListener("click", resetReplay);
+
+  dom.timelineSlider.addEventListener("input", () => {
+    replayState.currentIndex = parseInt(dom.timelineSlider.value, 10) || 0;
+    renderReplay();
+  });
+
+  // Query modal
+  dom.queryFormToggle.addEventListener("click", () => {
+    dom.queryModal.classList.remove("hidden");
+  });
+
+  dom.closeQuery.addEventListener("click", () => {
+    dom.queryModal.classList.add("hidden");
+  });
+
+  dom.cancelQuery.addEventListener("click", () => {
+    dom.queryModal.classList.add("hidden");
+  });
+
+  dom.loadReplayBtn.addEventListener("click", () => {
+    loadReplay();
+    dom.queryModal.classList.add("hidden");
+  });
+
+  dom.loadReplayButton.addEventListener("click", () => {
+    loadReplay();
+  });
+
+  // Close alert modal
+  dom.closeAlert.addEventListener("click", () => {
+    dom.alertModal.classList.add("hidden");
+  });
+
+  // Events panel
+  dom.closeEvents.addEventListener("click", () => {
+    dom.eventsPanel.classList.add("hidden");
+  });
+
+  // Layer toggles
+  dom.layerFlights.addEventListener("change", (e) => {
+    layerState.flights = e.target.checked;
+    updateActiveLayersCount();
+    renderMapMarkers();
+    renderTrack();
+  });
+
+  dom.layerMilitary.addEventListener("change", (e) => {
+    layerState.military = e.target.checked;
+    updateActiveLayersCount();
+  });
+
+  dom.layerEarthquakes.addEventListener("change", (e) => {
+    layerState.earthquakes = e.target.checked;
+    updateActiveLayersCount();
+
+    const layer = externalLayerState.layers.get("earthquakes");
+    if (layer) {
+      layer.enabled = e.target.checked;
+      if (e.target.checked) {
+        loadExternalLayerData("earthquakes");
+      } else {
+        clearExternalLayerEntities("earthquakes");
+      }
+    }
+  });
+
+  dom.layerSatellites.addEventListener("change", (e) => {
+    layerState.satellites = e.target.checked;
+    updateActiveLayersCount();
+
+    const layer = externalLayerState.layers.get("satellites");
+    if (layer) {
+      layer.enabled = e.target.checked;
+      if (e.target.checked) {
+        loadExternalLayerData("satellites");
+      } else {
+        clearExternalLayerEntities("satellites");
+      }
+    }
+  });
+
+  dom.layerTraffic.addEventListener("change", (e) => {
+    layerState.traffic = e.target.checked;
+    updateActiveLayersCount();
+
+    const layer = externalLayerState.layers.get("traffic");
+    if (layer) {
+      layer.enabled = e.target.checked;
+      if (e.target.checked) {
+        loadExternalLayerData("traffic");
+      } else {
+        clearExternalLayerEntities("traffic");
+      }
+    }
+  });
+
+  dom.layerWeather.addEventListener("change", (e) => {
+    layerState.weather = e.target.checked;
+    updateActiveLayersCount();
+
+    const layer = externalLayerState.layers.get("weather");
+    if (layer) {
+      layer.enabled = e.target.checked;
+      if (e.target.checked) {
+        loadExternalLayerData("weather");
+      } else {
+        clearExternalLayerEntities("weather");
+      }
+    }
+  });
+
+  dom.layerCctv.addEventListener("change", (e) => {
+    layerState.cctv = e.target.checked;
+    updateActiveLayersCount();
+    // Refresh CCTV panel if object selected
+    if (selectedObjectId) {
+      const state =
+        currentMode === "live" ? latestStates.get(selectedObjectId) : getCurrentReplayState();
+      if (state) {
+        updateCCTVSection(selectedObjectId, state);
+      }
+    }
+  });
+
+  dom.layerBikeshare.addEventListener("change", (e) => {
+    layerState.bikeshare = e.target.checked;
+    updateActiveLayersCount();
+
+    const layer = externalLayerState.layers.get("bikeshare");
+    if (layer) {
+      layer.enabled = e.target.checked;
+      if (e.target.checked) {
+        loadExternalLayerData("bikeshare");
+      } else {
+        clearExternalLayerEntities("bikeshare");
+      }
+    }
+  });
+
+  // Style presets
+  dom.presetButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      applyStylePreset(btn.dataset.preset);
+    });
+  });
+
+  // Visual sliders
+  [
+    dom.bloomSlider,
+    dom.sharpenSlider,
+    dom.pixelateSlider,
+    dom.distortionSlider,
+    dom.instabilitySlider,
+  ].forEach((slider) => {
+    slider.addEventListener("input", updateVisualEffects);
+  });
+
+  // View mode toggles
+  dom.toggleHud.addEventListener("change", (e) => {
+    visualState.hud = e.target.checked;
+    document.querySelector(".crosshair").style.opacity = visualState.hud ? "0.3" : "0";
+    document.querySelector(".coordinates").style.opacity = visualState.hud ? "1" : "0";
+    document.querySelector(".zoom-level").style.opacity = visualState.hud ? "1" : "0";
+  });
+
+  dom.layoutSelect.addEventListener("change", (e) => {
+    visualState.layout = e.target.value;
+  });
+
+  dom.toggleDetect.addEventListener("change", (e) => {
+    visualState.detect = e.target.checked;
+  });
+
+  dom.togglePanoptic.addEventListener("change", (e) => {
+    visualState.panoptic = e.target.checked;
+  });
+}
+
+// Make handleAuthClick available globally for onclick handler
+window.handleAuthClick = handleAuthClick;
+
+// ===== EXTERNAL DATA LAYERS =====
+async function loadExternalLayers() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/layers`);
+    if (!response.ok) return;
+
+    const layers = await response.json();
+
+    // Update external layer state
+    for (const layer of layers) {
+      const existing = externalLayerState.layers.get(layer.layer_id);
+      externalLayerState.layers.set(layer.layer_id, {
+        ...layer,
+        enabled: existing?.enabled ?? layer.enabled,
+      });
+    }
+
+    // Update UI
+    updateLayerRailUI();
+  } catch (error) {
+    console.error("Failed to load external layers:", error);
+  }
+}
+
+async function loadExternalLayerData(layerId) {
+  if (!externalLayerState.layers.get(layerId)?.enabled) return;
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/layers/${layerId}/data`);
+    if (!response.ok) {
+      console.warn(`Failed to load ${layerId} data:`, response.status);
+      return;
+    }
+
+    const data = await response.json();
+
+    // Clear existing entities for this layer
+    clearExternalLayerEntities(layerId);
+
+    // Render based on layer type
+    switch (layerId) {
+      case "earthquakes":
+        renderEarthquakes(data.events);
+        break;
+      case "satellites":
+        renderSatellites(data.events);
+        break;
+      case "weather":
+        renderWeather(data.events);
+        break;
+      case "bikeshare":
+        renderBikeshare(data.events);
+        break;
+      case "traffic":
+        renderTraffic(data.events);
+        break;
+      default:
+        console.warn(`Unknown layer type: ${layerId}`);
+    }
+
+    // Update count in UI
+    const layer = externalLayerState.layers.get(layerId);
+    if (layer) {
+      layer.count = data.count;
+      layer.lastUpdate = data.last_update;
+      updateLayerRailUI();
+    }
+  } catch (error) {
+    console.error(`Failed to load ${layerId} data:`, error);
+  }
+}
+
+function clearExternalLayerEntities(layerId) {
+  const entities = externalLayerState.entities.get(layerId);
+  if (entities) {
+    for (const entity of entities.values()) {
+      viewer.entities.remove(entity);
+    }
+    entities.clear();
+  } else {
+    externalLayerState.entities.set(layerId, new Map());
+  }
+}
+
+function renderEarthquakes(events) {
+  const entities = externalLayerState.entities.get("earthquakes") || new Map();
+
+  for (const event of events) {
+    const magnitude = event.payload?.magnitude || 0;
+    const color = getEarthquakeColor(magnitude);
+    const size = getEarthquakeSize(magnitude);
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
+      ellipse: {
+        semiMinorAxis: size,
+        semiMajorAxis: size,
+        material: Cesium.Color.fromCssColorString(color).withAlpha(0.6),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString(color),
+        outlineWidth: 2,
+      },
+      label: {
+        text: `M${magnitude.toFixed(1)}`,
+        font: "12px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -size),
+      },
+      properties: {
+        type: "earthquake",
+        event: event,
+      },
+    });
+
+    entities.set(event.event_id, entity);
+  }
+
+  externalLayerState.entities.set("earthquakes", entities);
+}
+
+function getEarthquakeColor(magnitude) {
+  if (magnitude < 4.0) return "#4ade80"; // Green
+  if (magnitude < 6.0) return "#facc15"; // Yellow
+  if (magnitude < 7.0) return "#fb923c"; // Orange
+  return "#ef4444"; // Red
+}
+
+function getEarthquakeSize(magnitude) {
+  return 10000 + magnitude * 5000; // meters
+}
+
+function renderSatellites(events) {
+  const entities = externalLayerState.entities.get("satellites") || new Map();
+
+  for (const event of events) {
+    const type = event.payload?.type || "unknown";
+    const style = getSatelliteStyle(type);
+    const altitudeM = event.altitude_m || 400000;
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, altitudeM),
+      point: {
+        pixelSize: style.pixelSize,
+        color: Cesium.Color.fromCssColorString(style.color),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 1,
+      },
+      label: {
+        text: event.payload?.name || event.external_id,
+        font: "10px monospace",
+        fillColor: Cesium.Color.fromCssColorString(style.color),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -style.pixelSize - 5),
+        show: false, // Only show on hover/select
+      },
+      properties: {
+        type: "satellite",
+        event: event,
+      },
+    });
+
+    entities.set(event.event_id, entity);
+  }
+
+  externalLayerState.entities.set("satellites", entities);
+}
+
+function getSatelliteStyle(type) {
+  switch (type) {
+    case "space_station":
+      return { color: "#fbbf24", pixelSize: 12 };
+    case "starlink":
+      return { color: "#60a5fa", pixelSize: 6 };
+    case "geo":
+      return { color: "#a78bfa", pixelSize: 8 };
+    case "leo":
+      return { color: "#34d399", pixelSize: 6 };
+    default:
+      return { color: "#9ca3af", pixelSize: 5 };
+  }
+}
+
+function renderWeather(events) {
+  const entities = externalLayerState.entities.get("weather") || new Map();
+
+  for (const event of events) {
+    const severity = event.payload?.severity || "Unknown";
+    const color = getWeatherColor(severity);
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
+      point: {
+        pixelSize: 10,
+        color: Cesium.Color.fromCssColorString(color).withAlpha(0.8),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+      },
+      label: {
+        text: event.payload?.event || "Weather Alert",
+        font: "10px monospace",
+        fillColor: Cesium.Color.fromCssColorString(color),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -15),
+        show: false,
+      },
+      properties: {
+        type: "weather",
+        event: event,
+      },
+    });
+
+    entities.set(event.event_id, entity);
+  }
+
+  externalLayerState.entities.set("weather", entities);
+}
+
+function getWeatherColor(severity) {
+  switch (severity) {
+    case "Extreme":
+      return "#dc2626";
+    case "Severe":
+      return "#ea580c";
+    case "Moderate":
+      return "#eab308";
+    case "Minor":
+      return "#3b82f6";
+    default:
+      return "#6b7280";
+  }
+}
+
+function renderBikeshare(events) {
+  const entities = externalLayerState.entities.get("bikeshare") || new Map();
+
+  for (const event of events) {
+    const availability = event.payload?.availabilityPercent || 0;
+    const color = getBikeshareColor(availability);
+    const size = getBikeshareSize(event.payload?.totalSlots || 10);
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
+      point: {
+        pixelSize: size,
+        color: Cesium.Color.fromCssColorString(color),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 1,
+      },
+      label: {
+        text: `${event.payload?.freeBikes || 0}`,
+        font: "10px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.CENTER,
+        show: false,
+      },
+      properties: {
+        type: "bikeshare",
+        event: event,
+      },
+    });
+
+    entities.set(event.event_id, entity);
+  }
+
+  externalLayerState.entities.set("bikeshare", entities);
+}
+
+function getBikeshareColor(availability) {
+  if (availability >= 50) return "#22c55e";
+  if (availability >= 25) return "#eab308";
+  if (availability > 0) return "#f97316";
+  return "#ef4444";
+}
+
+function getBikeshareSize(totalSlots) {
+  if (totalSlots >= 40) return 12;
+  if (totalSlots >= 20) return 10;
+  if (totalSlots >= 10) return 8;
+  return 6;
+}
+
+function renderTraffic(events) {
+  const entities = externalLayerState.entities.get("traffic") || new Map();
+
+  for (const event of events) {
+    const severity = event.payload?.severity || "unknown";
+    const color = getTrafficColor(severity);
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
+      point: {
+        pixelSize: 8,
+        color: Cesium.Color.fromCssColorString(color),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 1,
+      },
+      label: {
+        text: event.payload?.type || "Traffic",
+        font: "9px monospace",
+        fillColor: Cesium.Color.fromCssColorString(color),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -10),
+        show: false,
+      },
+      properties: {
+        type: "traffic",
+        event: event,
+      },
+    });
+
+    entities.set(event.event_id, entity);
+  }
+
+  externalLayerState.entities.set("traffic", entities);
+}
+
+function getTrafficColor(severity) {
+  switch (severity.toLowerCase()) {
+    case "blocking":
+      return "#dc2626";
+    case "major":
+      return "#ea580c";
+    case "minor":
+      return "#eab308";
+    default:
+      return "#6b7280";
+  }
+}
+
+function updateLayerRailUI() {
+  // Update layer rows with current status
+  for (const [layerId, layer] of externalLayerState.layers) {
+    const statusEl = document.getElementById(`layer-status-${layerId}`);
+    const countEl = document.getElementById(`layer-count-${layerId}`);
+    const providerEl = document.getElementById(`layer-provider-${layerId}`);
+
+    if (statusEl) {
+      const statusColors = {
+        real: "#22c55e",
+        degraded: "#f59e0b",
+        unavailable: "#ef4444",
+      };
+      statusEl.style.color = statusColors[layer.status] || "#6b7280";
+      statusEl.textContent = layer.status.toUpperCase();
+    }
+
+    if (countEl) {
+      countEl.textContent = layer.count !== null ? String(layer.count) : "--";
+    }
+
+    if (providerEl) {
+      providerEl.textContent = layer.provider || "--";
+    }
+  }
+}
+
+// ===== INITIALIZATION =====
+function init() {
+  // Set default query times
+  const now = new Date();
+  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+  dom.endAt.value = now.toISOString();
+  dom.startAt.value = fiveMinutesAgo.toISOString();
+  dom.objectId.value = "veh_42";
+
+  // Initialize
+  initCesium();
+  initSession();
+  initEventListeners();
+  updateActiveLayersCount();
+  updateVisualEffects();
+
+  // Start clock
+  setInterval(updateTime, 1000);
+  updateTime();
+
+  // Start data refresh
+  setInterval(loadSourceHealth, 30000);
+  setInterval(loadAlerts, 15000);
+
+  // Load external layers
+  loadExternalLayers();
+  setInterval(loadExternalLayers, 60000); // Refresh layer metadata every minute
+
+  // Initial load
+  loadSourceHealth();
+  loadAlerts();
+
+  // Start in replay mode
+  switchToReplayMode();
+}
+
+// Start the app when DOM is ready
+document.addEventListener("DOMContentLoaded", init);

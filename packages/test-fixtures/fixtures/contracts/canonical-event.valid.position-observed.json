@@ -1,0 +1,35 @@
+{
+  "event_id": "evt_20260405_101530_vehicle_42",
+  "event_type": "position_observed",
+  "object_id": "veh_42",
+  "source_id": "src_campus_gps_1",
+  "observed_at": "2026-04-05T10:15:30Z",
+  "ingested_at": "2026-04-05T10:15:32Z",
+  "processed_at": "2026-04-05T10:15:33Z",
+  "schema_version": "1.0.0",
+  "payload": {
+    "lat": -33.8688,
+    "lon": 151.2093,
+    "speed_mps": 13.4,
+    "heading_deg": 91.2,
+    "status": "moving"
+  },
+  "provenance": {
+    "adapter": "telemetry_adapter",
+    "adapter_version": "1.0.0",
+    "raw_ref": "raw_abc123",
+    "transformation_notes": ["mapped tracker_id veh-42 to object_id veh_42"]
+  },
+  "confidence": 0.98,
+  "dedupe_key": "src_campus_gps_1:veh_42:2026-04-05T10:15:30Z",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [151.2093, -33.8688]
+  },
+  "altitude_m": 0,
+  "heading_deg": 91.2,
+  "speed_mps": 13.4,
+  "related_object_ids": [],
+  "parent_event_id": null,
+  "trace_id": "trace_ingest_vehicle_42"
+}

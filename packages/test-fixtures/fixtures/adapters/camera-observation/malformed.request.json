@@ -1,0 +1,17 @@
+{
+  "source": {
+    "source_id": "cam_entrance_1",
+    "source_type": "camera_feed",
+    "name": "Entrance Camera 1"
+  },
+  "records": [
+    {
+      "camera_id": "cam_entrance_1",
+      "timestamp": "not-a-timestamp",
+      "frame_id": "frame_001",
+      "object_detected": "person_001",
+      "object_type": "person",
+      "confidence": "invalid"
+    }
+  ]
+}

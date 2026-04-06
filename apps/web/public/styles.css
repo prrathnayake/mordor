@@ -1,0 +1,17 @@
+/* Legacy styles - minimal reset for compatibility
+ * Main styles moved to tactical-styles.css
+ */
+
+/* Ensure old selectors don't break if referenced */
+.app-layout,
+.left-panel,
+.right-panel,
+.center-panel {
+  display: contents;
+}
+
+/* Hide old elements that are no longer used */
+#layer-toggles,
+#replay-controls-old {
+  display: none;
+}

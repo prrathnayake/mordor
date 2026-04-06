@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chrona/contracts/source/1.0.0",
+  "title": "Source",
+  "type": "object",
+  "x-contract-name": "source",
+  "x-schema-version": "1.0.0",
+  "additionalProperties": false,
+  "required": [
+    "source_id",
+    "source_type",
+    "name",
+    "status",
+    "owner",
+    "auth_ref",
+    "polling_mode",
+    "schema_version",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "source_id": { "type": "string", "minLength": 1 },
+    "source_type": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "owner": { "type": "string", "minLength": 1 },
+    "auth_ref": { "type": "string", "minLength": 1 },
+    "polling_mode": { "type": "string", "minLength": 1 },
+    "schema_version": { "const": "1.0.0" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

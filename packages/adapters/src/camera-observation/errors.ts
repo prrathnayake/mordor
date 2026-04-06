@@ -1,0 +1,9 @@
+export class CameraObservationAdapterError extends Error {
+  constructor(
+    public readonly code: "PayloadMalformed" | "SchemaMismatch" | "NormalizationFailed",
+    message: string,
+  ) {
+    super(message);
+    this.name = "CameraObservationAdapterError";
+  }
+}

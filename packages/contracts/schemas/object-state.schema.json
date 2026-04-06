@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chrona/contracts/object-state/1.0.0",
+  "title": "ObjectState",
+  "type": "object",
+  "x-contract-name": "objectState",
+  "x-schema-version": "1.0.0",
+  "additionalProperties": false,
+  "required": [
+    "object_id",
+    "state_version",
+    "as_of",
+    "position",
+    "velocity",
+    "status",
+    "attributes",
+    "last_event_id"
+  ],
+  "properties": {
+    "object_id": { "type": "string", "minLength": 1 },
+    "state_version": { "const": "1.0.0" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "position": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lat", "lon"],
+          "properties": {
+            "lat": { "type": "number" },
+            "lon": { "type": "number" },
+            "altitude_m": { "type": ["number", "null"] },
+            "geometry": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "velocity": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "speed_mps": { "type": ["number", "null"] },
+            "heading_deg": { "type": ["number", "null"] }
+          }
+        }
+      ]
+    },
+    "status": {
+      "type": ["string", "null"]
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "last_event_id": { "type": "string", "minLength": 1 }
+  }
+}

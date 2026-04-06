@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "tracker_id": "veh-42",
+      "lat": -33.8688,
+      "lng": 151.2093,
+      "speed": 13.4,
+      "heading": 91.2,
+      "ts": "2026-04-05T10:15:30Z",
+      "received_at": "2026-04-05T10:15:32Z",
+      "status": "moving"
+    },
+    {
+      "tracker_id": "veh-42",
+      "lat": -33.8688,
+      "lng": 151.2093,
+      "speed": 13.4,
+      "heading": 91.2,
+      "ts": "2026-04-05T10:15:30Z",
+      "received_at": "2026-04-05T10:15:34Z",
+      "status": "moving"
+    }
+  ]
+}
