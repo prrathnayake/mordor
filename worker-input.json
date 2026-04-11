@@ -1,1 +1,53 @@
-{}
+{
+  "source": {
+    "source_id": "test-fixture",
+    "source_type": "fixture",
+    "provider": "test",
+    "label": "Test Fixture Source",
+    "lat": 0,
+    "lon": 0,
+    "alt_m": 0,
+    "heading_deg": null,
+    "coverage": null,
+    "status": "active",
+    "last_update": "2026-04-06T10:00:00.000Z",
+    "snapshot_available": false,
+    "live_available": false,
+    "linked_object_ids": [],
+    "linked_alert_ids": [],
+    "linked_incident_ids": [],
+    "metadata": {},
+    "created_at": "2026-04-06T10:00:00.000Z",
+    "updated_at": "2026-04-06T10:00:00.000Z"
+  },
+  "records": [
+    {
+      "timestamp": "2026-04-06T10:00:00.000Z",
+      "frequency_mhz": 1090,
+      "power_dbw": -5.0,
+      "snr_db": 15.0,
+      "confidence": 0.95,
+      "platform_type": "A320",
+      "registration": "TEST123",
+      "icao_24bit": "A00001",
+      "flight_number": "TEST456",
+      "call_sign": "TEST",
+      "latitude_deg": 40.7128,
+      "longitude_deg": -74.006,
+      "baro_altitude_ft": 1000,
+      "geo_altitude_ft": 1050,
+      "heading_deg": 90,
+      "velocity_knots": 250,
+      "vertical_rate_fpm": 0,
+      "squawk": "1200",
+      "emergency_code": null,
+      "category": "A3",
+      "nic": 7,
+      "rc": 1,
+      "nic_baro": 1,
+      "nav_qa": ["MCP", "TGT"],
+      "sil": 3,
+      "sil_type": "per hour"
+    }
+  ]
+}

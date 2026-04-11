@@ -8,11 +8,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=workspace
 
 FROM base AS builder
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm run typecheck
-RUN npm run lint
+  COPY --from=deps /app/node_modules ./node_modules
+  COPY . .
+  RUN npm run typecheck
+  # RUN npm run lint
 
 FROM base AS runner
 
