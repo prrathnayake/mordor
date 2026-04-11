@@ -22,7 +22,10 @@ async function serveStaticFile(
 export function createWebServer(options: { api_base_url: string }): RunningWebServer {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    const publicRoot = new URL("file:///app/apps/web/public/");
+    const isProduction = process.env.NODE_ENV === "production";
+    const publicRoot = isProduction
+      ? new URL("file:///app/apps/web/public/")
+      : new URL("../public/", import.meta.url);
 
     try {
       if (url.pathname === "/" || url.pathname === "/index.html") {

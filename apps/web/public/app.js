@@ -324,31 +324,47 @@ function handleAuthClick() {
 }
 
 async function login(username, password) {
+  const loginUrl = `${apiBaseUrl}/auth/login`;
+  console.log("API Base URL:", apiBaseUrl);
+  console.log("Attempting login to:", loginUrl);
+  console.log("Username:", username);
+
   try {
-    console.log("Attempting login to:", `${apiBaseUrl}/auth/login`);
-    const response = await fetch(`${apiBaseUrl}/auth/login`, {
+    const response = await fetch(loginUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
+
     console.log("Login response status:", response.status);
+    console.log("Login response statusText:", response.statusText);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.log("Login error response:", errText);
+      alert(`Login failed: ${response.status} ${response.statusText}`);
+      return;
+    }
+
     const data = await response.json();
-    console.log("Login response data:", data);
-    if (response.ok && data.token) {
+    console.log("Login response data:", JSON.stringify(data));
+
+    if (data.token) {
       sessionState.token = data.token;
       sessionState.user = data.user;
-      sessionState.role = data.user.role;
+      sessionState.role = data.user?.role;
       sessionState.isAuthenticated = true;
       localStorage.setItem("auth_token", data.token);
       updateSessionUI();
       dom.loginModal.classList.add("hidden");
       updateStatus("AUTHENTICATED");
+      alert("Login successful!");
     } else {
-      alert(data.error || data.message || "Login failed");
+      alert("Login failed: " + (data.error || data.message || "Unknown error"));
     }
   } catch (error) {
-    console.error("Login error:", error);
-    alert(`Login failed: ${error.message}`);
+    console.error("Login fetch error:", error);
+    alert(`Network error: ${error.message}\n\nIs the API server running at ${apiBaseUrl}?`);
   }
 }
 
