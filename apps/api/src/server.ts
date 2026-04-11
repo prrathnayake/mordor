@@ -1,7 +1,7 @@
 import { createServer, IncomingMessage, Server, ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createAlertRuleId, evaluateEventForAlerts } from "../../../packages/alerts/src/index.js";
-import { authenticate, validateToken } from "../../../packages/auth/src/index.js";
+import { authenticate, logout, validateToken } from "../../../packages/auth/src/index.js";
 import { getConfigFromEnv, validateConfig } from "../../../packages/config/src/index.js";
 import { applyCanonicalEventToObjectState } from "../../../packages/domain/src/index.js";
 import {
@@ -306,6 +306,117 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
           return;
         }
 
+        // Detailed health check with component status
+        if (request.method === "GET" && url.pathname === "/health/detailed") {
+          const health = {
+            status: "ok",
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            components: {
+              database: { status: "unknown" as "ok" | "error", latency_ms: null as number | null },
+              memory: { status: "ok" as "ok" | "warning" | "error", used_mb: 0, total_mb: 0 },
+              external_sources: {} as Record<
+                string,
+                { status: string; last_update: string | null }
+              >,
+            },
+          };
+
+          // Check database
+          const dbStart = Date.now();
+          try {
+            await persistence.ping();
+            health.components.database = { status: "ok", latency_ms: Date.now() - dbStart };
+          } catch {
+            health.components.database = { status: "error", latency_ms: Date.now() - dbStart };
+            health.status = "degraded";
+          }
+
+          // Check memory
+          const memUsage = process.memoryUsage();
+          const totalMemoryMB = memUsage.heapTotal / 1024 / 1024;
+          const usedMemoryMB = memUsage.heapUsed / 1024 / 1024;
+          const memoryPercent = (usedMemoryMB / totalMemoryMB) * 100;
+          health.components.memory = {
+            status: memoryPercent > 90 ? "error" : memoryPercent > 70 ? "warning" : "ok",
+            used_mb: Math.round(usedMemoryMB),
+            total_mb: Math.round(totalMemoryMB),
+          };
+
+          // Check external sources
+          try {
+            const sources = await persistence.fetchAllSourceHealth();
+            for (const source of sources) {
+              health.components.external_sources[source.source_id] = {
+                status: source.status,
+                last_update: source.last_seen_at,
+              };
+            }
+          } catch {
+            // Ignore errors for external source health
+          }
+
+          writeJson(response, 200, health);
+          return;
+        }
+
+        // Basic metrics endpoint
+        if (request.method === "GET" && url.pathname === "/metrics") {
+          const memUsage = process.memoryUsage();
+          const cpuUsage = process.cpuUsage();
+
+          const metrics = {
+            timestamp: new Date().toISOString(),
+            uptime_seconds: process.uptime(),
+            memory: {
+              heap_used_mb: Math.round(memUsage.heapUsed / 1024 / 1024),
+              heap_total_mb: Math.round(memUsage.heapTotal / 1024 / 1024),
+              rss_mb: Math.round(memUsage.rss / 1024 / 1024),
+              external_mb: Math.round(memUsage.external / 1024 / 1024),
+            },
+            cpu: {
+              user_ms: cpuUsage.user,
+              system_ms: cpuUsage.system,
+            },
+            event_loop: {
+              lag_ms: 0,
+            },
+          };
+
+          writeJson(response, 200, metrics);
+          return;
+        }
+
+        // Log streaming endpoint (SSE)
+        if (request.method === "GET" && url.pathname === "/logs") {
+          const urlParams = url.searchParams;
+          const levelFilter = urlParams.get("level")?.split(",") || [];
+          const limit = Math.min(parseInt(urlParams.get("limit") || "100", 10), 1000);
+
+          response.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          });
+
+          // Send log history from logger
+          const logs = logger.getRecentLogs ? logger.getRecentLogs(limit, levelFilter) : [];
+          for (const log of logs) {
+            response.write(`data: ${JSON.stringify(log)}\n\n`);
+          }
+
+          // Keep connection alive with heartbeat
+          const heartbeat = setInterval(() => {
+            response.write(`: heartbeat\n\n`);
+          }, 30000);
+
+          request.on("close", () => {
+            clearInterval(heartbeat);
+          });
+
+          return;
+        }
+
         if (request.method === "POST" && url.pathname === "/auth/login") {
           const startTime = Date.now();
           const body = (await readJsonBody(request)) as { username: string; password: string };
@@ -353,10 +464,10 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
         }
 
         if (request.method === "POST" && url.pathname === "/auth/logout") {
-          // Read body to consume the request, but we don't need the data
-          await readJsonBody(request);
-          // In a real app, we would invalidate the token server-side
-          // For this implementation, we just acknowledge the logout
+          const body = (await readJsonBody(request)) as { token: string };
+          if (body?.token) {
+            logout(body.token);
+          }
           writeJson(response, 200, { success: true, message: "Logged out successfully" });
           return;
         }
@@ -391,10 +502,12 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
           });
 
           if (result.latest_state_by_object_id) {
+            const now = clock.now();
+            const windowStart = new Date(Date.parse(now) - 60000).toISOString();
             for (const [objectId, state] of Object.entries(result.latest_state_by_object_id)) {
               const events = await persistence.fetchCanonicalEvents({
-                start_at: clock.now(),
-                end_at: clock.now(),
+                start_at: windowStart,
+                end_at: now,
                 object_id: objectId,
               });
               const latestEvent = events[events.length - 1];
@@ -1558,7 +1671,7 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
           const lat = Number.parseFloat(latParam);
           const lon = Number.parseFloat(lonParam);
 
-          if (isNaN(lat) || isNaN(lon)) {
+          if (Number.isNaN(lat) || Number.isNaN(lon)) {
             writeJson(response, 400, { error: "lat and lon must be valid numbers" });
             return;
           }

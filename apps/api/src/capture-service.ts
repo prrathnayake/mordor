@@ -33,19 +33,15 @@ async function captureFlights(
     const result = await persistence.getDatabase().pool.query(
       `
         SELECT 
-          object_id,
-          state_version,
-          as_of,
-          status,
-          attributes
-        FROM latest_object_states
-        WHERE last_event_id IN (
-          SELECT event_id FROM canonical_events 
-          WHERE object_id IN (
-            SELECT object_id FROM tracked_objects 
-            WHERE source_primary LIKE 'fixture%'
-          )
-        )
+          los.object_id,
+          los.state_version,
+          los.as_of,
+          los.status,
+          los.attributes
+        FROM latest_object_states los
+        INNER JOIN tracked_objects tobj ON los.object_id = tobj.object_id
+        INNER JOIN sources s ON tobj.source_primary = s.source_id
+        WHERE s.source_type = 'fixture'
       `,
     );
 
