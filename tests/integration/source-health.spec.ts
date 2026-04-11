@@ -111,6 +111,31 @@ describe("latest state API", () => {
     await teardownAuthenticatedApi(setup);
   });
 
+  it("marks telemetry sources active after fixture ingestion", async () => {
+    const ingestPayload = await loadJsonFixture<unknown>(
+      "adapters",
+      "fixture-telemetry",
+      "valid.request.json",
+    );
+
+    await fetch(`http://127.0.0.1:${setup.api.port}/ingest/fixture-telemetry`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${setup.operatorToken}`,
+      },
+      body: JSON.stringify(ingestPayload),
+    });
+
+    const response = await fetch(`http://127.0.0.1:${setup.api.port}/health/sources`, {
+      headers: { Authorization: `Bearer ${setup.operatorToken}` },
+    });
+    const payload = (await response.json()) as { sources: SourceHealth[] };
+
+    expect(response.status).toBe(200);
+    expect(payload.sources.some((source) => source.source_id === "src_campus_gps_1")).toBe(true);
+  });
+
   it("returns latest state for all objects", async () => {
     const ingestPayload = await loadJsonFixture<unknown>(
       "adapters",

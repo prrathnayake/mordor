@@ -109,6 +109,11 @@ export async function ingestFixtureTelemetryBatch(input: {
   const clock = input.clock ?? systemClock;
 
   await input.persistence.upsertSource(input.command.source);
+  await input.persistence.upsertSourceHealth({
+    source_id: input.command.source.source_id,
+    status: "active",
+    last_seen_at: clock.now(),
+  });
 
   const insertedEventIds: string[] = [];
   const duplicateEventIds: string[] = [];
@@ -166,6 +171,12 @@ export async function ingestFixtureTelemetryBatch(input: {
             persistenceResult.latest_state;
         }
       }
+
+      await input.persistence.upsertSourceHealth({
+        source_id: input.command.source.source_id,
+        status: "active",
+        last_seen_at: clock.now(),
+      });
     } catch (error) {
       const failureMessage = error instanceof Error ? error.message : "Unknown ingestion failure";
       const failureCode =

@@ -43,6 +43,8 @@ describe("Tactical UI Shell Integration", () => {
       expect(content).toContain("tactical");
       expect(content).toContain("TileMapServiceImageryProvider.fromUrl");
       expect(content).toContain("NaturalEarthII");
+      expect(content).toContain('"2026-04-05T10:15:00Z"');
+      expect(content).toContain("loadReplay();");
     });
 
     it("should serve updated index.html", async () => {

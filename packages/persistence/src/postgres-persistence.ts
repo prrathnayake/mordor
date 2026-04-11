@@ -1049,6 +1049,11 @@ export class PostgresPersistenceGateway
 
       // Insert new events
       for (const event of events) {
+        const payload = {
+          ...event.payload,
+          altitude_m: event.altitude_m ?? null,
+        };
+
         await client.query(
           `
             INSERT INTO external_data_events (
@@ -1075,7 +1080,7 @@ export class PostgresPersistenceGateway
             event.observed_at,
             event.lon,
             event.lat,
-            JSON.stringify(event.payload),
+            JSON.stringify(payload),
           ],
         );
       }
@@ -1112,7 +1117,6 @@ export class PostgresPersistenceGateway
           observed_at,
           ST_Y(geometry) as lat,
           ST_X(geometry) as lon,
-          altitude_m,
           payload
         FROM external_data_events
         WHERE layer_id = $1
@@ -1124,6 +1128,7 @@ export class PostgresPersistenceGateway
     return result.rows.map((row) => ({
       ...row,
       observed_at: new Date(row.observed_at).toISOString(),
+      altitude_m: typeof row.payload?.altitude_m === "number" ? row.payload.altitude_m : null,
       payload: row.payload ?? {},
     }));
   }

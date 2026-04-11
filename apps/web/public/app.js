@@ -19,6 +19,7 @@ let reconnectAttempts = 0;
 const maxReconnectAttempts = 5;
 const latestStates = new Map();
 let _connectionState = "disconnected";
+let hasCenteredOnLiveData = false;
 
 const sessionState = {
   token: null,
@@ -310,6 +311,17 @@ function updateActiveLayersCount() {
   dom.activeLayersCount.textContent = `${activeCount}/8`;
 }
 
+function syncLayerStateFromDom() {
+  layerState.flights = Boolean(dom.layerFlights?.checked);
+  layerState.military = Boolean(dom.layerMilitary?.checked);
+  layerState.earthquakes = Boolean(dom.layerEarthquakes?.checked);
+  layerState.satellites = Boolean(dom.layerSatellites?.checked);
+  layerState.traffic = Boolean(dom.layerTraffic?.checked);
+  layerState.weather = Boolean(dom.layerWeather?.checked);
+  layerState.cctv = Boolean(dom.layerCctv?.checked);
+  layerState.bikeshare = Boolean(dom.layerBikeshare?.checked);
+}
+
 // ===== AUTHENTICATION =====
 function updateSessionUI() {
   console.log("updateSessionUI called, isAuthenticated:", sessionState.isAuthenticated);
@@ -494,6 +506,17 @@ async function initSession() {
 // ===== CESIUM / MAP FUNCTIONS =====
 function cartesianFromLatLon(lat, lon, height = 0) {
   return Cesium.Cartesian3.fromDegrees(lon, lat, height);
+}
+
+function focusOnState(state, height = 2500) {
+  if (!viewer || !state?.position) {
+    return;
+  }
+
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(state.position.lon, state.position.lat, height),
+    duration: 1,
+  });
 }
 
 function initCesium() {
@@ -1082,6 +1105,7 @@ function resetReplay() {
 // ===== MODE SWITCHING =====
 function switchToLiveMode() {
   currentMode = "live";
+  hasCenteredOnLiveData = false;
   dom.modeLive.classList.add("active");
   dom.modeReplay.classList.remove("active");
   dom.modeValue.textContent = "LIVE";
@@ -1099,6 +1123,7 @@ function switchToLiveMode() {
 
 function switchToReplayMode() {
   currentMode = "replay";
+  hasCenteredOnLiveData = false;
   dom.modeLive.classList.remove("active");
   dom.modeReplay.classList.add("active");
   dom.modeValue.textContent = "REPLAY";
@@ -1179,6 +1204,11 @@ function disconnectFromLiveEvents() {
 function handleLiveStateUpdate(state) {
   latestStates.set(state.object_id, state);
 
+  if (!hasCenteredOnLiveData && state?.position) {
+    focusOnState(state);
+    hasCenteredOnLiveData = true;
+  }
+
   if (selectedObjectId === state.object_id) {
     updateInspectorFromState(state.object_id, state);
     updateCCTVSection(state.object_id, state);
@@ -1210,6 +1240,11 @@ async function loadLatestState() {
         latestStates.set(state.object_id, state);
       }
       renderMapMarkers();
+
+      if (!hasCenteredOnLiveData && payload.states.length > 0) {
+        focusOnState(payload.states[0]);
+        hasCenteredOnLiveData = true;
+      }
     }
   } catch (error) {
     console.error("Failed to load latest state:", error);
@@ -2869,12 +2904,20 @@ async function loadExternalLayers() {
       const existing = externalLayerState.layers.get(layer.layer_id);
       externalLayerState.layers.set(layer.layer_id, {
         ...layer,
-        enabled: existing?.enabled ?? layer.enabled,
+        enabled: existing?.enabled ?? layerState[layer.layer_id] ?? layer.enabled,
       });
     }
 
     // Update UI
     updateLayerRailUI();
+
+    for (const [layerId, layer] of externalLayerState.layers) {
+      if (layer.enabled) {
+        loadExternalLayerData(layerId);
+      } else {
+        clearExternalLayerEntities(layerId);
+      }
+    }
   } catch (error) {
     console.error("Failed to load external layers:", error);
   }
@@ -3487,11 +3530,9 @@ function _clearAllInferenceEntities() {
 
 // ===== INITIALIZATION =====
 async function init() {
-  // Set default query times
-  const now = new Date();
-  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-  dom.endAt.value = now.toISOString();
-  dom.startAt.value = fiveMinutesAgo.toISOString();
+  // Demo-ready replay defaults aligned with the bundled fixture data.
+  dom.startAt.value = "2026-04-05T10:15:00Z";
+  dom.endAt.value = "2026-04-05T10:16:00Z";
   dom.objectId.value = "veh_42";
 
   // Initialize core functionality first
@@ -3513,6 +3554,7 @@ async function init() {
     console.error("Event listeners init failed:", e);
   }
 
+  syncLayerStateFromDom();
   updateActiveLayersCount();
   updateVisualEffects();
 
@@ -3538,6 +3580,7 @@ async function init() {
 
   // Start in replay mode
   switchToReplayMode();
+  loadReplay();
 }
 
 // Start the app when DOM is ready

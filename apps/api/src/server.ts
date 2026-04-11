@@ -31,6 +31,7 @@ import {
   type ReplayQueryRequest,
   validateReplayQueryRequest,
 } from "../../../packages/replay/src/index.js";
+import { loadJsonFixture } from "../../../packages/test-fixtures/src/index.js";
 import { runCaptureJob } from "./capture-service.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
 
@@ -202,6 +203,48 @@ export interface RunningApiServer {
   readonly server: Server;
   readonly persistence: PostgresPersistenceGateway;
   close(): Promise<void>;
+}
+
+async function maybeBootstrapDevelopmentDemoData(input: {
+  persistence: PostgresPersistenceGateway;
+  logger: Logger;
+  clock: Clock;
+}): Promise<void> {
+  if (process.env.NODE_ENV === "production" || process.env.AUTO_BOOTSTRAP_DEMO_DATA === "false") {
+    return;
+  }
+
+  const existingEventCount = await input.persistence.countTableRows("canonical_events");
+  if (existingEventCount > 0) {
+    return;
+  }
+
+  const payload = await loadJsonFixture<unknown>(
+    "adapters",
+    "fixture-telemetry",
+    "valid.request.json",
+  );
+  const validation = validateFixtureTelemetryIngestionInput(payload);
+
+  if (!validation.ok) {
+    input.logger.warn("Development demo bootstrap skipped due to invalid fixture", {
+      issues: validation.issues,
+    });
+    return;
+  }
+
+  const result = await ingestFixtureTelemetryBatch({
+    command: validation.value,
+    persistence: input.persistence,
+    clock: input.clock,
+  });
+
+  input.logger.info("Bootstrapped development demo telemetry", {
+    status: result.status,
+    inserted_event_count: result.inserted_event_ids.length,
+    duplicate_event_count: result.duplicate_event_ids.length,
+    quarantined_record_count: result.quarantined_records.length,
+  });
 }
 
 function addCorsHeaders(response: ServerResponse): void {
@@ -1820,7 +1863,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3001;
 
-  startApiServer({ connection_string: connectionString, port }).then(({ port: boundPort }) => {
-    console.log(`API server listening on http://0.0.0.0:${boundPort}`);
-  });
+  startApiServer({ connection_string: connectionString, port }).then(
+    async ({ port: boundPort, persistence }) => {
+      console.log(`API server listening on http://0.0.0.0:${boundPort}`);
+
+      try {
+        await maybeBootstrapDevelopmentDemoData({
+          persistence,
+          logger: createLogger("api-bootstrap"),
+          clock: systemClock,
+        });
+      } catch (error) {
+        createLogger("api-bootstrap").warn("Development demo bootstrap failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  );
 }
