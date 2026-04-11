@@ -4,7 +4,8 @@
  * Integrates with existing Chrona Twin backend functionality
  */
 
-const apiBaseUrl = window.__APP_CONFIG__.apiBaseUrl;
+const apiBaseUrl = window.__APP_CONFIG__?.apiBaseUrl || "http://localhost:3001";
+console.log("API Base URL:", apiBaseUrl);
 
 // ===== STATE =====
 let viewer;
@@ -108,13 +109,13 @@ const visualState = {
 // ===== DOM REFERENCES =====
 const dom = {
   // Header
-  modeValue: document.getElementById("mode-value"),
-  statusMessage: document.getElementById("status-message"),
-  connectionText: document.getElementById("connection-text"),
-  sessionBadge: document.getElementById("session-badge"),
+  modeValue: document.getElementById("mode-value") || { value: "", textContent: "" },
+  statusMessage: document.getElementById("status-message") || { textContent: "" },
+  connectionText: document.getElementById("connection-text") || { textContent: "" },
+  sessionBadge: document.getElementById("session-badge") || { textContent: "" },
   authButton: document.getElementById("auth-button"),
-  timeDisplay: document.getElementById("time-display"),
-  activeLayersCount: document.getElementById("active-layers-count"),
+  timeDisplay: document.getElementById("time-display") || { textContent: "" },
+  activeLayersCount: document.getElementById("active-layers-count") || { textContent: "" },
 
   // Login Modal
   loginModal: document.getElementById("login-modal"),
@@ -324,12 +325,15 @@ function handleAuthClick() {
 
 async function login(username, password) {
   try {
+    console.log("Attempting login to:", `${apiBaseUrl}/auth/login`);
     const response = await fetch(`${apiBaseUrl}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
+    console.log("Login response status:", response.status);
     const data = await response.json();
+    console.log("Login response data:", data);
     if (response.ok && data.token) {
       sessionState.token = data.token;
       sessionState.user = data.user;
@@ -340,9 +344,10 @@ async function login(username, password) {
       dom.loginModal.classList.add("hidden");
       updateStatus("AUTHENTICATED");
     } else {
-      alert(data.error || "Login failed");
+      alert(data.error || data.message || "Login failed");
     }
   } catch (error) {
+    console.error("Login error:", error);
     alert(`Login failed: ${error.message}`);
   }
 }
@@ -438,6 +443,13 @@ function cartesianFromLatLon(lat, lon, height = 0) {
 }
 
 function initCesium() {
+  if (typeof Cesium === "undefined") {
+    console.warn("Cesium not loaded - map features disabled");
+    document.getElementById("cesiumContainer").innerHTML =
+      '<div style="padding: 20px; text-align: center; color: #888;">Map loading...</div>';
+    return;
+  }
+
   Cesium.Ion.defaultAccessToken =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE3ZjdjZS03YmEwLTQwNzctOWQyMy04NzkyOTYxMTQxMGEiLCJpZCI6MjcwMTY1LCJpYXQiOjE3MzQwMjE1NjN9.tlt-e_ImR_hYVpPJmxc6gd4Z7bF0sWb8rHbREgyU6N8";
 
@@ -3365,10 +3377,25 @@ function init() {
   dom.startAt.value = fiveMinutesAgo.toISOString();
   dom.objectId.value = "veh_42";
 
-  // Initialize
-  initCesium();
-  initSession();
-  initEventListeners();
+  // Initialize core functionality first
+  try {
+    initCesium();
+  } catch (e) {
+    console.error("Cesium init failed:", e);
+  }
+
+  try {
+    initSession();
+  } catch (e) {
+    console.error("Session init failed:", e);
+  }
+
+  try {
+    initEventListeners();
+  } catch (e) {
+    console.error("Event listeners init failed:", e);
+  }
+
   updateActiveLayersCount();
   updateVisualEffects();
 
