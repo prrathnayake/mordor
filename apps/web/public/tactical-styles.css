@@ -108,6 +108,13 @@ body {
   overflow: hidden;
 }
 
+/* ===== FORCE HEADER VISIBLE ===== */
+.header-right {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
 /* ===== TACTICAL HEADER ===== */
 .tactical-header {
   display: grid;
