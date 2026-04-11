@@ -109,10 +109,21 @@ body {
 }
 
 /* ===== FORCE HEADER VISIBLE ===== */
-.header-right {
+.header-right,
+.session-badge,
+#auth-button,
+.auth-button {
   display: flex !important;
   visibility: visible !important;
   opacity: 1 !important;
+}
+#auth-button {
+  display: inline-block !important;
+  padding: 4px 12px;
+  background: #006622;
+  border: 1px solid #00ff41;
+  color: #00ff41;
+  cursor: pointer;
 }
 
 /* ===== TACTICAL HEADER ===== */

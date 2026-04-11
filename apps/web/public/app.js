@@ -488,10 +488,18 @@ function cartesianFromLatLon(lat, lon, height = 0) {
 }
 
 function initCesium() {
+  console.log("Initializing Cesium... Cesium defined:", typeof Cesium !== "undefined");
+
+  const container = document.getElementById("cesiumContainer");
+  if (!container) {
+    console.error("Cesium container not found!");
+    return;
+  }
+
   if (typeof Cesium === "undefined") {
-    console.warn("Cesium not loaded - map features disabled");
-    document.getElementById("cesiumContainer").innerHTML =
-      '<div style="padding: 20px; text-align: center; color: #888;">Map loading...</div>';
+    console.warn("Cesium not loaded - showing fallback map message");
+    container.innerHTML =
+      '<div style="padding: 40px; text-align: center; color: #00ff41; background: #111; height: 100%;"><h2>TACTICAL MAP</h2><p>Map loading from CDN...</p><p style="color: #666;">If this takes too long, check your internet connection</p></div>';
     return;
   }
 
