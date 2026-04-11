@@ -88,14 +88,15 @@ class LiveEventBus {
   }
 
   getConnectionInfo(): ConnectionInfoEvent {
+    const now = new Date().toISOString();
     return {
       type: "connection_info",
-      timestamp: new Date().toISOString(),
+      timestamp: now,
       sequence: this.sequence,
       payload: {
         client_id: "",
         server_sequence: this.sequence,
-        server_time: new Date().toISOString(),
+        server_time: now,
       },
     };
   }
