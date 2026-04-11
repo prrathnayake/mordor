@@ -12,11 +12,41 @@ async function serveStaticFile(
   response: ServerResponse,
   fileUrl: URL,
   contentType: string,
+  cacheControl = "public, max-age=3600",
 ): Promise<void> {
   const content = await readFile(fileUrl);
   response.statusCode = 200;
   response.setHeader("Content-Type", contentType);
+  response.setHeader("Cache-Control", cacheControl);
   response.end(content);
+}
+
+function getContentType(pathname: string): string {
+  switch (extname(pathname)) {
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+      return "application/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".wasm":
+      return "application/wasm";
+    case ".xml":
+      return "application/xml; charset=utf-8";
+    case ".glsl":
+      return "text/plain; charset=utf-8";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 export function createWebServer(options: { api_base_url: string }): RunningWebServer {
@@ -26,6 +56,7 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
     const publicRoot = isProduction
       ? new URL("file:///app/apps/web/public/")
       : new URL("../public/", import.meta.url);
+    const cesiumRoot = new URL("../../../node_modules/cesium/Build/Cesium/", import.meta.url);
 
     try {
       if (url.pathname === "/" || url.pathname === "/index.html") {
@@ -33,7 +64,26 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
         const html = template.replaceAll("__API_BASE_URL__", options.api_base_url);
         response.statusCode = 200;
         response.setHeader("Content-Type", "text/html; charset=utf-8");
+        response.setHeader("Cache-Control", "no-store");
         response.end(html);
+        return;
+      }
+
+      if (url.pathname.startsWith("/cesium/")) {
+        const relativePath = url.pathname.replace("/cesium/", "");
+
+        if (relativePath.includes("..")) {
+          response.statusCode = 400;
+          response.setHeader("Content-Type", "text/plain; charset=utf-8");
+          response.end("Invalid asset path");
+          return;
+        }
+
+        await serveStaticFile(
+          response,
+          new URL(relativePath, cesiumRoot),
+          getContentType(relativePath),
+        );
         return;
       }
 
@@ -41,7 +91,8 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
         await serveStaticFile(
           response,
           new URL("app.js", publicRoot),
-          "application/javascript; charset=utf-8",
+          getContentType("app.js"),
+          "no-store",
         );
         return;
       }
@@ -50,7 +101,8 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
         await serveStaticFile(
           response,
           new URL("styles.css", publicRoot),
-          "text/css; charset=utf-8",
+          getContentType("styles.css"),
+          "no-store",
         );
         return;
       }
@@ -59,7 +111,8 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
         await serveStaticFile(
           response,
           new URL("tactical-styles.css", publicRoot),
-          "text/css; charset=utf-8",
+          getContentType("tactical-styles.css"),
+          "no-store",
         );
         return;
       }

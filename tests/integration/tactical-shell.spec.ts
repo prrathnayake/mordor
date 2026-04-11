@@ -37,14 +37,18 @@ describe("Tactical UI Shell Integration", () => {
     it("should serve updated app.js", async () => {
       const response = await fetch(`http://127.0.0.1:${web.port}/app.js`);
       expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
       const content = await response.text();
       expect(content).toContain("MORDOR");
       expect(content).toContain("tactical");
+      expect(content).toContain("TileMapServiceImageryProvider.fromUrl");
+      expect(content).toContain("NaturalEarthII");
     });
 
     it("should serve updated index.html", async () => {
       const response = await fetch(`http://127.0.0.1:${web.port}/`);
       expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
       const content = await response.text();
       expect(content).toContain("MORDOR");
       expect(content).toContain("tactical-styles.css");
@@ -132,7 +136,8 @@ describe("Tactical UI Shell Integration", () => {
       const response = await fetch(`http://127.0.0.1:${web.port}/`);
       const html = await response.text();
 
-      expect(html).toContain("cesiumjs");
+      expect(html).toContain("/cesium/Cesium.js");
+      expect(html).toContain("CESIUM_BASE_URL");
       expect(html).toContain('id="cesiumContainer"');
     });
   });

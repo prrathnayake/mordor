@@ -2,6 +2,7 @@ node_modules/
 coverage/
 dist/
 *.log
+playwright-globe-check*.png
 playwright-report/
 test-results/
 .env

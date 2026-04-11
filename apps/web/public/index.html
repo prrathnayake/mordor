@@ -4,12 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MORDOR - Tactical Operations Center</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.139.0/Build/Cesium/Widgets/widgets.css" />
+    <link rel="stylesheet" href="/cesium/Widgets/widgets.css" />
     <link rel="stylesheet" href="/tactical-styles.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.139.0/Build/Cesium/Cesium.js"></script>
     <script>
+      window.CESIUM_BASE_URL = "/cesium/";
       window.__APP_CONFIG__ = { apiBaseUrl: "__API_BASE_URL__" };
     </script>
+    <script src="/cesium/Cesium.js"></script>
   </head>
   <body data-theme="crt">
     <div id="mordor-app" class="mordor-app">

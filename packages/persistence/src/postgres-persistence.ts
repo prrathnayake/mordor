@@ -2517,7 +2517,10 @@ export class PostgresPersistenceGateway
           status, last_update, snapshot_available, live_available,
           linked_object_ids, linked_alert_ids, linked_incident_ids, metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+          $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+        )
         ON CONFLICT (source_id) DO UPDATE SET
           source_type = EXCLUDED.source_type,
           provider = EXCLUDED.provider,

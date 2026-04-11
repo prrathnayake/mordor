@@ -1,4 +1,4 @@
-import { createServer, IncomingMessage, Server, ServerResponse } from "node:http";
+import { createServer, IncomingMessage, type Server, ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createAlertRuleId, evaluateEventForAlerts } from "../../../packages/alerts/src/index.js";
 import { authenticate, logout, validateToken } from "../../../packages/auth/src/index.js";
@@ -1644,20 +1644,6 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
           return;
         }
 
-        // GET /sources/:sourceId
-        if (request.method === "GET" && url.pathname.startsWith("/sources/")) {
-          const sourceId = url.pathname.replace("/sources/", "");
-          const source = await persistence.getSourceRegistry(sourceId);
-
-          if (!source) {
-            writeJson(response, 404, { error: "source not found" });
-            return;
-          }
-
-          writeJson(response, 200, source);
-          return;
-        }
-
         // GET /sources/nearest-to-point
         if (request.method === "GET" && url.pathname === "/sources/nearest-to-point") {
           const latParam = url.searchParams.get("lat");
@@ -1703,6 +1689,20 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
             target_id: targetId,
           });
           writeJson(response, 200, { links });
+          return;
+        }
+
+        // GET /sources/:sourceId
+        if (request.method === "GET" && url.pathname.startsWith("/sources/")) {
+          const sourceId = url.pathname.replace("/sources/", "");
+          const source = await persistence.getSourceRegistry(sourceId);
+
+          if (!source) {
+            writeJson(response, 404, { error: "source not found" });
+            return;
+          }
+
+          writeJson(response, 200, source);
           return;
         }
 

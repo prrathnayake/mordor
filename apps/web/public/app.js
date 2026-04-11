@@ -112,7 +112,7 @@ const dom = {
   modeValue: document.getElementById("mode-value") || { value: "", textContent: "" },
   statusMessage: document.getElementById("status-message") || { textContent: "" },
   connectionText: document.getElementById("connection-text") || { textContent: "" },
-  sessionBadge: document.getElementById("session-badge") || { textContent: "" },
+  sessionStatus: document.getElementById("session-status") || { textContent: "" },
   authButton: document.getElementById("auth-button"),
   timeDisplay: document.getElementById("time-display") || { textContent: "" },
   activeLayersCount: document.getElementById("active-layers-count") || { textContent: "" },
@@ -268,9 +268,6 @@ function updateStatus(message) {
   if (dom.statusMessage) {
     dom.statusMessage.textContent = message.toUpperCase();
   }
-  if (dom.sessionBadge) {
-    dom.sessionBadge.textContent = message.toUpperCase();
-  }
 }
 
 function updateConnectionStatus(state, details = "") {
@@ -299,6 +296,15 @@ function canManageAlerts() {
   );
 }
 
+function getApiBaseUrl() {
+  return apiBaseUrl;
+}
+
+function showAuthModal() {
+  dom.loginModal?.classList.remove("hidden");
+  dom.usernameInput?.focus();
+}
+
 function updateActiveLayersCount() {
   const activeCount = Object.values(layerState).filter(Boolean).length;
   dom.activeLayersCount.textContent = `${activeCount}/8`;
@@ -309,11 +315,8 @@ function updateSessionUI() {
   console.log("updateSessionUI called, isAuthenticated:", sessionState.isAuthenticated);
   console.log("sessionState:", sessionState);
 
-  // Query fresh from document to handle any DOM changes
-  const sessionBadgeEl = document.getElementById("session-badge");
-  const sessionStatus = document.querySelector("#session-badge .session-status");
-  const authButton = document.getElementById("auth-button");
-  const sessionBadgeText = sessionBadgeEl?.textContent;
+  const sessionStatus = document.getElementById("session-status") ?? dom.sessionStatus;
+  const authButton = document.getElementById("auth-button") ?? dom.authButton;
 
   if (sessionState.isAuthenticated && sessionState.user) {
     const statusText = `${sessionState.user.username.toUpperCase()} (${sessionState.role?.toUpperCase() || "USER"})`;
@@ -324,9 +327,6 @@ function updateSessionUI() {
     if (authButton) {
       authButton.textContent = "LOGOUT";
       console.log("Set auth-button to: LOGOUT");
-    }
-    if (sessionBadgeEl && !sessionStatus) {
-      sessionBadgeEl.textContent = statusText;
     }
   } else {
     if (sessionStatus) {
@@ -348,7 +348,7 @@ function handleAuthClick() {
   if (sessionState.isAuthenticated) {
     logout();
   } else {
-    dom.loginModal.classList.remove("hidden");
+    showAuthModal();
   }
 }
 
@@ -387,9 +387,13 @@ async function login(username, password) {
       updateSessionUI();
       dom.loginModal.classList.add("hidden");
       updateStatus("AUTHENTICATED");
+      loadAlerts();
+      if (currentMode === "live") {
+        loadLatestState();
+      }
       alert("Login successful!");
     } else {
-      alert("Login failed: " + (data.error || data.message || "Unknown error"));
+      alert(`Login failed: ${data.error || data.message || "Unknown error"}`);
     }
   } catch (error) {
     console.error("Login fetch error:", error);
@@ -410,8 +414,13 @@ function logout() {
   sessionState.role = null;
   sessionState.isAuthenticated = false;
   localStorage.removeItem("auth_token");
+  latestStates.clear();
   updateSessionUI();
   updateStatus("LOGGED OUT");
+  renderMapMarkers();
+  dom.alertsCount.textContent = "0";
+  dom.alertsCount.classList.add("zero");
+  dom.alertsListMini.innerHTML = '<span class="no-alerts">Auth required</span>';
 }
 
 function handleUnauthorized(response) {
@@ -499,27 +508,26 @@ function initCesium() {
   if (typeof Cesium === "undefined") {
     console.warn("Cesium not loaded - showing fallback map message");
     container.innerHTML =
-      '<div style="padding: 40px; text-align: center; color: #00ff41; background: #111; height: 100%;"><h2>TACTICAL MAP</h2><p>Map loading from CDN...</p><p style="color: #666;">If this takes too long, check your internet connection</p></div>';
+      '<div style="padding: 40px; text-align: center; color: #00ff41; background: #111; height: 100%;"><h2>TACTICAL MAP</h2><p>Map bundle did not load.</p><p style="color: #666;">Refresh after the local Cesium assets are available.</p></div>';
     return;
   }
 
-  Cesium.Ion.defaultAccessToken =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE3ZjdjZS03YmEwLTQwNzctOWQyMy04NzkyOTYxMTQxMGEiLCJpZCI6MjcwMTY1LCJpYXQiOjE3MzQwMjE1NjN9.tlt-e_ImR_hYVpPJmxc6gd4Z7bF0sWb8rHbREgyU6N8";
-
-  Cesium.Ion.defaultBaseUrl = "https://cdnjs.cloudflare.com/ajax/libs/cesium/1.139.0/Build/Cesium";
-
   viewer = new Cesium.Viewer("cesiumContainer", {
-    terrain: Cesium.Terrain.fromWorldTerrain(),
+    terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+    baseLayer: Cesium.ImageryLayer.fromProviderAsync(
+      Cesium.TileMapServiceImageryProvider.fromUrl(
+        Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"),
+      ),
+    ),
     sceneMode: Cesium.SceneMode.SCENE3D,
-    baseLayerPicker: true,
-    geocoder: true,
+    baseLayerPicker: false,
+    geocoder: false,
     homeButton: true,
     sceneModePicker: true,
     navigationHelpButton: true,
     animation: false,
     timeline: false,
     fullscreenButton: false,
-    imageryProvider: new Cesium.IonImageryProvider({ ionAssetId: 2 }),
   });
 
   // Set initial view to full globe
@@ -554,6 +562,8 @@ function initCesium() {
 }
 
 function renderMapMarkers() {
+  if (!viewer || typeof Cesium === "undefined") return;
+
   // Remove all existing object entities
   for (const entity of objectEntities.values()) {
     viewer.entities.remove(entity);
@@ -620,6 +630,8 @@ function getReplayStatesAtCurrentIndex() {
 }
 
 function renderTrack() {
+  if (!viewer || typeof Cesium === "undefined") return;
+
   if (trackEntity) {
     viewer.entities.remove(trackEntity);
     trackEntity = null;
@@ -786,7 +798,7 @@ async function updateCCTVSection(objectId, state) {
       }
 
       if (linkedSources.length > 0) {
-        await renderSourcePanel(linkedSources, objectId);
+        await renderSourcePanel(linkedSources);
         return;
       }
     }
@@ -799,7 +811,7 @@ async function updateCCTVSection(objectId, state) {
 
       if (nearestResponse.ok) {
         const nearestSource = await nearestResponse.json();
-        await renderSourcePanel([nearestSource], objectId, true);
+        await renderSourcePanel([nearestSource], true);
         return;
       }
     }
@@ -850,7 +862,7 @@ async function updateCCTVSection(objectId, state) {
   }
 }
 
-async function renderSourcePanel(sources, objectId, isNearest = false) {
+async function renderSourcePanel(sources, isNearest = false) {
   const source = sources[0]; // Primary source
   const statusClass =
     source.status === "active"
@@ -1177,8 +1189,19 @@ function handleLiveStateUpdate(state) {
 }
 
 async function loadLatestState() {
+  if (!sessionState.isAuthenticated) {
+    return;
+  }
+
   try {
-    const response = await fetch(`${apiBaseUrl}/state/latest`);
+    const response = await fetch(`${apiBaseUrl}/state/latest`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (handleUnauthorized(response) || !response.ok) {
+      return;
+    }
+
     const payload = await response.json();
 
     if (payload.states) {
@@ -1227,6 +1250,13 @@ async function loadSourceHealth() {
 
 // ===== ALERTS =====
 async function loadAlerts() {
+  if (!sessionState.isAuthenticated) {
+    dom.alertsCount.textContent = "0";
+    dom.alertsCount.classList.add("zero");
+    dom.alertsListMini.innerHTML = '<span class="no-alerts">Auth required</span>';
+    return;
+  }
+
   try {
     const response = await fetch(`${apiBaseUrl}/alerts?status=open&limit=10`, {
       headers: getAuthHeaders(),
@@ -2361,7 +2391,7 @@ async function showAlertDetail(alertId) {
     if (document.getElementById("jump-replay")) {
       document
         .getElementById("jump-replay")
-        .addEventListener("click", () => jumpToReplayFromAlert(alert));
+        .addEventListener("click", () => jumpToReplayFromAlert(alertData));
     }
     if (document.getElementById("link-incident")) {
       document
@@ -3211,9 +3241,12 @@ async function loadInferences(incidentId = null) {
     const inferences = data.inferences || data;
 
     inferenceState.inferences = Array.isArray(inferences) ? inferences : [];
+    inferenceState.degradationZones = [];
+    inferenceState.routeRedirections = [];
+    inferenceState.holdingPatterns = [];
 
     for (const inference of inferenceState.inferences) {
-      const type = inference.type || inference.inference_type || "unknown";
+      const type = getInferenceType(inference);
       switch (type) {
         case "navigation_degradation":
         case "nav_degradation":
@@ -3241,13 +3274,45 @@ async function loadInferences(incidentId = null) {
   }
 }
 
+function getInferenceType(inference) {
+  return inference.type || inference.inference_type || "unknown";
+}
+
+function getInferenceConfidenceDisplay(inference) {
+  const confidenceLevel =
+    inference.confidence_level ||
+    (typeof inference.confidence === "string" ? inference.confidence : null);
+
+  if (confidenceLevel === "very_high" || confidenceLevel === "high") {
+    return { className: "high", label: "HIGH" };
+  }
+  if (confidenceLevel === "medium") {
+    return { className: "medium", label: "MED" };
+  }
+  if (confidenceLevel === "low") {
+    return { className: "low", label: "LOW" };
+  }
+
+  if (typeof inference.confidence === "number") {
+    if (inference.confidence >= 0.7) {
+      return { className: "high", label: "HIGH" };
+    }
+    if (inference.confidence >= 0.5) {
+      return { className: "medium", label: "MED" };
+    }
+  }
+
+  return { className: "low", label: "LOW" };
+}
+
 function updateInferenceCounts() {
   const degradationCount = inferenceState.degradationZones.length;
   const redirectionCount = inferenceState.routeRedirections.length;
   const holdingCount = inferenceState.holdingPatterns.length;
-  const absenceCount = inferenceState.inferences.filter(
-    (i) => i.type === "absence_signal" || i.type === "absence",
-  ).length;
+  const absenceCount = inferenceState.inferences.filter((inference) => {
+    const type = getInferenceType(inference);
+    return type === "absence_signal" || type === "absence";
+  }).length;
 
   dom.degradationCount.textContent = degradationCount;
   dom.redirectionCount.textContent = redirectionCount;
@@ -3266,10 +3331,8 @@ function renderInferenceList() {
 
   dom.inferenceList.innerHTML = inferenceState.inferences
     .map((inference) => {
-      const type = inference.type || inference.inference_type || "unknown";
-      const confidence = inference.confidence || "low";
-      const confidenceLabel =
-        confidence === "high" ? "HIGH" : confidence === "medium" ? "MED" : "LOW";
+      const type = getInferenceType(inference);
+      const confidenceDisplay = getInferenceConfidenceDisplay(inference);
       const time = inference.detected_at || inference.created_at || "";
       const description = inference.description || inference.summary || `Detected ${type}`;
       const evidence = inference.evidence_summary ? inference.evidence_summary : "";
@@ -3278,7 +3341,7 @@ function renderInferenceList() {
         <div class="inference-item ${type.replace("_", "")}" data-inference-id="${inference.inference_id || inference.id}">
           <div class="inference-item-header">
             <span class="inference-item-type">${type.replace("_", " ")}</span>
-            <span class="inference-item-confidence ${confidence}">${confidenceLabel}</span>
+            <span class="inference-item-confidence ${confidenceDisplay.className}">${confidenceDisplay.label}</span>
           </div>
           <div class="inference-item-description">${description}</div>
           ${evidence ? `<div class="inference-item-evidence">Evidence: ${evidence}</div>` : ""}
@@ -3328,9 +3391,10 @@ function renderInferenceLayer(layerType) {
       inferences = inferenceState.holdingPatterns;
       break;
     case "absence":
-      inferences = inferenceState.inferences.filter(
-        (i) => i.type === "absence_signal" || i.type === "absence",
-      );
+      inferences = inferenceState.inferences.filter((inference) => {
+        const type = getInferenceType(inference);
+        return type === "absence_signal" || type === "absence";
+      });
       break;
     default:
       return;
@@ -3422,7 +3486,7 @@ function _clearAllInferenceEntities() {
 }
 
 // ===== INITIALIZATION =====
-function init() {
+async function init() {
   // Set default query times
   const now = new Date();
   const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
@@ -3438,7 +3502,7 @@ function init() {
   }
 
   try {
-    initSession();
+    await initSession();
   } catch (e) {
     console.error("Session init failed:", e);
   }

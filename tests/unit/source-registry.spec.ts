@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import type {
   SourceRegistryEntry,
-  SourceType,
   SourceStatus,
+  SourceType,
 } from "../../packages/contracts/src/index.js";
 
 describe("Source Registry Models", () => {
