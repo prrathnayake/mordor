@@ -2483,4 +2483,364 @@ export class PostgresPersistenceGateway
       [status, inferenceId],
     );
   }
+
+  async upsertSourceRegistry(input: {
+    source_id: string;
+    source_type: string;
+    provider: string;
+    label: string;
+    lat: number | null;
+    lon: number | null;
+    alt_m: number | null;
+    heading_deg: number | null;
+    coverage: {
+      type: string | null;
+      coordinates: number[] | null;
+      heading_deg: number | null;
+      fov_deg: number | null;
+      range_m: number | null;
+    } | null;
+    status: string;
+    last_update: string;
+    snapshot_available: boolean;
+    live_available: boolean;
+    linked_object_ids: string[];
+    linked_alert_ids: string[];
+    linked_incident_ids: string[];
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO source_registry (
+          source_id, source_type, provider, label, lat, lon, alt_m, heading_deg,
+          coverage, coverage_type, coverage_heading_deg, coverage_fov_deg, coverage_range_m,
+          status, last_update, snapshot_available, live_available,
+          linked_object_ids, linked_alert_ids, linked_incident_ids, metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())
+        ON CONFLICT (source_id) DO UPDATE SET
+          source_type = EXCLUDED.source_type,
+          provider = EXCLUDED.provider,
+          label = EXCLUDED.label,
+          lat = EXCLUDED.lat,
+          lon = EXCLUDED.lon,
+          alt_m = EXCLUDED.alt_m,
+          heading_deg = EXCLUDED.heading_deg,
+          coverage = EXCLUDED.coverage,
+          coverage_type = EXCLUDED.coverage_type,
+          coverage_heading_deg = EXCLUDED.coverage_heading_deg,
+          coverage_fov_deg = EXCLUDED.coverage_fov_deg,
+          coverage_range_m = EXCLUDED.coverage_range_m,
+          status = EXCLUDED.status,
+          last_update = EXCLUDED.last_update,
+          snapshot_available = EXCLUDED.snapshot_available,
+          live_available = EXCLUDED.live_available,
+          linked_object_ids = EXCLUDED.linked_object_ids,
+          linked_alert_ids = EXCLUDED.linked_alert_ids,
+          linked_incident_ids = EXCLUDED.linked_incident_ids,
+          metadata = EXCLUDED.metadata,
+          updated_at = NOW()
+      `,
+      [
+        input.source_id,
+        input.source_type,
+        input.provider,
+        input.label,
+        input.lat ?? null,
+        input.lon ?? null,
+        input.alt_m ?? null,
+        input.heading_deg ?? null,
+        input.coverage ? JSON.stringify(input.coverage) : null,
+        input.coverage?.type ?? null,
+        input.coverage?.heading_deg ?? null,
+        input.coverage?.fov_deg ?? null,
+        input.coverage?.range_m ?? null,
+        input.status,
+        input.last_update,
+        input.snapshot_available,
+        input.live_available,
+        input.linked_object_ids,
+        input.linked_alert_ids,
+        input.linked_incident_ids,
+        JSON.stringify(input.metadata),
+      ],
+    );
+  }
+
+  async getSourceRegistry(sourceId: string): Promise<{
+    source_id: string;
+    source_type: string;
+    provider: string;
+    label: string;
+    lat: number | null;
+    lon: number | null;
+    alt_m: number | null;
+    heading_deg: number | null;
+    coverage: {
+      type: string | null;
+      coordinates: number[] | null;
+      heading_deg: number | null;
+      fov_deg: number | null;
+      range_m: number | null;
+    } | null;
+    status: string;
+    last_update: string;
+    snapshot_available: boolean;
+    live_available: boolean;
+    linked_object_ids: string[];
+    linked_alert_ids: string[];
+    linked_incident_ids: string[];
+    metadata: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          source_id, source_type, provider, label, lat, lon, alt_m, heading_deg,
+          coverage, coverage_type, coverage_heading_deg, coverage_fov_deg, coverage_range_m,
+          status, last_update, snapshot_available, live_available,
+          linked_object_ids, linked_alert_ids, linked_incident_ids, metadata,
+          created_at, updated_at
+        FROM source_registry
+        WHERE source_id = $1
+      `,
+      [sourceId],
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      source_id: row.source_id,
+      source_type: row.source_type,
+      provider: row.provider,
+      label: row.label,
+      lat: row.lat,
+      lon: row.lon,
+      alt_m: row.alt_m,
+      heading_deg: row.heading_deg,
+      coverage: row.coverage ? JSON.parse(row.coverage) : null,
+      status: row.status,
+      last_update: row.last_update,
+      snapshot_available: row.snapshot_available,
+      live_available: row.live_available,
+      linked_object_ids: row.linked_object_ids,
+      linked_alert_ids: row.linked_alert_ids,
+      linked_incident_ids: row.linked_incident_ids,
+      metadata: row.metadata,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  async listSourceRegistry(): Promise<
+    Array<{
+      source_id: string;
+      source_type: string;
+      provider: string;
+      label: string;
+      lat: number | null;
+      lon: number | null;
+      alt_m: number | null;
+      heading_deg: number | null;
+      coverage: {
+        type: string | null;
+        coordinates: number[] | null;
+        heading_deg: number | null;
+        fov_deg: number | null;
+        range_m: number | null;
+      } | null;
+      status: string;
+      last_update: string;
+      snapshot_available: boolean;
+      live_available: boolean;
+      linked_object_ids: string[];
+      linked_alert_ids: string[];
+      linked_incident_ids: string[];
+      metadata: Record<string, unknown>;
+      created_at: string;
+      updated_at: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          source_id, source_type, provider, label, lat, lon, alt_m, heading_deg,
+          coverage, coverage_type, coverage_heading_deg, coverage_fov_deg, coverage_range_m,
+          status, last_update, snapshot_available, live_available,
+          linked_object_ids, linked_alert_ids, linked_incident_ids, metadata,
+          created_at, updated_at
+        FROM source_registry
+        ORDER BY source_id ASC
+      `,
+    );
+
+    return result.rows.map((row) => ({
+      source_id: row.source_id,
+      source_type: row.source_type,
+      provider: row.provider,
+      label: row.label,
+      lat: row.lat,
+      lon: row.lon,
+      alt_m: row.alt_m,
+      heading_deg: row.heading_deg,
+      coverage: row.coverage ? JSON.parse(row.coverage) : null,
+      status: row.status,
+      last_update: row.last_update,
+      snapshot_available: row.snapshot_available,
+      live_available: row.live_available,
+      linked_object_ids: row.linked_object_ids,
+      linked_alert_ids: row.linked_alert_ids,
+      linked_incident_ids: row.linked_incident_ids,
+      metadata: row.metadata,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+  }
+
+  async addSourceLink(input: {
+    source_id: string;
+    target_type: "object" | "alert" | "incident";
+    target_id: string;
+    link_type: "explicit" | "nearest";
+    distance_m: number | null;
+  }): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO source_links (
+          source_id, target_type, target_id, link_type, distance_m
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (source_id, target_type, target_id) DO UPDATE SET
+          link_type = EXCLUDED.link_type,
+          distance_m = EXCLUDED.distance_m,
+          created_at = NOW()
+      `,
+      [
+        input.source_id,
+        input.target_type,
+        input.target_id,
+        input.link_type,
+        input.distance_m ?? null,
+      ],
+    );
+  }
+
+  async removeSourceLink(input: {
+    source_id: string;
+    target_type: "object" | "alert" | "incident";
+    target_id: string;
+  }): Promise<void> {
+    await this.database.pool.query(
+      `
+        DELETE FROM source_links
+        WHERE source_id = $1 AND target_type = $2 AND target_id = $3
+      `,
+      [input.source_id, input.target_type, input.target_id],
+    );
+  }
+
+  async getSourceLinksForTarget(input: {
+    target_type: "object" | "alert" | "incident";
+    target_id: string;
+  }): Promise<
+    Array<{
+      source_id: string;
+      link_type: "explicit" | "nearest";
+      distance_m: number | null;
+      created_at: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT source_id, link_type, distance_m, created_at
+        FROM source_links
+        WHERE target_type = $1 AND target_id = $2
+        ORDER BY created_at DESC
+      `,
+      [input.target_type, input.target_id],
+    );
+
+    return result.rows.map((row) => ({
+      source_id: row.source_id,
+      link_type: row.link_type,
+      distance_m: row.distance_m,
+      created_at: row.created_at,
+    }));
+  }
+
+  async getNearestSourceToPoint(
+    lat: number,
+    lon: number,
+  ): Promise<{
+    source_id: string;
+    source_type: string;
+    provider: string;
+    label: string;
+    lat: number | null;
+    lon: number | null;
+    alt_m: number | null;
+    heading_deg: number | null;
+    coverage: {
+      type: string | null;
+      coordinates: number[] | null;
+      heading_deg: number | null;
+      fov_deg: number | null;
+      range_m: number | null;
+    } | null;
+    status: string;
+    last_update: string;
+    snapshot_available: boolean;
+    live_available: boolean;
+    linked_object_ids: string[];
+    linked_alert_ids: string[];
+    linked_incident_ids: string[];
+    metadata: Record<string, unknown>;
+    distance_m: number;
+  } | null> {
+    const result = await this.database.pool.query(
+      `
+        SELECT 
+          sr.*,
+          ST_Distance(
+            ST_SetSRID(ST_Point($1, $2), 4326),
+            ST_SetSRID(ST_Point(sr.lat, sr.lon), 4326)
+          ) AS distance_m
+        FROM source_registry sr
+        WHERE sr.lat IS NOT NULL AND sr.lon IS NOT NULL
+        ORDER BY distance_m ASC
+        LIMIT 1
+      `,
+      [lon, lat],
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    return {
+      source_id: row.source_id,
+      source_type: row.source_type,
+      provider: row.provider,
+      label: row.label,
+      lat: row.lat,
+      lon: row.lon,
+      alt_m: row.alt_m,
+      heading_deg: row.heading_deg,
+      coverage: row.coverage ? JSON.parse(row.coverage) : null,
+      status: row.status,
+      last_update: row.last_update,
+      snapshot_available: row.snapshot_available,
+      live_available: row.live_available,
+      linked_object_ids: row.linked_object_ids,
+      linked_alert_ids: row.linked_alert_ids,
+      linked_incident_ids: row.linked_incident_ids,
+      metadata: row.metadata,
+      distance_m: Number(row.distance_m),
+    };
+  }
 }

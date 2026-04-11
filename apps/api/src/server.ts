@@ -1522,6 +1522,77 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
           return;
         }
 
+        // ============ SOURCE REGISTRY ENDPOINTS ============
+
+        // GET /sources
+        if (request.method === "GET" && url.pathname === "/sources") {
+          const sources = await persistence.listSourceRegistry();
+          writeJson(response, 200, { sources });
+          return;
+        }
+
+        // GET /sources/:sourceId
+        if (request.method === "GET" && url.pathname.startsWith("/sources/")) {
+          const sourceId = url.pathname.replace("/sources/", "");
+          const source = await persistence.getSourceRegistry(sourceId);
+
+          if (!source) {
+            writeJson(response, 404, { error: "source not found" });
+            return;
+          }
+
+          writeJson(response, 200, source);
+          return;
+        }
+
+        // GET /sources/nearest-to-point
+        if (request.method === "GET" && url.pathname === "/sources/nearest-to-point") {
+          const latParam = url.searchParams.get("lat");
+          const lonParam = url.searchParams.get("lon");
+
+          if (!latParam || !lonParam) {
+            writeJson(response, 400, { error: "lat and lon query parameters are required" });
+            return;
+          }
+
+          const lat = Number.parseFloat(latParam);
+          const lon = Number.parseFloat(lonParam);
+
+          if (isNaN(lat) || isNaN(lon)) {
+            writeJson(response, 400, { error: "lat and lon must be valid numbers" });
+            return;
+          }
+
+          const source = await persistence.getNearestSourceToPoint(lat, lon);
+
+          if (!source) {
+            writeJson(response, 404, { error: "no sources found" });
+            return;
+          }
+
+          writeJson(response, 200, source);
+          return;
+        }
+
+        // GET /sources/linked/:targetType/:targetId
+        if (request.method === "GET" && url.pathname.match(/^\/sources\/linked\/[^/]+\/[^/]+$/)) {
+          const pathParts = url.pathname.replace("/sources/linked/", "").split("/");
+          const targetType = pathParts[0] as "object" | "alert" | "incident";
+          const targetId = pathParts[1];
+
+          if (!targetType || !targetId) {
+            writeJson(response, 400, { error: "target_type and target_id are required" });
+            return;
+          }
+
+          const links = await persistence.getSourceLinksForTarget({
+            target_type: targetType,
+            target_id: targetId,
+          });
+          writeJson(response, 200, { links });
+          return;
+        }
+
         // POST /inferences/:id/link-incident
         if (
           request.method === "POST" &&

@@ -49,6 +49,7 @@ export interface AbsenceSignalResult {
   expectedCount?: number;
   observedCount?: number;
   sourceBlackout?: boolean;
+  confidence?: number;
   error?: string;
 }
 
@@ -544,6 +545,7 @@ export async function detectAbsenceSignal(
       expectedCount,
       observedCount,
       sourceBlackout,
+      confidence,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

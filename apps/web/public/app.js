@@ -441,6 +441,8 @@ function initCesium() {
   Cesium.Ion.defaultAccessToken =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE3ZjdjZS03YmEwLTQwNzctOWQyMy04NzkyOTYxMTQxMGEiLCJpZCI6MjcwMTY1LCJpYXQiOjE3MzQwMjE1NjN9.tlt-e_ImR_hYVpPJmxc6gd4Z7bF0sWb8rHbREgyU6N8";
 
+  Cesium.Ion.defaultBaseUrl = "https://cdnjs.cloudflare.com/ajax/libs/cesium/1.139.0/Build/Cesium";
+
   viewer = new Cesium.Viewer("cesiumContainer", {
     terrain: Cesium.Terrain.fromWorldTerrain(),
     sceneMode: Cesium.SceneMode.SCENE3D,
@@ -687,8 +689,8 @@ function updateInspectorFromState(objectId, state) {
   dom.inspectorContent.innerHTML = html;
 }
 
-// ===== CCTV SECTION =====
-function updateCCTVSection(objectId, state) {
+// ===== CCTV / SOURCE PANEL SECTION =====
+async function updateCCTVSection(objectId, state) {
   // Check if CCTV layer is enabled
   if (!layerState.cctv) {
     dom.cctvContent.innerHTML = `
@@ -701,7 +703,46 @@ function updateCCTVSection(objectId, state) {
     return;
   }
 
-  // Check if there's a camera source associated
+  // Try to get real source context from source registry
+  try {
+    // First, check for explicit links to this object
+    const linksResponse = await fetch(`${apiBaseUrl}/sources/linked/object/${objectId}`);
+    const linksData = await linksResponse.json();
+
+    if (linksData.links && linksData.links.length > 0) {
+      // Show linked sources
+      const linkedSources = [];
+      for (const link of linksData.links) {
+        const sourceResponse = await fetch(`${apiBaseUrl}/sources/${link.source_id}`);
+        if (sourceResponse.ok) {
+          const source = await sourceResponse.json();
+          linkedSources.push(source);
+        }
+      }
+
+      if (linkedSources.length > 0) {
+        await renderSourcePanel(linkedSources, objectId);
+        return;
+      }
+    }
+
+    // Fall back to nearest source if position available
+    if (state?.position?.lat && state?.position?.lon) {
+      const nearestResponse = await fetch(
+        `${apiBaseUrl}/sources/nearest-to-point?lat=${state.position.lat}&lon=${state.position.lon}`,
+      );
+
+      if (nearestResponse.ok) {
+        const nearestSource = await nearestResponse.json();
+        await renderSourcePanel([nearestSource], objectId, true);
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("Source registry not available, using legacy method:", e);
+  }
+
+  // Legacy fallback - original logic
   const hasCameraSource = state?.source_id?.includes("camera") || state?.source_id?.includes("cam");
   const isCameraObject = objectId.includes("camera") || objectId.includes("cam");
 
@@ -742,6 +783,77 @@ function updateCCTVSection(objectId, state) {
       </div>
     `;
   }
+}
+
+async function renderSourcePanel(sources, objectId, isNearest = false) {
+  const source = sources[0]; // Primary source
+  const statusClass =
+    source.status === "active"
+      ? "status-active"
+      : source.status === "error"
+        ? "status-error"
+        : "status-inactive";
+
+  const statusText =
+    source.status === "active" ? "Active" : source.status === "error" ? "Error" : "Inactive";
+
+  const liveStatus = source.live_available
+    ? '<span class="status-live">LIVE AVAILABLE</span>'
+    : '<span class="status-unavailable">NO LIVE VIEW</span>';
+
+  const snapshotStatus = source.snapshot_available
+    ? '<span class="status-available">SNAPSHOT AVAILABLE</span>'
+    : '<span class="status-unavailable">NO SNAPSHOT</span>';
+
+  let linkedInfo = "";
+  if (isNearest) {
+    linkedInfo = `<div class="source-info-link-type">Nearest source (${Math.round(source.distance_m || 0)}m)</div>`;
+  } else {
+    linkedInfo = `<div class="source-info-link-type">Explicitly linked source</div>`;
+  }
+
+  // Build additional sources list if there are more
+  let additionalSources = "";
+  if (sources.length > 1) {
+    additionalSources = `<div class="source-additional-title">Other linked sources:</div>`;
+    for (let i = 1; i < sources.length; i++) {
+      const s = sources[i];
+      additionalSources += `<div class="source-additional-item">${s.label || s.source_id}</div>`;
+    }
+  }
+
+  dom.cctvContent.innerHTML = `
+    <div class="source-panel">
+      <div class="source-info-header">
+        <div class="source-id">${source.source_id}</div>
+        <div class="source-label">${source.label || "Unknown Source"}</div>
+      </div>
+      <div class="source-info-grid">
+        <div class="source-info-item">
+          <div class="source-info-label">Provider</div>
+          <div class="source-info-value">${source.provider || "Unknown"}</div>
+        </div>
+        <div class="source-info-item">
+          <div class="source-info-label">Type</div>
+          <div class="source-info-value">${source.source_type || "Unknown"}</div>
+        </div>
+        <div class="source-info-item">
+          <div class="source-info-label">Status</div>
+          <div class="source-info-value ${statusClass}">${statusText}</div>
+        </div>
+        <div class="source-info-item">
+          <div class="source-info-label">Last Update</div>
+          <div class="source-info-value">${new Date(source.last_update).toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="source-availability">
+        <div class="source-availability-item">${liveStatus}</div>
+        <div class="source-availability-item">${snapshotStatus}</div>
+      </div>
+      ${linkedInfo}
+      ${additionalSources}
+    </div>
+  `;
 }
 
 // ===== REPLAY FUNCTIONS =====

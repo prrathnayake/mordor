@@ -278,3 +278,29 @@ Before this bootstrap pass, the repository contained only the markdown planning 
 - unit tests for capture models (13 test cases)
 - created docs/plans/17_INCIDENT_CAPTURE_AND_EVIDENCE_FREEZE_PROGRESS.md
 
+## Inferred Intelligence Layers (Phase 18)
+- inferred intelligence contracts with explicit types, confidence, evidence
+- database migration (0005_inferred_intelligence.sql) for:
+  - inferred_events with geometry (AOI)
+  - degradation_zones for nav degradation heatmap
+  - route_redirections for deviation events
+  - holding_patterns for circular flight patterns
+  - heatmap_grid_cells for visualization
+  - inference_incident_links for linking to incidents
+- inference API endpoints: list, create, detail, update, timeline, link-incident
+- detection functions:
+  - detectNavigationDegradation - GPS/signal degradation detection
+  - detectRouteRedirection - route deviation detection
+  - detectHoldingPattern - circular flight pattern detection
+  - detectAbsenceSignal - activity thinning/blackout detection
+- Cesium globe rendering for inference markers and polygons
+- UI integration with layer toggles (degradation, redirection, holding, absence)
+- confidence and evidence display in inference list
+- click-to-fly to inference locations
+- incident timeline integration with inferred markers
+- unit tests for inference models (13 test cases)
+- unit tests for inference logic (27 test cases)
+- integration tests for inference API (15 test cases)
+- E2E tests for inferred layer workflow (17 test cases)
+- created docs/plans/18_INFERRED_INTELLIGENCE_LAYERS_PROGRESS.md
+
