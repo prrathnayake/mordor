@@ -264,7 +264,13 @@ function updateTime() {
 }
 
 function updateStatus(message) {
-  dom.statusMessage.textContent = message.toUpperCase();
+  console.log("updateStatus called:", message);
+  if (dom.statusMessage) {
+    dom.statusMessage.textContent = message.toUpperCase();
+  }
+  if (dom.sessionBadge) {
+    dom.sessionBadge.textContent = message.toUpperCase();
+  }
 }
 
 function updateConnectionStatus(state, details = "") {
@@ -300,19 +306,42 @@ function updateActiveLayersCount() {
 
 // ===== AUTHENTICATION =====
 function updateSessionUI() {
+  console.log("updateSessionUI called, isAuthenticated:", sessionState.isAuthenticated);
+  console.log("sessionState:", sessionState);
+
   // Query fresh from document to handle any DOM changes
+  const sessionBadgeEl = document.getElementById("session-badge");
   const sessionStatus = document.querySelector("#session-badge .session-status");
-  const authButton = document.querySelector("#auth-button");
+  const authButton = document.getElementById("auth-button");
+  const sessionBadgeText = sessionBadgeEl?.textContent;
 
   if (sessionState.isAuthenticated && sessionState.user) {
-    if (sessionStatus)
-      sessionStatus.textContent = `${sessionState.user.username.toUpperCase()} (${sessionState.role.toUpperCase()})`;
-    if (authButton) authButton.textContent = "LOGOUT";
+    const statusText = `${sessionState.user.username.toUpperCase()} (${sessionState.role?.toUpperCase() || "USER"})`;
+    if (sessionStatus) {
+      sessionStatus.textContent = statusText;
+      console.log("Set session-status to:", statusText);
+    }
+    if (authButton) {
+      authButton.textContent = "LOGOUT";
+      console.log("Set auth-button to: LOGOUT");
+    }
+    if (sessionBadgeEl && !sessionStatus) {
+      sessionBadgeEl.textContent = statusText;
+    }
   } else {
-    if (sessionStatus) sessionStatus.textContent = "NO SESSION";
-    if (authButton) authButton.textContent = "LOGIN";
+    if (sessionStatus) {
+      sessionStatus.textContent = "NO SESSION";
+      console.log("Set session-status to: NO SESSION");
+    }
+    if (authButton) {
+      authButton.textContent = "LOGIN";
+      console.log("Set auth-button to: LOGIN");
+    }
   }
-  loadAlerts();
+
+  // Force refresh the display
+  document.body.classList.toggle("authenticated", sessionState.isAuthenticated);
+  console.log("Updated body.authenticated class:", sessionState.isAuthenticated);
 }
 
 function handleAuthClick() {
