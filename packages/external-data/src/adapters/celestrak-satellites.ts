@@ -398,14 +398,48 @@ export class CelesTrakAdapter {
         name: tle.name,
         noradId: tle.noradId,
         intDesignator: tle.intDesignator,
+        line1: tle.line1,
+        line2: tle.line2,
         type: satType,
         inclination: tle.inclination,
         eccentricity: tle.eccentricity,
         period: tle.meanMotion > 0 ? 1440 / tle.meanMotion : null, // minutes
         velocity: position.velocityKmS,
         epoch: this.epochToDate(tle.epochYear, tle.epochDay).toISOString(),
+        orbit_path: this.buildOrbitPath(tle, position.timestamp),
       },
     };
+  }
+
+  private buildOrbitPath(
+    tle: TLESet,
+    centerTime: Date,
+  ): Array<{ lat: number; lon: number; altitude_m: number | null; observed_at: string }> {
+    const points: Array<{
+      lat: number;
+      lon: number;
+      altitude_m: number | null;
+      observed_at: string;
+    }> = [];
+    const periodMinutes = tle.meanMotion > 0 ? 1440 / tle.meanMotion : 90;
+    const stepMinutes = Math.max(2, Math.round(periodMinutes / 24));
+
+    for (let offset = -12; offset <= 12; offset += 1) {
+      const sampleTime = new Date(centerTime.getTime() + offset * stepMinutes * 60_000);
+      const sample = this.propagateSGP4(tle, sampleTime);
+      if (!sample) {
+        continue;
+      }
+
+      points.push({
+        lat: sample.lat,
+        lon: sample.lon,
+        altitude_m: sample.altitudeKm * 1000,
+        observed_at: sample.timestamp.toISOString(),
+      });
+    }
+
+    return points;
   }
 
   /**

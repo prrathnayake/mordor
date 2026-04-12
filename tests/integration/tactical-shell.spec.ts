@@ -182,6 +182,13 @@ describe("Tactical UI State Management", () => {
       expect(html).toContain('id="layer-cctv" checked');
     });
 
+    it("should have satellites layer enabled by default", async () => {
+      const response = await fetch(`http://127.0.0.1:${web.port}/`);
+      const html = await response.text();
+
+      expect(html).toContain('id="layer-satellites" checked');
+    });
+
     it("should have unavailable layers disabled", async () => {
       const response = await fetch(`http://127.0.0.1:${web.port}/`);
       const html = await response.text();

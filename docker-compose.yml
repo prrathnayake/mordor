@@ -1,4 +1,16 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: mordor-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   postgres:
     image: postgis/postgis:16-3.4-alpine
     container_name: mordor-postgres
@@ -27,11 +39,14 @@ services:
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: mordor-dev-secret-change-in-production
     ports:
       - "3001:3001"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: npx tsx apps/api/src/server.ts
     healthcheck:
@@ -80,6 +95,8 @@ services:
       postgres:
         condition: service_healthy
       api:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: npx tsx apps/worker/src/index.ts
 

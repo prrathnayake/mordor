@@ -748,6 +748,56 @@ export class PostgresPersistenceGateway
     return result.rows.map(mapObjectStateRow);
   }
 
+  async fetchRecentTrackForObject(
+    objectId: string,
+    limit: number,
+  ): Promise<
+    Array<{
+      lat: number;
+      lon: number;
+      altitude_m: number | null;
+      observed_at: string;
+      speed_mps: number | null;
+      heading_deg: number | null;
+    }>
+  > {
+    const result = await this.database.pool.query<{
+      lat: number;
+      lon: number;
+      altitude_m: number | null;
+      observed_at: string;
+      speed_mps: number | null;
+      heading_deg: number | null;
+    }>(
+      `
+        SELECT
+          ST_Y(geometry) AS lat,
+          ST_X(geometry) AS lon,
+          altitude_m,
+          observed_at,
+          speed_mps,
+          heading_deg
+        FROM canonical_events
+        WHERE object_id = $1
+          AND geometry IS NOT NULL
+        ORDER BY observed_at DESC
+        LIMIT $2
+      `,
+      [objectId, limit],
+    );
+
+    return result.rows
+      .map((row) => ({
+        lat: row.lat,
+        lon: row.lon,
+        altitude_m: row.altitude_m,
+        observed_at: new Date(row.observed_at).toISOString(),
+        speed_mps: row.speed_mps,
+        heading_deg: row.heading_deg,
+      }))
+      .reverse();
+  }
+
   async persistAlert(input: {
     alert_id: string;
     rule_id: string;

@@ -19,6 +19,7 @@ docker compose down
 
 | Service | Port | Description |
 |---------|------|-------------|
+| redis | 6379 | Live world cache for globe snapshots and tracks |
 | postgres | 5432 | PostgreSQL database |
 | api | 3001 | REST API server |
 | web | 8080 | Tactical UI (Cesium-based) |

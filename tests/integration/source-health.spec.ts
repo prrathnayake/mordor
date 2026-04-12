@@ -20,6 +20,16 @@ interface LatestStateResponse {
   }>;
 }
 
+interface TrackResponse {
+  object_id: string;
+  source: string;
+  points: Array<{
+    lat: number;
+    lon: number;
+    observed_at: string;
+  }>;
+}
+
 describe("source health tracking", () => {
   let setup: Awaited<ReturnType<typeof setupAuthenticatedApi>>;
 
@@ -160,5 +170,36 @@ describe("latest state API", () => {
     expect(response.status).toBe(200);
     expect(payload.states).toBeDefined();
     expect(Array.isArray(payload.states)).toBe(true);
+  });
+
+  it("returns recent track points for an object", async () => {
+    const ingestPayload = await loadJsonFixture<unknown>(
+      "adapters",
+      "fixture-telemetry",
+      "valid.request.json",
+    );
+
+    await fetch(`http://127.0.0.1:${setup.api.port}/ingest/fixture-telemetry`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${setup.operatorToken}`,
+      },
+      body: JSON.stringify(ingestPayload),
+    });
+
+    const response = await fetch(
+      `http://127.0.0.1:${setup.api.port}/state/tracks/veh_42?limit=10`,
+      {
+        headers: { Authorization: `Bearer ${setup.operatorToken}` },
+      },
+    );
+    const payload = (await response.json()) as TrackResponse;
+
+    expect(response.status).toBe(200);
+    expect(payload.object_id).toBe("veh_42");
+    expect(Array.isArray(payload.points)).toBe(true);
+    expect(payload.points.length).toBeGreaterThan(0);
+    expect(payload.source).toBe("database");
   });
 });

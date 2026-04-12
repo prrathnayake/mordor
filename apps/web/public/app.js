@@ -18,9 +18,14 @@ let lastSequence = 0;
 let reconnectAttempts = 0;
 const maxReconnectAttempts = 5;
 const latestStates = new Map();
+const liveTrackHistory = new Map();
 let _connectionState = "disconnected";
 let hasCenteredOnLiveData = false;
 let currentAlertId = null;
+let liveSnapshotRequest = null;
+let pendingLiveSnapshotReload = false;
+let selectedSatelliteId = null;
+let satelliteOrbitEntity = null;
 
 const sessionState = {
   token: null,
@@ -40,7 +45,7 @@ const layerState = {
   flights: true,
   military: false,
   earthquakes: false,
-  satellites: false,
+  satellites: true,
   traffic: false,
   weather: false,
   cctv: true,
@@ -137,6 +142,8 @@ const dom = {
   swanNotifications: document.getElementById("swan-notifications"),
   timeDisplay: document.getElementById("time-display") || { textContent: "" },
   activeLayersCount: document.getElementById("active-layers-count") || { textContent: "" },
+  flightsCount: document.getElementById("flights-count") || { textContent: "" },
+  flightsUpdate: document.getElementById("flights-update") || { textContent: "" },
 
   // Login Modal
   loginModal: document.getElementById("login-modal"),
@@ -499,7 +506,7 @@ async function login(username, password) {
         console.error("Failed to hydrate Swan after login:", error);
       });
       if (currentMode === "live") {
-        loadLatestState();
+        queueLiveSnapshotReload();
       }
       alert("Login successful!");
     } else {
@@ -933,6 +940,142 @@ function focusOnState(state, height = 2500) {
   });
 }
 
+function focusOnLiveStates(states) {
+  if (!viewer || !Array.isArray(states) || states.length === 0) {
+    return;
+  }
+
+  if (states.length > 25) {
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(10, 20, 22000000),
+      duration: 1,
+    });
+    return;
+  }
+
+  focusOnState(states[0], 2500000);
+}
+
+function clearSatelliteOrbit() {
+  if (!viewer || !satelliteOrbitEntity) {
+    return;
+  }
+
+  viewer.entities.remove(satelliteOrbitEntity);
+  satelliteOrbitEntity = null;
+}
+
+function renderSatelliteOrbit(event) {
+  clearSatelliteOrbit();
+  if (!viewer || !event?.payload?.orbit_path || event.payload.orbit_path.length < 2) {
+    return;
+  }
+
+  const positions = event.payload.orbit_path
+    .map((point) => {
+      if (typeof point?.lat !== "number" || typeof point?.lon !== "number") {
+        return null;
+      }
+      return Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.altitude_m || 0);
+    })
+    .filter(Boolean);
+
+  if (positions.length < 2) {
+    return;
+  }
+
+  satelliteOrbitEntity = viewer.entities.add({
+    polyline: {
+      positions,
+      width: 2,
+      material: new Cesium.PolylineGlowMaterialProperty({
+        glowPower: 0.15,
+        color: Cesium.Color.fromCssColorString("#60a5fa").withAlpha(0.9),
+      }),
+    },
+  });
+}
+
+function buildFlightLabel(state) {
+  const callsign =
+    state?.attributes?.callsign || state?.attributes?.display_name || state?.object_id || "FLIGHT";
+  const altitude = state?.position?.altitude_m;
+  const heading = state?.velocity?.heading_deg;
+  const altitudeText =
+    typeof altitude === "number"
+      ? `${Math.round(altitude / 0.3048).toLocaleString()} ft`
+      : "ALT --";
+  const headingText = typeof heading === "number" ? `${Math.round(heading)}°` : "--";
+  return `${callsign}\n${altitudeText}  HDG ${headingText}`;
+}
+
+function getSparseLabelStride(stateCount) {
+  if (visualState.detect) {
+    return 1;
+  }
+
+  if (visualState.panoptic) {
+    return Math.max(2, Math.ceil(stateCount / 250));
+  }
+
+  return Math.max(6, Math.ceil(stateCount / 90));
+}
+
+function buildProjectedTrackPoints(state) {
+  if (!state?.position) {
+    return [];
+  }
+
+  const headingDeg = state.velocity?.heading_deg;
+  const speedMps = state.velocity?.speed_mps;
+  if (typeof headingDeg !== "number" || typeof speedMps !== "number" || speedMps <= 0) {
+    return [
+      cartesianFromLatLon(state.position.lat, state.position.lon, state.position.altitude_m || 0),
+    ];
+  }
+
+  const earthRadiusM = 6378137;
+  const latRad = Cesium.Math.toRadians(state.position.lat);
+  const lonRad = Cesium.Math.toRadians(state.position.lon);
+  const headingRad = Cesium.Math.toRadians(headingDeg);
+  const distanceM = Math.min(speedMps * 600, 250000);
+  const angularDistance = distanceM / earthRadiusM;
+
+  const targetLat = Math.asin(
+    Math.sin(latRad) * Math.cos(angularDistance) +
+      Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(headingRad),
+  );
+  const targetLon =
+    lonRad +
+    Math.atan2(
+      Math.sin(headingRad) * Math.sin(angularDistance) * Math.cos(latRad),
+      Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(targetLat),
+    );
+
+  return [
+    cartesianFromLatLon(state.position.lat, state.position.lon, state.position.altitude_m || 0),
+    Cesium.Cartesian3.fromDegrees(
+      Cesium.Math.toDegrees(targetLon),
+      Cesium.Math.toDegrees(targetLat),
+      state.position.altitude_m || 0,
+    ),
+  ];
+}
+
+function updateFlightsLayerMeta(payload) {
+  const count = payload?.states?.length || 0;
+  dom.flightsCount.textContent = `${count.toLocaleString()} LIVE`;
+
+  if (payload?.generated_at) {
+    const generatedAt = new Date(payload.generated_at);
+    const ageSeconds = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
+    dom.flightsUpdate.textContent =
+      ageSeconds < 60 ? `${ageSeconds}s ago` : `${Math.round(ageSeconds / 60)}m ago`;
+  } else {
+    dom.flightsUpdate.textContent = "--";
+  }
+}
+
 function initCesium() {
   console.log("Initializing Cesium... Cesium defined:", typeof Cesium !== "undefined");
 
@@ -982,9 +1125,49 @@ function initCesium() {
         handleSwanFindingSelection(swanFindingId);
         return;
       }
-      const objectId = pickedObject.id.properties.objectId.getValue();
+      const objectId = pickedObject.id.properties.objectId?.getValue?.();
       if (objectId) {
+        selectedSatelliteId = null;
+        clearSatelliteOrbit();
         selectObject(objectId);
+        return;
+      }
+
+      const layerEvent = pickedObject.id.properties.event?.getValue?.(Cesium.JulianDate.now());
+      if (layerEvent?.payload?.noradId || layerEvent?.payload?.orbit_path) {
+        selectedObjectId = null;
+        selectedSatelliteId = layerEvent.external_id || layerEvent.payload?.noradId || null;
+        renderSatelliteOrbit(layerEvent);
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(
+            layerEvent.lon,
+            layerEvent.lat,
+            Math.max(layerEvent.altitude_m || 450000, 250000),
+          ),
+          duration: 1,
+        });
+        dom.inspectorContent.innerHTML = `
+          <div class="inspector-field">
+            <span class="inspector-label">Satellite</span>
+            <span class="inspector-value">${layerEvent.payload?.name || layerEvent.external_id}</span>
+          </div>
+          <div class="inspector-field">
+            <span class="inspector-label">NORAD</span>
+            <span class="inspector-value">${layerEvent.payload?.noradId || layerEvent.external_id}</span>
+          </div>
+          <div class="inspector-field">
+            <span class="inspector-label">Orbit</span>
+            <span class="inspector-value">${layerEvent.payload?.type || "unknown"}</span>
+          </div>
+          <div class="inspector-field">
+            <span class="inspector-label">Altitude</span>
+            <span class="inspector-value">${layerEvent.altitude_m ? `${Math.round(layerEvent.altitude_m / 1000).toLocaleString()} km` : "--"}</span>
+          </div>
+          <div class="inspector-field">
+            <span class="inspector-label">Velocity</span>
+            <span class="inspector-value">${layerEvent.payload?.velocity ? `${layerEvent.payload.velocity.toFixed(2)} km/s` : "--"}</span>
+          </div>
+        `;
         return;
       }
     }
@@ -1034,15 +1217,21 @@ function renderMapMarkers() {
   if (!layerState.flights) return;
 
   const states = currentMode === "live" ? latestStates : getReplayStatesAtCurrentIndex();
+  const sparseStride = getSparseLabelStride(states.size || 1);
+  let index = 0;
 
   for (const [objectId, state] of states) {
     if (!state.position) continue;
 
     const isSelected = selectedObjectId === objectId;
-
+    const showLabel = currentMode === "live" && (isSelected || index % sparseStride === 0);
+    const altitude = currentMode === "live" ? state.position.altitude_m || 0 : 0;
     let color;
     if (currentMode === "live") {
-      color = Cesium.Color.fromCssColorString("#00ff41");
+      color =
+        state.status === "ground"
+          ? Cesium.Color.fromCssColorString("#f59e0b")
+          : Cesium.Color.fromCssColorString("#38bdf8");
     } else {
       color = Cesium.Color.fromCssColorString("#f3d27a");
     }
@@ -1058,21 +1247,52 @@ function renderMapMarkers() {
       : Cesium.Color.fromCssColorString("#1b1b18");
 
     const entity = viewer.entities.add({
-      position: cartesianFromLatLon(state.position.lat, state.position.lon),
-      ellipse: {
-        semiMinorAxis: isSelected ? 25 : 20,
-        semiMajorAxis: isSelected ? 25 : 20,
-        material: color,
-        outline: true,
-        outlineColor: outlineColor,
-        outlineWidth: isSelected ? 4 : 2,
-      },
+      position: cartesianFromLatLon(state.position.lat, state.position.lon, altitude),
+      point:
+        currentMode === "live"
+          ? {
+              pixelSize: isSelected ? 11 : 6,
+              color: color,
+              outlineColor: outlineColor,
+              outlineWidth: isSelected ? 2 : 1,
+            }
+          : undefined,
+      ellipse:
+        currentMode === "live"
+          ? undefined
+          : {
+              semiMinorAxis: isSelected ? 25 : 20,
+              semiMajorAxis: isSelected ? 25 : 20,
+              material: color,
+              outline: true,
+              outlineColor: outlineColor,
+              outlineWidth: isSelected ? 4 : 2,
+            },
+      label:
+        currentMode === "live"
+          ? {
+              text: buildFlightLabel(state),
+              show: showLabel,
+              font: "10px monospace",
+              fillColor: color,
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              pixelOffset: new Cesium.Cartesian2(0, -16),
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
+                0,
+                visualState.detect ? 20_000_000 : 2_500_000,
+              ),
+            }
+          : undefined,
       properties: {
         objectId: objectId,
       },
     });
 
     objectEntities.set(objectId, entity);
+    index += 1;
   }
 }
 
@@ -1111,9 +1331,16 @@ function renderTrack() {
       if (pos) trackPoints.push(cartesianFromLatLon(pos.lat, pos.lon));
     }
   } else {
-    const state = latestStates.get(objectId);
-    if (state?.position) {
-      trackPoints.push(cartesianFromLatLon(state.position.lat, state.position.lon));
+    const history = liveTrackHistory.get(objectId) || [];
+    if (history.length >= 2) {
+      for (const point of history) {
+        trackPoints.push(cartesianFromLatLon(point.lat, point.lon, point.altitude_m || 0));
+      }
+    } else {
+      const state = latestStates.get(objectId);
+      if (state?.position) {
+        trackPoints.push(...buildProjectedTrackPoints(state));
+      }
     }
   }
 
@@ -1143,10 +1370,15 @@ function renderTrack() {
 
 function selectObject(objectId) {
   selectedObjectId = objectId;
+  selectedSatelliteId = null;
+  clearSatelliteOrbit();
   const state = currentMode === "live" ? latestStates.get(objectId) : getCurrentReplayState();
   if (state) {
     updateInspectorFromState(objectId, state);
     updateCCTVSection(objectId, state);
+  }
+  if (currentMode === "live") {
+    void loadLiveTrack(objectId);
   }
   renderMapMarkers();
   emitSwanActivity("object_selected", {
@@ -1175,6 +1407,15 @@ function updateInspectorFromState(objectId, state) {
   `;
 
   if (state) {
+    const displayName =
+      state.attributes?.callsign || state.attributes?.display_name || state.object_id || objectId;
+    html += `
+      <div class="inspector-field">
+        <span class="inspector-label">Callsign</span>
+        <span class="inspector-value">${displayName}</span>
+      </div>
+    `;
+
     html += `
       <div class="inspector-field">
         <span class="inspector-label">As Of</span>
@@ -1189,6 +1430,15 @@ function updateInspectorFromState(objectId, state) {
           <span class="inspector-value">${state.position.lat.toFixed(6)}, ${state.position.lon.toFixed(6)}</span>
         </div>
       `;
+
+      if (typeof state.position.altitude_m === "number") {
+        html += `
+          <div class="inspector-field">
+            <span class="inspector-label">Altitude</span>
+            <span class="inspector-value">${Math.round(state.position.altitude_m / 0.3048).toLocaleString()} ft</span>
+          </div>
+        `;
+      }
     }
 
     if (state.velocity) {
@@ -1217,6 +1467,15 @@ function updateInspectorFromState(objectId, state) {
         <div class="inspector-field">
           <span class="inspector-label">Source</span>
           <span class="inspector-value">${state.source_id}</span>
+        </div>
+      `;
+    }
+
+    if (state.attributes?.origin_country) {
+      html += `
+        <div class="inspector-field">
+          <span class="inspector-label">Origin</span>
+          <span class="inspector-value">${state.attributes.origin_country}</span>
         </div>
       `;
     }
@@ -1569,7 +1828,7 @@ function switchToLiveMode() {
 
   updateStatus("CONNECTING TO LIVE FEED...");
   connectToLiveEvents();
-  loadLatestState();
+  queueLiveSnapshotReload();
   loadSourceHealth();
   renderMapMarkers();
   emitSwanActivity("mode_switched", {
@@ -1617,13 +1876,21 @@ function connectToLiveEvents() {
 
       if (data.type === "connection_info") {
         if (currentMode === "live" && lastSequence === 0) {
-          loadLatestState();
+          queueLiveSnapshotReload();
         }
         updateConnectionStatus("connected");
         reconnectAttempts = 0;
         lastSequence = data.payload.server_sequence;
         if (currentMode === "live") {
           updateStatus("LIVE FEED CONNECTED");
+        }
+      } else if (data.type === "live_snapshot_update") {
+        if (data.sequence) {
+          lastSequence = data.sequence;
+        }
+        if (currentMode === "live") {
+          updateStatus(`LIVE WORLD REFRESH ${data.payload.object_count.toLocaleString()} TARGETS`);
+          queueLiveSnapshotReload();
         }
       } else if (data.type === "object_state_update") {
         if (data.sequence) {
@@ -1777,6 +2044,23 @@ function handleSwanFindingSelection(findingId) {
 
 function handleLiveStateUpdate(state) {
   latestStates.set(state.object_id, state);
+  const existingTrack = liveTrackHistory.get(state.object_id) || [];
+  const nextTrack = [
+    ...existingTrack,
+    {
+      lat: state.position?.lat,
+      lon: state.position?.lon,
+      altitude_m: state.position?.altitude_m || null,
+      observed_at: state.as_of,
+      speed_mps: state.velocity?.speed_mps || null,
+      heading_deg: state.velocity?.heading_deg || null,
+    },
+  ]
+    .filter((point) => typeof point.lat === "number" && typeof point.lon === "number")
+    .slice(-18);
+  if (nextTrack.length > 0) {
+    liveTrackHistory.set(state.object_id, nextTrack);
+  }
 
   if (!hasCenteredOnLiveData && state?.position) {
     focusOnState(state);
@@ -1790,6 +2074,27 @@ function handleLiveStateUpdate(state) {
 
   renderMapMarkers();
   renderTrack();
+}
+
+async function queueLiveSnapshotReload() {
+  if (!sessionState.isAuthenticated) {
+    return;
+  }
+
+  if (liveSnapshotRequest) {
+    pendingLiveSnapshotReload = true;
+    return liveSnapshotRequest;
+  }
+
+  liveSnapshotRequest = loadLatestState().finally(async () => {
+    liveSnapshotRequest = null;
+    if (pendingLiveSnapshotReload) {
+      pendingLiveSnapshotReload = false;
+      await queueLiveSnapshotReload();
+    }
+  });
+
+  return liveSnapshotRequest;
 }
 
 async function loadLatestState() {
@@ -1807,21 +2112,57 @@ async function loadLatestState() {
     }
 
     const payload = await response.json();
+    updateFlightsLayerMeta(payload);
 
     if (payload.states) {
       latestStates.clear();
       for (const state of payload.states) {
         latestStates.set(state.object_id, state);
       }
+      if (selectedObjectId) {
+        await loadLiveTrack(selectedObjectId);
+      }
       renderMapMarkers();
+      renderTrack();
 
       if (!hasCenteredOnLiveData && payload.states.length > 0) {
-        focusOnState(payload.states[0]);
+        focusOnLiveStates(payload.states);
         hasCenteredOnLiveData = true;
       }
     }
   } catch (error) {
     console.error("Failed to load latest state:", error);
+  }
+}
+
+async function loadLiveTrack(objectId) {
+  if (!sessionState.isAuthenticated || !objectId) {
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/state/tracks/${encodeURIComponent(objectId)}?limit=24`,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
+
+    if (handleUnauthorized(response) || !response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    if (!Array.isArray(payload.points)) {
+      return;
+    }
+
+    liveTrackHistory.set(objectId, payload.points);
+    if (selectedObjectId === objectId) {
+      renderTrack();
+    }
+  } catch (error) {
+    console.error("Failed to load live track:", error);
   }
 }
 
@@ -3476,10 +3817,16 @@ function initEventListeners() {
 
   dom.toggleDetect.addEventListener("change", (e) => {
     visualState.detect = e.target.checked;
+    renderMapMarkers();
+    renderTrack();
+    if (layerState.satellites) {
+      loadExternalLayerData("satellites");
+    }
   });
 
   dom.togglePanoptic.addEventListener("change", (e) => {
     visualState.panoptic = e.target.checked;
+    renderMapMarkers();
   });
 
   // Incident panel events
@@ -3676,22 +4023,26 @@ function getEarthquakeSize(magnitude) {
 
 function renderSatellites(events) {
   const entities = externalLayerState.entities.get("satellites") || new Map();
+  const sparseStride = visualState.detect ? 1 : Math.max(4, Math.ceil(events.length / 120));
+  let index = 0;
 
   for (const event of events) {
     const type = event.payload?.type || "unknown";
     const style = getSatelliteStyle(type);
     const altitudeM = event.altitude_m || 400000;
+    const isSelected = selectedSatelliteId === (event.external_id || event.payload?.noradId);
+    const showLabel = isSelected || index % sparseStride === 0;
 
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, altitudeM),
       point: {
-        pixelSize: style.pixelSize,
+        pixelSize: isSelected ? style.pixelSize + 3 : style.pixelSize,
         color: Cesium.Color.fromCssColorString(style.color),
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 1,
       },
       label: {
-        text: event.payload?.name || event.external_id,
+        text: `${event.payload?.name || event.external_id}\nNORAD ${event.payload?.noradId || event.external_id}`,
         font: "10px monospace",
         fillColor: Cesium.Color.fromCssColorString(style.color),
         outlineColor: Cesium.Color.BLACK,
@@ -3699,7 +4050,11 @@ function renderSatellites(events) {
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -style.pixelSize - 5),
-        show: false, // Only show on hover/select
+        show: showLabel,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
+          0,
+          visualState.detect ? 20_000_000 : 4_500_000,
+        ),
       },
       properties: {
         type: "satellite",
@@ -3708,6 +4063,7 @@ function renderSatellites(events) {
     });
 
     entities.set(event.event_id, entity);
+    index += 1;
   }
 
   externalLayerState.entities.set("satellites", entities);

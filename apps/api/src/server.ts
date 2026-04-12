@@ -5,15 +5,6 @@ import { authenticate, logout, validateToken } from "../../../packages/auth/src/
 import { getConfigFromEnv, validateConfig } from "../../../packages/config/src/index.js";
 import { applyCanonicalEventToObjectState } from "../../../packages/domain/src/index.js";
 import {
-  createCelesTrakAdapter,
-  createCityBikesAdapter,
-  createMilitaryFlightsAdapter,
-  createNOAAWeatherAdapter,
-  createStreetTrafficAdapter,
-  createUSGSEarthquakeAdapter,
-  type ExternalDataEvent,
-} from "../../../packages/external-data/src/index.js";
-import {
   type Clock,
   ingestCameraObservationBatch,
   ingestFixtureTelemetryBatch,
@@ -39,6 +30,7 @@ import {
 import { loadJsonFixture } from "../../../packages/test-fixtures/src/index.js";
 import { runCaptureJob } from "./capture-service.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
+import { createLiveWorldService, refreshExternalDataLayer } from "./live-world-service.js";
 
 // Layer ID to display label mapping
 function getLayerLabel(layerId: string): string {
@@ -69,139 +61,10 @@ function getSourceDisplayName(sourceType: string): string {
   return names[sourceType] || sourceType;
 }
 
-// Refresh external data layer from source
-async function refreshExternalDataLayer(
-  layerId: string,
-  persistence: PostgresPersistenceGateway,
-  logger: Logger,
-): Promise<{ success: boolean; message: string; count?: number; error?: string }> {
-  const startTime = Date.now();
-  logger.info("Refreshing external data layer", { layer_id: layerId });
-
-  try {
-    let result: { success: boolean; events: ExternalDataEvent[]; error?: string };
-
-    switch (layerId) {
-      case "earthquakes": {
-        const adapter = createUSGSEarthquakeAdapter();
-        result = await adapter.fetch();
-        break;
-      }
-      case "satellites": {
-        const adapter = createCelesTrakAdapter();
-        result = await adapter.fetchTLEs("visual");
-        break;
-      }
-      case "weather": {
-        const adapter = createNOAAWeatherAdapter();
-        result = await adapter.fetchAlerts();
-        break;
-      }
-      case "bikeshare": {
-        const adapter = createCityBikesAdapter();
-        result = await adapter.fetchMajorCities();
-        break;
-      }
-      case "traffic": {
-        const apiKey = process.env.TRAFFIC_API_KEY;
-        const adapter = createStreetTrafficAdapter(apiKey);
-        result = await adapter.fetchIncidents();
-        break;
-      }
-      case "military": {
-        const adapter = createMilitaryFlightsAdapter();
-        result = await adapter.fetch();
-        break;
-      }
-      default:
-        return { success: false, message: "Unknown layer", error: `Unknown layer_id: ${layerId}` };
-    }
-
-    const duration = Date.now() - startTime;
-
-    if (result.success) {
-      // Persist events to database
-      await persistence.persistExternalDataEvents(
-        layerId,
-        result.events.map((e) => ({
-          event_id: e.eventId,
-          external_id: e.externalId,
-          event_type: e.eventType,
-          observed_at: e.observedAt,
-          lat: e.lat,
-          lon: e.lon,
-          altitude_m: e.altitudeM,
-          payload: e.payload,
-        })),
-      );
-
-      // Update layer metadata
-      await persistence.updateExternalDataLayer({
-        layer_id: layerId,
-        status: result.events.length > 0 ? "real" : "degraded",
-        record_count: result.events.length,
-        error_message: undefined,
-        raw_data: { refreshed_at: new Date().toISOString(), duration_ms: duration },
-      });
-
-      logger.info("External data layer refreshed", {
-        layer_id: layerId,
-        count: result.events.length,
-        duration_ms: duration,
-      });
-
-      return {
-        success: true,
-        message: `Layer ${layerId} refreshed successfully`,
-        count: result.events.length,
-      };
-    } else {
-      // Update layer metadata with error
-      await persistence.updateExternalDataLayer({
-        layer_id: layerId,
-        status: "degraded",
-        record_count: 0,
-        error_message: result.error,
-        raw_data: { error_at: new Date().toISOString(), duration_ms: duration },
-      });
-
-      logger.warn("External data layer refresh failed", {
-        layer_id: layerId,
-        error: result.error,
-        duration_ms: duration,
-      });
-
-      return {
-        success: false,
-        message: `Layer ${layerId} refresh failed`,
-        error: result.error,
-      };
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error("External data layer refresh error", {
-      layer_id: layerId,
-      error: errorMessage,
-    });
-
-    await persistence.updateExternalDataLayer({
-      layer_id: layerId,
-      status: "degraded",
-      record_count: 0,
-      error_message: errorMessage,
-    });
-
-    return {
-      success: false,
-      message: `Layer ${layerId} refresh error`,
-      error: errorMessage,
-    };
-  }
-}
-
 interface ApiServerOptions {
   connection_string: string;
   clock?: Clock;
+  disableLiveWorldService?: boolean;
 }
 
 export interface RunningApiServer {
@@ -407,6 +270,42 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
       payload: state,
     });
   });
+
+  const liveWorldService = options.disableLiveWorldService
+    ? {
+        async start() {},
+        async close() {},
+        async getLatestStates() {
+          const states = await persistence.fetchLatestStateForAllObjects();
+          return {
+            states,
+            generated_at: null,
+            source: "database" as const,
+            status: null,
+            auth_mode: null,
+          };
+        },
+        async getTrack(objectId: string, limit: number = 24) {
+          return {
+            source: "database" as const,
+            points: await persistence.fetchRecentTrackForObject(objectId, limit),
+          };
+        },
+      }
+    : await createLiveWorldService({
+        persistence,
+        logger: createLogger("live-world"),
+        publishLiveEvent: (event) => liveEventBus.publish(event),
+        redisUrl: config.redisUrl,
+        openSkyClientId: config.openSkyClientId,
+        openSkyClientSecret: config.openSkyClientSecret,
+        flightsRefreshMs: config.liveFlightsRefreshMs,
+        flightsCacheTtlMs: config.liveFlightsCacheTtlMs,
+        flightHistoryPoints: config.liveFlightHistoryPoints,
+        flightLimit: config.liveFlightLimit,
+        autoRefreshExternalLayers: config.autoRefreshExternalLayers,
+      });
+  await liveWorldService.start();
 
   const server = createServer(
     { IncomingMessage: IncomingMessage, ServerResponse: ServerResponse },
@@ -779,8 +678,25 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             writeJson(response, 401, { error: "unauthorized" });
             return;
           }
-          const states = await persistence.fetchLatestStateForAllObjects();
-          writeJson(response, 200, { states });
+          const snapshot = await liveWorldService.getLatestStates();
+          writeJson(response, 200, snapshot);
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname.match(/^\/state\/tracks\/[^/]+$/)) {
+          if (!authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const objectId = decodeURIComponent(url.pathname.replace("/state/tracks/", ""));
+          const limit = Number.parseInt(url.searchParams.get("limit") ?? "24", 10);
+          const track = await liveWorldService.getTrack(objectId, limit);
+          writeJson(response, 200, {
+            object_id: objectId,
+            source: track.source,
+            points: track.points,
+          });
           return;
         }
 
@@ -2110,6 +2026,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
     persistence,
     async close() {
       logger.info("Shutting down API server");
+      await liveWorldService.close();
       await swanService?.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
@@ -2147,7 +2064,11 @@ export async function startApiServer(options: {
     }
   }
 
-  const runningServer = await createApiServer(options);
+  const runningServer = await createApiServer({
+    ...options,
+    disableLiveWorldService:
+      options.skipConfigValidation === true && process.env.ENABLE_LIVE_WORLD_SERVICE !== "true",
+  });
 
   await new Promise<void>((resolve, reject) => {
     runningServer.server.once("error", reject);

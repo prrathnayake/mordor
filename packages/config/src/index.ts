@@ -4,6 +4,14 @@ export interface AppConfig {
   webPort: number;
   logLevel: "debug" | "info" | "warn" | "error";
   authEnabled: boolean;
+  redisUrl: string | null;
+  openSkyClientId: string | null;
+  openSkyClientSecret: string | null;
+  liveFlightsRefreshMs: number;
+  liveFlightsCacheTtlMs: number;
+  liveFlightHistoryPoints: number;
+  liveFlightLimit: number;
+  autoRefreshExternalLayers: boolean;
   swanArtifactRoot: string;
   swanMaxThreadsPerSession: number;
   swanMaxGlobalThreads: number;
@@ -23,6 +31,24 @@ export function getConfigFromEnv(): AppConfig {
   const webPort = process.env.WEB_PORT ? Number.parseInt(process.env.WEB_PORT, 10) : 3001;
   const logLevel = (process.env.LOG_LEVEL as AppConfig["logLevel"]) || "info";
   const authEnabled = process.env.AUTH_ENABLED !== "false";
+  const redisUrl = process.env.REDIS_URL || null;
+  const openSkyClientId = process.env.OPENSKY_CLIENT_ID || null;
+  const openSkyClientSecret = process.env.OPENSKY_CLIENT_SECRET || null;
+  const liveFlightsRefreshMs = process.env.LIVE_FLIGHTS_REFRESH_MS
+    ? Number.parseInt(process.env.LIVE_FLIGHTS_REFRESH_MS, 10)
+    : openSkyClientId && openSkyClientSecret
+      ? 120000
+      : 900000;
+  const liveFlightsCacheTtlMs = process.env.LIVE_FLIGHTS_CACHE_TTL_MS
+    ? Number.parseInt(process.env.LIVE_FLIGHTS_CACHE_TTL_MS, 10)
+    : Math.max(liveFlightsRefreshMs * 2, 300000);
+  const liveFlightHistoryPoints = process.env.LIVE_FLIGHT_HISTORY_POINTS
+    ? Number.parseInt(process.env.LIVE_FLIGHT_HISTORY_POINTS, 10)
+    : 18;
+  const liveFlightLimit = process.env.LIVE_FLIGHT_LIMIT
+    ? Number.parseInt(process.env.LIVE_FLIGHT_LIMIT, 10)
+    : 7000;
+  const autoRefreshExternalLayers = process.env.AUTO_REFRESH_EXTERNAL_LAYERS !== "false";
   const swanArtifactRoot = process.env.SWAN_ARTIFACT_ROOT || "./runtime/swan";
   const swanMaxThreadsPerSession = process.env.SWAN_MAX_THREADS_PER_SESSION
     ? Number.parseInt(process.env.SWAN_MAX_THREADS_PER_SESSION, 10)
@@ -49,6 +75,14 @@ export function getConfigFromEnv(): AppConfig {
     webPort,
     logLevel,
     authEnabled,
+    redisUrl,
+    openSkyClientId,
+    openSkyClientSecret,
+    liveFlightsRefreshMs,
+    liveFlightsCacheTtlMs,
+    liveFlightHistoryPoints,
+    liveFlightLimit,
+    autoRefreshExternalLayers,
     swanArtifactRoot,
     swanMaxThreadsPerSession,
     swanMaxGlobalThreads,
@@ -75,6 +109,22 @@ export function validateConfig(config: AppConfig): ConfigValidationResult {
 
   if (!["debug", "info", "warn", "error"].includes(config.logLevel)) {
     errors.push("LOG_LEVEL must be one of: debug, info, warn, error");
+  }
+
+  if (!Number.isInteger(config.liveFlightsRefreshMs) || config.liveFlightsRefreshMs < 60000) {
+    errors.push("LIVE_FLIGHTS_REFRESH_MS must be at least 60000");
+  }
+
+  if (!Number.isInteger(config.liveFlightsCacheTtlMs) || config.liveFlightsCacheTtlMs < 60000) {
+    errors.push("LIVE_FLIGHTS_CACHE_TTL_MS must be at least 60000");
+  }
+
+  if (!Number.isInteger(config.liveFlightHistoryPoints) || config.liveFlightHistoryPoints < 2) {
+    errors.push("LIVE_FLIGHT_HISTORY_POINTS must be at least 2");
+  }
+
+  if (!Number.isInteger(config.liveFlightLimit) || config.liveFlightLimit < 100) {
+    errors.push("LIVE_FLIGHT_LIMIT must be at least 100");
   }
 
   if (!config.swanArtifactRoot) {

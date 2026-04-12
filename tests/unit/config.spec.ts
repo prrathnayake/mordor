@@ -24,6 +24,14 @@ describe("config validation", () => {
       delete process.env.WEB_PORT;
       delete process.env.LOG_LEVEL;
       delete process.env.AUTH_ENABLED;
+      delete process.env.REDIS_URL;
+      delete process.env.OPENSKY_CLIENT_ID;
+      delete process.env.OPENSKY_CLIENT_SECRET;
+      delete process.env.LIVE_FLIGHTS_REFRESH_MS;
+      delete process.env.LIVE_FLIGHTS_CACHE_TTL_MS;
+      delete process.env.LIVE_FLIGHT_HISTORY_POINTS;
+      delete process.env.LIVE_FLIGHT_LIMIT;
+      delete process.env.AUTO_REFRESH_EXTERNAL_LAYERS;
       delete process.env.SWAN_ARTIFACT_ROOT;
       delete process.env.SWAN_MAX_THREADS_PER_SESSION;
       delete process.env.SWAN_MAX_GLOBAL_THREADS;
@@ -39,6 +47,14 @@ describe("config validation", () => {
       expect(config.webPort).toBe(3001);
       expect(config.logLevel).toBe("info");
       expect(config.authEnabled).toBe(true);
+      expect(config.redisUrl).toBe(null);
+      expect(config.openSkyClientId).toBe(null);
+      expect(config.openSkyClientSecret).toBe(null);
+      expect(config.liveFlightsRefreshMs).toBe(900000);
+      expect(config.liveFlightsCacheTtlMs).toBe(1800000);
+      expect(config.liveFlightHistoryPoints).toBe(18);
+      expect(config.liveFlightLimit).toBe(7000);
+      expect(config.autoRefreshExternalLayers).toBe(true);
       expect(config.swanArtifactRoot).toBe("./runtime/swan");
       expect(config.swanMaxThreadsPerSession).toBe(5);
       expect(config.swanMaxGlobalThreads).toBe(20);
@@ -77,6 +93,28 @@ describe("config validation", () => {
       expect(config.authEnabled).toBe(false);
     });
 
+    it("parses live world configuration from environment", () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      process.env.OPENSKY_CLIENT_ID = "client";
+      process.env.OPENSKY_CLIENT_SECRET = "secret";
+      process.env.LIVE_FLIGHTS_REFRESH_MS = "180000";
+      process.env.LIVE_FLIGHTS_CACHE_TTL_MS = "600000";
+      process.env.LIVE_FLIGHT_HISTORY_POINTS = "24";
+      process.env.LIVE_FLIGHT_LIMIT = "5000";
+      process.env.AUTO_REFRESH_EXTERNAL_LAYERS = "false";
+
+      const config = getConfigFromEnv();
+
+      expect(config.redisUrl).toBe("redis://localhost:6379");
+      expect(config.openSkyClientId).toBe("client");
+      expect(config.openSkyClientSecret).toBe("secret");
+      expect(config.liveFlightsRefreshMs).toBe(180000);
+      expect(config.liveFlightsCacheTtlMs).toBe(600000);
+      expect(config.liveFlightHistoryPoints).toBe(24);
+      expect(config.liveFlightLimit).toBe(5000);
+      expect(config.autoRefreshExternalLayers).toBe(false);
+    });
+
     it("parses swan configuration from environment", () => {
       process.env.SWAN_ARTIFACT_ROOT = "./tmp/swan";
       process.env.SWAN_MAX_THREADS_PER_SESSION = "3";
@@ -104,6 +142,14 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "info" as const,
         authEnabled: true,
+        redisUrl: "redis://localhost:6379",
+        openSkyClientId: null,
+        openSkyClientSecret: null,
+        liveFlightsRefreshMs: 900000,
+        liveFlightsCacheTtlMs: 1800000,
+        liveFlightHistoryPoints: 18,
+        liveFlightLimit: 7000,
+        autoRefreshExternalLayers: true,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -125,6 +171,14 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "info" as const,
         authEnabled: true,
+        redisUrl: null,
+        openSkyClientId: null,
+        openSkyClientSecret: null,
+        liveFlightsRefreshMs: 900000,
+        liveFlightsCacheTtlMs: 1800000,
+        liveFlightHistoryPoints: 18,
+        liveFlightLimit: 7000,
+        autoRefreshExternalLayers: true,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -146,6 +200,14 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "info" as const,
         authEnabled: true,
+        redisUrl: null,
+        openSkyClientId: null,
+        openSkyClientSecret: null,
+        liveFlightsRefreshMs: 900000,
+        liveFlightsCacheTtlMs: 1800000,
+        liveFlightHistoryPoints: 18,
+        liveFlightLimit: 7000,
+        autoRefreshExternalLayers: true,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -167,6 +229,14 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "invalid" as never,
         authEnabled: true,
+        redisUrl: null,
+        openSkyClientId: null,
+        openSkyClientSecret: null,
+        liveFlightsRefreshMs: 900000,
+        liveFlightsCacheTtlMs: 1800000,
+        liveFlightHistoryPoints: 18,
+        liveFlightLimit: 7000,
+        autoRefreshExternalLayers: true,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -188,6 +258,14 @@ describe("config validation", () => {
         webPort: -1,
         logLevel: "invalid" as never,
         authEnabled: true,
+        redisUrl: null,
+        openSkyClientId: null,
+        openSkyClientSecret: null,
+        liveFlightsRefreshMs: 0,
+        liveFlightsCacheTtlMs: 0,
+        liveFlightHistoryPoints: 0,
+        liveFlightLimit: 0,
+        autoRefreshExternalLayers: true,
         swanArtifactRoot: "",
         swanMaxThreadsPerSession: 0,
         swanMaxGlobalThreads: 0,

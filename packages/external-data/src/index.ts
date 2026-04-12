@@ -22,6 +22,11 @@ export { createNOAAWeatherAdapter, NOAAWeatherAdapter } from "./adapters/noaa-we
 export { createStreetTrafficAdapter, StreetTrafficAdapter } from "./adapters/street-traffic.js";
 // Adapters
 export {
+  createOpenSkyFlightsAdapter,
+  OpenSkyFlightsAdapter,
+  type OpenSkyFlightsFetchResult,
+} from "./adapters/opensky-flights.js";
+export {
   createUSGSEarthquakeAdapter,
   USGSEarthquakeAdapter,
 } from "./adapters/usgs-earthquakes.js";

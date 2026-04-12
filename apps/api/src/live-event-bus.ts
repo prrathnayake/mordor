@@ -10,6 +10,7 @@ export interface LiveEvent {
     | "object_state_update"
     | "source_health_update"
     | "connection_info"
+    | "live_snapshot_update"
     | "swan_session_update"
     | "swan_thread_update"
     | "swan_projection_update"
@@ -48,6 +49,17 @@ export interface SourceHealthUpdate extends LiveEvent {
     status: "active" | "inactive" | "stale" | "error";
     last_seen_at: string;
     error_message: string | null;
+  };
+}
+
+export interface LiveSnapshotUpdate extends LiveEvent {
+  type: "live_snapshot_update";
+  payload: {
+    generated_at: string;
+    object_count: number;
+    provider: string;
+    status: "real" | "degraded";
+    auth_mode: "authenticated" | "anonymous";
   };
 }
 
