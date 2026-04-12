@@ -254,7 +254,10 @@ async function maybeBootstrapDevelopmentDemoData(input: {
 
 function addCorsHeaders(response: ServerResponse): void {
   response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Headers", "content-type,authorization");
+  response.setHeader(
+    "Access-Control-Allow-Headers",
+    "content-type,authorization,x-client-session-id",
+  );
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PATCH,DELETE");
 }
 

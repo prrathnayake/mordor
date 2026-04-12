@@ -112,6 +112,7 @@ const swanState = {
   clientSessionId: null,
   enabled: false,
   session: null,
+  syncToken: 0,
   projections: {
     session: null,
     panels: null,
@@ -730,7 +731,12 @@ async function refreshSwanProjections() {
 }
 
 async function hydrateSwanSession() {
+  const syncToken = ++swanState.syncToken;
+
   if (!sessionState.isAuthenticated) {
+    if (syncToken !== swanState.syncToken) {
+      return;
+    }
     swanState.enabled = false;
     swanState.session = null;
     swanState.projections = { session: null, panels: null, map: null, notifications: null };
@@ -744,6 +750,9 @@ async function hydrateSwanSession() {
   }).catch(() => null);
 
   if (!response || handleUnauthorized(response) || !response.ok) {
+    if (syncToken !== swanState.syncToken) {
+      return;
+    }
     swanState.enabled = false;
     swanState.session = null;
     updateSwanUI();
@@ -751,6 +760,9 @@ async function hydrateSwanSession() {
   }
 
   const payload = await response.json();
+  if (syncToken !== swanState.syncToken) {
+    return;
+  }
   if (!payload?.session) {
     swanState.enabled = false;
     swanState.session = null;
@@ -766,6 +778,9 @@ async function hydrateSwanSession() {
     swanState.projections = payload.projections;
   }
   await refreshSwanProjections();
+  if (syncToken !== swanState.syncToken) {
+    return;
+  }
   if (!eventSource) {
     connectToLiveEvents();
   }
@@ -773,6 +788,8 @@ async function hydrateSwanSession() {
 }
 
 async function enableSwan() {
+  const syncToken = ++swanState.syncToken;
+
   if (!sessionState.isAuthenticated) {
     showAuthModal();
     return;
@@ -799,10 +816,16 @@ async function enableSwan() {
   }
 
   const payload = await response.json();
+  if (syncToken !== swanState.syncToken) {
+    return;
+  }
   swanState.enabled = true;
   swanState.session = payload.session;
   swanState.projections = payload.projections || swanState.projections;
   await refreshSwanProjections();
+  if (syncToken !== swanState.syncToken) {
+    return;
+  }
   if (!eventSource) {
     connectToLiveEvents();
   }
@@ -810,7 +833,12 @@ async function enableSwan() {
 }
 
 async function disableSwan() {
+  const syncToken = ++swanState.syncToken;
+
   if (!sessionState.isAuthenticated) {
+    if (syncToken !== swanState.syncToken) {
+      return;
+    }
     swanState.enabled = false;
     swanState.session = null;
     updateSwanUI();
@@ -822,6 +850,9 @@ async function disableSwan() {
     headers: getSwanHeaders(),
   }).catch(() => {});
 
+  if (syncToken !== swanState.syncToken) {
+    return;
+  }
   swanState.enabled = false;
   swanState.session = null;
   swanState.projections = { session: null, panels: null, map: null, notifications: null };

@@ -21,11 +21,12 @@ describe("swan API integration", () => {
   });
 
   it("enables Swan sessions and serves baseline artifacts", async () => {
+    const currentSetup = getSetup(setup);
     const clientSessionId = randomUUID();
 
-    const enableResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/session`, {
+    const enableResponse = await fetch(`http://127.0.0.1:${currentSetup.api.port}/swan/session`, {
       method: "POST",
-      headers: swanHeaders(setup!.operatorToken, clientSessionId),
+      headers: swanHeaders(currentSetup.operatorToken, clientSessionId),
       body: JSON.stringify({
         client_session_id: clientSessionId,
         route: "/ops",
@@ -49,17 +50,17 @@ describe("swan API integration", () => {
     expect(enabled.projections.session.projection).toBe("session");
     expect(enabled.projections.session.data.thread_counts).toEqual({});
 
-    const sessionResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/session`, {
-      headers: swanHeaders(setup!.operatorToken, clientSessionId, {
+    const sessionResponse = await fetch(`http://127.0.0.1:${currentSetup.api.port}/swan/session`, {
+      headers: swanHeaders(currentSetup.operatorToken, clientSessionId, {
         "Content-Type": undefined,
       }),
     });
     expect(sessionResponse.status).toBe(200);
 
     const artifactResponse = await fetch(
-      `http://127.0.0.1:${setup!.api.port}/swan/artifacts/${enabled.session.session_id}/session`,
+      `http://127.0.0.1:${currentSetup.api.port}/swan/artifacts/${enabled.session.session_id}/session`,
       {
-        headers: swanHeaders(setup!.operatorToken, clientSessionId, {
+        headers: swanHeaders(currentSetup.operatorToken, clientSessionId, {
           "Content-Type": undefined,
         }),
       },
@@ -75,8 +76,9 @@ describe("swan API integration", () => {
   });
 
   it("dedupes duplicate object activity and projects object findings", async () => {
-    await seedFixtureObject(setup!);
-    const { session } = await enableSwanSession(setup!, randomUUID());
+    const currentSetup = getSetup(setup);
+    await seedFixtureObject(currentSetup);
+    const { session } = await enableSwanSession(currentSetup, randomUUID());
 
     const activityBody = {
       activity_type: "object_selected",
@@ -89,9 +91,9 @@ describe("swan API integration", () => {
       },
     };
 
-    const firstResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/activity`, {
+    const firstResponse = await fetch(`http://127.0.0.1:${currentSetup.api.port}/swan/activity`, {
       method: "POST",
-      headers: swanHeaders(setup!.operatorToken, session.client_session_id),
+      headers: swanHeaders(currentSetup.operatorToken, session.client_session_id),
       body: JSON.stringify(activityBody),
     });
     expect(firstResponse.status).toBe(202);
@@ -106,11 +108,14 @@ describe("swan API integration", () => {
       "research",
     ]);
 
-    const duplicateResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/activity`, {
-      method: "POST",
-      headers: swanHeaders(setup!.operatorToken, session.client_session_id),
-      body: JSON.stringify(activityBody),
-    });
+    const duplicateResponse = await fetch(
+      `http://127.0.0.1:${currentSetup.api.port}/swan/activity`,
+      {
+        method: "POST",
+        headers: swanHeaders(currentSetup.operatorToken, session.client_session_id),
+        body: JSON.stringify(activityBody),
+      },
+    );
     expect(duplicateResponse.status).toBe(202);
     const duplicatePayload = (await duplicateResponse.json()) as {
       activity: { activity_type: string } | null;
@@ -122,9 +127,9 @@ describe("swan API integration", () => {
     const findingsPayload = await waitFor(
       async () => {
         const response = await fetch(
-          `http://127.0.0.1:${setup!.api.port}/swan/findings?target_type=object&target_id=veh_42&limit=20`,
+          `http://127.0.0.1:${currentSetup.api.port}/swan/findings?target_type=object&target_id=veh_42&limit=20`,
           {
-            headers: swanHeaders(setup!.operatorToken, session.client_session_id, {
+            headers: swanHeaders(currentSetup.operatorToken, session.client_session_id, {
               "Content-Type": undefined,
             }),
           },
@@ -144,7 +149,7 @@ describe("swan API integration", () => {
     const panelsArtifact = (await waitFor(
       () =>
         readSwanArtifact(
-          setup!,
+          currentSetup,
           session.session_id,
           session.client_session_id,
           "panels",
@@ -162,7 +167,12 @@ describe("swan API integration", () => {
 
     const mapArtifact = (await waitFor(
       () =>
-        readSwanArtifact(setup!, session.session_id, session.client_session_id, "map") as Promise<{
+        readSwanArtifact(
+          currentSetup,
+          session.session_id,
+          session.client_session_id,
+          "map",
+        ) as Promise<{
           data: { overlays: Array<{ target_id: string }> };
         }>,
       (artifact) => artifact.data.overlays.some((overlay) => overlay.target_id === "veh_42"),
@@ -173,10 +183,11 @@ describe("swan API integration", () => {
   });
 
   it("creates notification artifacts for alert activity and preserves disabled-session artifacts", async () => {
-    const { session } = await enableSwanSession(setup!, randomUUID());
+    const currentSetup = getSetup(setup);
+    const { session } = await enableSwanSession(currentSetup, randomUUID());
     const alertId = "alert_swan_notification";
 
-    await setup!.api.persistence.persistAlert({
+    await currentSetup.api.persistence.persistAlert({
       alert_id: alertId,
       rule_id: "source_error",
       severity: "critical",
@@ -187,27 +198,30 @@ describe("swan API integration", () => {
       confidence: 0.98,
     });
 
-    const activityResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/activity`, {
-      method: "POST",
-      headers: swanHeaders(setup!.operatorToken, session.client_session_id),
-      body: JSON.stringify({
-        activity_type: "alert_opened",
-        target_type: "alert",
-        target_id: alertId,
-        route: "/ops",
-        mode: "replay",
-        context: {
-          alert_status: "open",
-        },
-      }),
-    });
+    const activityResponse = await fetch(
+      `http://127.0.0.1:${currentSetup.api.port}/swan/activity`,
+      {
+        method: "POST",
+        headers: swanHeaders(currentSetup.operatorToken, session.client_session_id),
+        body: JSON.stringify({
+          activity_type: "alert_opened",
+          target_type: "alert",
+          target_id: alertId,
+          route: "/ops",
+          mode: "replay",
+          context: {
+            alert_status: "open",
+          },
+        }),
+      },
+    );
 
     expect(activityResponse.status).toBe(202);
 
     const notificationsArtifact = await waitFor(
       () =>
         readSwanArtifact(
-          setup!,
+          currentSetup,
           session.session_id,
           session.client_session_id,
           "notifications",
@@ -223,26 +237,29 @@ describe("swan API integration", () => {
       ),
     ).toBe(true);
 
-    const disableResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/session`, {
+    const disableResponse = await fetch(`http://127.0.0.1:${currentSetup.api.port}/swan/session`, {
       method: "DELETE",
-      headers: swanHeaders(setup!.operatorToken, session.client_session_id, {
+      headers: swanHeaders(currentSetup.operatorToken, session.client_session_id, {
         "Content-Type": undefined,
       }),
     });
     expect(disableResponse.status).toBe(200);
 
-    const currentSessionResponse = await fetch(`http://127.0.0.1:${setup!.api.port}/swan/session`, {
-      headers: swanHeaders(setup!.operatorToken, session.client_session_id, {
-        "Content-Type": undefined,
-      }),
-    });
+    const currentSessionResponse = await fetch(
+      `http://127.0.0.1:${currentSetup.api.port}/swan/session`,
+      {
+        headers: swanHeaders(currentSetup.operatorToken, session.client_session_id, {
+          "Content-Type": undefined,
+        }),
+      },
+    );
     expect(currentSessionResponse.status).toBe(200);
     expect((await currentSessionResponse.json()) as { session: unknown }).toEqual({
       session: null,
     });
 
     const disabledSessionArtifact = (await readSwanArtifact(
-      setup!,
+      currentSetup,
       session.session_id,
       session.client_session_id,
       "session",
@@ -389,4 +406,14 @@ function swanHeaders(
   }
 
   return headers;
+}
+
+function getSetup(
+  setup: Awaited<ReturnType<typeof setupAuthenticatedApi>> | null,
+): Awaited<ReturnType<typeof setupAuthenticatedApi>> {
+  if (!setup) {
+    throw new Error("authenticated test setup is not initialized");
+  }
+
+  return setup;
 }

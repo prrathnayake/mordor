@@ -21,6 +21,6 @@
     }
   },
   "files": {
-    "includes": ["**/*.{ts,tsx,js,jsx,json,html,css}", "!!**/test-results*.json"]
+    "includes": ["**/*.{ts,tsx,js,jsx,json,html,css}", "!runtime", "!test-results"]
   }
 }
