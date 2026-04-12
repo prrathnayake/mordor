@@ -5,5 +5,7 @@ dist/
 playwright-globe-check*.png
 playwright-report/
 test-results/
+tests/manual/outputs/
 .env
 .env.local
+runtime/

@@ -1,0 +1,31 @@
+# Codex Memory Protocol Snapshot
+
+- Project: Chrona Twin
+- Primary branch target: `main`
+- Durable memory location: `.codex_memories/` only
+- Startup reads, every task:
+  - `imp_instructions.md`
+  - `.codex_memories/system_prompt.md`
+  - `.codex_memories/daily_summary.md`
+  - today's `revival_summary.md`
+  - today's `task_log.md`
+- First task of each day:
+  - review the previous day folder if present
+  - refresh today's `revival_summary.md`
+- Shutdown writes, every task:
+  - append timestamped entry to today's `task_log.md`
+  - refresh today's `revival_summary.md`
+  - update `.codex_memories/daily_summary.md`
+  - append exact user message and concise final-response summary to `.codex_memories/message_pairs.md`
+- Memory separation:
+  - `daily_summary.md` = rolling repo state
+  - `message_pairs.md` = conversation ledger
+  - daily `revival_summary.md` = restart context
+  - daily `task_log.md` = task-by-task log
+- Testing defaults:
+  - main verification: `npm run validate`
+  - quick smoke checks: `npm run typecheck`, `npm run lint`, then the smallest relevant suite
+- Manual/debug outputs belong in `tests/manual/outputs/`
+- Docs sync:
+  - update local `docs/` for material architecture/workflow/app changes
+  - no external docs hub is configured yet
