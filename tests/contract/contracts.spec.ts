@@ -5,6 +5,9 @@ import {
   validateAlert,
   validateCanonicalEvent,
   validateSource,
+  validateSwanActivityEvent,
+  validateSwanArtifactProjection,
+  validateSwanFinding,
   validateTrackedObject,
 } from "../../packages/contracts/src/index.js";
 import { loadJsonFixture } from "../../packages/test-fixtures/src/index.js";
@@ -79,5 +82,37 @@ describe("contract validators", () => {
 
     expect(alert.schema_version).toBe(ALERT_SCHEMA_VERSION);
     expect(alert.evidence_event_ids).toHaveLength(2);
+  });
+
+  it("accepts the baseline swan activity fixture", async () => {
+    const fixture = await loadJsonFixture<unknown>(
+      "contracts",
+      "swan-activity-event.valid.object-selected.json",
+    );
+    const activity = expectValidationSuccess(validateSwanActivityEvent(fixture));
+
+    expect(activity.activity_type).toBe("object_selected");
+    expect(activity.target_id).toBe("veh_42");
+  });
+
+  it("accepts the baseline swan finding fixture", async () => {
+    const fixture = await loadJsonFixture<unknown>(
+      "contracts",
+      "swan-finding.valid.object-context.json",
+    );
+    const finding = expectValidationSuccess(validateSwanFinding(fixture));
+
+    expect(finding.verification_status).toBe("trusted_source");
+    expect(finding.media).toHaveLength(1);
+  });
+
+  it("accepts the baseline swan artifact projection fixture", async () => {
+    const fixture = await loadJsonFixture<unknown>(
+      "contracts",
+      "swan-artifact-projection.valid.panels.json",
+    );
+    const projection = expectValidationSuccess(validateSwanArtifactProjection(fixture));
+
+    expect(projection.projection).toBe("panels");
   });
 });

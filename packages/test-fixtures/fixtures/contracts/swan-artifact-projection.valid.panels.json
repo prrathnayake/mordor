@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "session_id": "swan_session_1",
+  "projection": "panels",
+  "generated_at": "2026-04-12T02:16:00Z",
+  "data": {
+    "objects": {
+      "veh_42": [
+        {
+          "schema_version": "1.0.0",
+          "finding_id": "finding_1",
+          "session_id": "swan_session_1",
+          "thread_id": "thread_1",
+          "provider": "app_context",
+          "target_type": "object",
+          "target_id": "veh_42",
+          "finding_kind": "object_context",
+          "title": "Tracked object context",
+          "summary": "veh_42 is active in live monitoring with trusted state context.",
+          "details": {
+            "status": "active"
+          },
+          "verification_status": "trusted_source",
+          "confidence": 0.92,
+          "projection_targets": ["panel"],
+          "source_urls": ["https://example.org/source/veh_42"],
+          "media": [],
+          "lat": -33.8688,
+          "lon": 151.2093,
+          "generated_at": "2026-04-12T02:15:30Z",
+          "updated_at": "2026-04-12T02:15:30Z"
+        }
+      ]
+    },
+    "alerts": {},
+    "incidents": {}
+  }
+}

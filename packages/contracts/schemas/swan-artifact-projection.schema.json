@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Swan Artifact Projection",
+  "type": "object",
+  "x-contract-name": "swanArtifactProjection",
+  "x-schema-version": "1.0.0",
+  "required": ["schema_version", "session_id", "projection", "generated_at", "data"],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "projection": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

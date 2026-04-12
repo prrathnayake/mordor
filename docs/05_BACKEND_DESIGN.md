@@ -174,3 +174,24 @@ Every major backend action should log:
 3. Latest state must be traceable to canonical events.
 4. Replay must be deterministic under test fixtures.
 5. Alert generation must be reproducible from event history.
+
+## Swan backend design
+Swan v1 runs inside the API process as a lightweight scheduler, not a separate service. The backend responsibilities added by Swan are:
+- manage opt-in Swan sessions keyed by authenticated user plus client session id
+- persist semantic activity events with 2-second dedupe for identical trigger and target combinations
+- schedule logical Swan threads from deterministic recipes such as `context`, `verify`, `research`, `watch`, `window_watch`, and `layer_watch`
+- enforce concurrency ceilings of 5 running Swan jobs per session and 20 globally
+- expire idle Swan sessions after 30 minutes and cancel work on logout, disable, or context replacement
+
+Persistence and projection rules:
+- PostgreSQL remains authoritative for Swan metadata and finding records
+- artifact metadata is written to the database first
+- JSON projections are then materialized atomically under `runtime/swan/<session_id>/`
+- SSE publication happens last through `/live/events`
+
+Provider boundaries:
+- `app_context` reads local truth and evidence to produce trusted contextual findings
+- `existing_external_layers` correlates current context with configured external layers and linked sources
+- `external_research` is allowlisted and config-driven, stores metadata plus source URLs only, and never downloads full media payloads in v1
+
+Swan findings are enrichments only. They never overwrite canonical event history, latest state, or alert truth, and they must always expose verification status plus provenance back to the caller.

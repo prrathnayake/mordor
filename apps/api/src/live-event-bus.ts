@@ -1,5 +1,19 @@
+import type {
+  SwanNotificationLiveEvent,
+  SwanProjectionUpdateLiveEvent,
+  SwanSessionUpdateLiveEvent,
+  SwanThreadUpdateLiveEvent,
+} from "../../../packages/swan/src/index.js";
+
 export interface LiveEvent {
-  type: "object_state_update" | "source_health_update" | "connection_info";
+  type:
+    | "object_state_update"
+    | "source_health_update"
+    | "connection_info"
+    | "swan_session_update"
+    | "swan_thread_update"
+    | "swan_projection_update"
+    | "swan_notification";
   timestamp: string;
   sequence?: number;
   payload: unknown;
@@ -36,6 +50,14 @@ export interface SourceHealthUpdate extends LiveEvent {
     error_message: string | null;
   };
 }
+
+export type SwanSessionUpdate = SwanSessionUpdateLiveEvent & { sequence?: number };
+
+export type SwanThreadUpdate = SwanThreadUpdateLiveEvent & { sequence?: number };
+
+export type SwanProjectionUpdate = SwanProjectionUpdateLiveEvent & { sequence?: number };
+
+export type SwanNotificationUpdate = SwanNotificationLiveEvent & { sequence?: number };
 
 type LiveEventListener = (event: LiveEvent) => void;
 

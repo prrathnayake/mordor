@@ -202,3 +202,15 @@ These are non-negotiable:
 6. AI outputs never overwrite raw truth.
 7. External source data is tagged with provenance.
 8. Time semantics are explicit.
+
+## Swan protocol
+Swan v1 adds a bounded enrichment lane inside the modular monolith. It is opt-in per authenticated browser session and listens only to semantic user activities such as object selection, alert or incident inspection, replay-window changes, layer toggles, and map selection changes.
+
+The architectural placement is:
+- browser helper emits semantic Swan activity events and consumes Swan projections
+- API process owns a lightweight centralized Swan scheduler and async worker pool
+- PostgreSQL stores Swan sessions, activity events, logical threads, findings, and artifact metadata
+- `runtime/swan/<session_id>/` stores derived JSON projections for fast UI hydration
+- `/live/events` remains the single transport for Swan session, thread, projection, and notification updates
+
+Swan is intentionally advisory. It does not mutate canonical event history, latest-state truth, or alert truth tables. Every Swan finding carries verification status, provenance metadata, and source URLs so the UI can distinguish trusted context from inferred or externally corroborated intelligence.

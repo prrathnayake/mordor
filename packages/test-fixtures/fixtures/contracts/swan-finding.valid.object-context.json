@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "finding_id": "finding_1",
+  "session_id": "swan_session_1",
+  "thread_id": "thread_1",
+  "provider": "app_context",
+  "target_type": "object",
+  "target_id": "veh_42",
+  "finding_kind": "object_context",
+  "title": "Tracked object context",
+  "summary": "veh_42 is active in live monitoring with trusted state context.",
+  "details": {
+    "status": "active",
+    "source_primary": "src_campus_gps_1"
+  },
+  "verification_status": "trusted_source",
+  "confidence": 0.92,
+  "projection_targets": ["panel", "map"],
+  "source_urls": ["https://example.org/source/veh_42"],
+  "media": [
+    {
+      "media_type": "image",
+      "url": "https://example.org/media/veh_42.jpg",
+      "thumbnail_url": "https://example.org/media/veh_42-thumb.jpg",
+      "title": "Vehicle snapshot"
+    }
+  ],
+  "lat": -33.8688,
+  "lon": 151.2093,
+  "generated_at": "2026-04-12T02:15:30Z",
+  "updated_at": "2026-04-12T02:15:30Z"
+}

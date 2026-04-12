@@ -5,10 +5,16 @@ import {
   CANONICAL_EVENT_SCHEMA_VERSION,
   OBJECT_STATE_SCHEMA_VERSION,
   SOURCE_SCHEMA_VERSION,
+  SWAN_ACTIVITY_SCHEMA_VERSION,
+  SWAN_ARTIFACT_PROJECTION_SCHEMA_VERSION,
+  SWAN_FINDING_SCHEMA_VERSION,
   TRACKED_OBJECT_SCHEMA_VERSION,
   validateAlert,
   validateCanonicalEvent,
   validateSource,
+  validateSwanActivityEvent,
+  validateSwanArtifactProjection,
+  validateSwanFinding,
   validateTrackedObject,
 } from "../packages/contracts/src/index.js";
 import { orderEventsForReplay } from "../packages/replay/src/index.js";
@@ -48,6 +54,21 @@ const schemaChecks = [
     file: "packages/contracts/schemas/alert.schema.json",
     contractName: "alert",
     version: ALERT_SCHEMA_VERSION,
+  },
+  {
+    file: "packages/contracts/schemas/swan-activity-event.schema.json",
+    contractName: "swanActivity",
+    version: SWAN_ACTIVITY_SCHEMA_VERSION,
+  },
+  {
+    file: "packages/contracts/schemas/swan-finding.schema.json",
+    contractName: "swanFinding",
+    version: SWAN_FINDING_SCHEMA_VERSION,
+  },
+  {
+    file: "packages/contracts/schemas/swan-artifact-projection.schema.json",
+    contractName: "swanArtifactProjection",
+    version: SWAN_ARTIFACT_PROJECTION_SCHEMA_VERSION,
   },
 ] as const;
 
@@ -109,6 +130,24 @@ async function main(): Promise<void> {
   requireValidationSuccess(
     "alert fixture",
     validateAlert(await loadJsonFixture<unknown>("contracts", "alert.valid.after-hours-zone.json")),
+  );
+  requireValidationSuccess(
+    "swan activity fixture",
+    validateSwanActivityEvent(
+      await loadJsonFixture<unknown>("contracts", "swan-activity-event.valid.object-selected.json"),
+    ),
+  );
+  requireValidationSuccess(
+    "swan finding fixture",
+    validateSwanFinding(
+      await loadJsonFixture<unknown>("contracts", "swan-finding.valid.object-context.json"),
+    ),
+  );
+  requireValidationSuccess(
+    "swan artifact projection fixture",
+    validateSwanArtifactProjection(
+      await loadJsonFixture<unknown>("contracts", "swan-artifact-projection.valid.panels.json"),
+    ),
   );
 
   const invalidEventResult = validateCanonicalEvent(

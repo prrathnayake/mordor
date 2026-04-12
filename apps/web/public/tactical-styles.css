@@ -126,6 +126,37 @@ body {
   cursor: pointer;
 }
 
+.swan-toggle,
+.swan-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.swan-toggle {
+  cursor: pointer;
+}
+
+.swan-toggle.active,
+.swan-status.active {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.18);
+}
+
+.swan-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ===== TACTICAL HEADER ===== */
 .tactical-header {
   display: grid;
@@ -1876,6 +1907,94 @@ body {
 /* ===== UTILITY CLASSES ===== */
 .hidden {
   display: none !important;
+}
+
+.swan-notifications {
+  position: fixed;
+  top: 74px;
+  right: 22px;
+  z-index: 2500;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+  pointer-events: none;
+}
+
+.swan-toast {
+  pointer-events: auto;
+  background: rgba(9, 18, 14, 0.96);
+  border: 1px solid rgba(0, 255, 65, 0.28);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  box-shadow: 0 18px 30px rgba(0, 0, 0, 0.3);
+}
+
+.swan-toast-title {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  color: var(--accent-primary);
+  margin-bottom: 4px;
+}
+
+.swan-toast-summary {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.swan-toast-meta {
+  margin-top: 6px;
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.swan-insights {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.swan-insights-title {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  color: var(--accent-primary);
+  margin-bottom: 8px;
+}
+
+.swan-insight-item {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.swan-insight-item:last-child {
+  border-bottom: none;
+}
+
+.swan-insight-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.swan-insight-title {
+  font-size: 10px;
+  color: var(--text-primary);
+}
+
+.swan-insight-verification {
+  font-size: 9px;
+  color: var(--accent-secondary);
+  text-transform: uppercase;
+}
+
+.swan-insight-summary {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-dim);
 }
 
 .loading-placeholder {

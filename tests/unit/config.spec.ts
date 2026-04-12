@@ -24,6 +24,12 @@ describe("config validation", () => {
       delete process.env.WEB_PORT;
       delete process.env.LOG_LEVEL;
       delete process.env.AUTH_ENABLED;
+      delete process.env.SWAN_ARTIFACT_ROOT;
+      delete process.env.SWAN_MAX_THREADS_PER_SESSION;
+      delete process.env.SWAN_MAX_GLOBAL_THREADS;
+      delete process.env.SWAN_SESSION_IDLE_TTL_MS;
+      delete process.env.SWAN_WATCH_INTERVAL_MS;
+      delete process.env.SWAN_PROVIDER_ALLOWLIST;
       delete process.env.NODE_ENV;
 
       const config = getConfigFromEnv();
@@ -33,6 +39,16 @@ describe("config validation", () => {
       expect(config.webPort).toBe(3001);
       expect(config.logLevel).toBe("info");
       expect(config.authEnabled).toBe(true);
+      expect(config.swanArtifactRoot).toBe("./runtime/swan");
+      expect(config.swanMaxThreadsPerSession).toBe(5);
+      expect(config.swanMaxGlobalThreads).toBe(20);
+      expect(config.swanSessionIdleTtlMs).toBe(1800000);
+      expect(config.swanWatchIntervalMs).toBe(60000);
+      expect(config.swanProviderAllowlist).toEqual([
+        "app_context",
+        "existing_external_layers",
+        "external_research",
+      ]);
     });
 
     it("parses port numbers from environment", () => {
@@ -60,6 +76,24 @@ describe("config validation", () => {
 
       expect(config.authEnabled).toBe(false);
     });
+
+    it("parses swan configuration from environment", () => {
+      process.env.SWAN_ARTIFACT_ROOT = "./tmp/swan";
+      process.env.SWAN_MAX_THREADS_PER_SESSION = "3";
+      process.env.SWAN_MAX_GLOBAL_THREADS = "12";
+      process.env.SWAN_SESSION_IDLE_TTL_MS = "90000";
+      process.env.SWAN_WATCH_INTERVAL_MS = "15000";
+      process.env.SWAN_PROVIDER_ALLOWLIST = "app_context,external_research";
+
+      const config = getConfigFromEnv();
+
+      expect(config.swanArtifactRoot).toBe("./tmp/swan");
+      expect(config.swanMaxThreadsPerSession).toBe(3);
+      expect(config.swanMaxGlobalThreads).toBe(12);
+      expect(config.swanSessionIdleTtlMs).toBe(90000);
+      expect(config.swanWatchIntervalMs).toBe(15000);
+      expect(config.swanProviderAllowlist).toEqual(["app_context", "external_research"]);
+    });
   });
 
   describe("validateConfig", () => {
@@ -70,6 +104,12 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "info" as const,
         authEnabled: true,
+        swanArtifactRoot: "./runtime/swan",
+        swanMaxThreadsPerSession: 5,
+        swanMaxGlobalThreads: 20,
+        swanSessionIdleTtlMs: 1800000,
+        swanWatchIntervalMs: 60000,
+        swanProviderAllowlist: ["app_context"],
       };
 
       const result = validateConfig(config);
@@ -85,6 +125,12 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "info" as const,
         authEnabled: true,
+        swanArtifactRoot: "./runtime/swan",
+        swanMaxThreadsPerSession: 5,
+        swanMaxGlobalThreads: 20,
+        swanSessionIdleTtlMs: 1800000,
+        swanWatchIntervalMs: 60000,
+        swanProviderAllowlist: ["app_context"],
       };
 
       const result = validateConfig(config);
@@ -100,6 +146,12 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "info" as const,
         authEnabled: true,
+        swanArtifactRoot: "./runtime/swan",
+        swanMaxThreadsPerSession: 5,
+        swanMaxGlobalThreads: 20,
+        swanSessionIdleTtlMs: 1800000,
+        swanWatchIntervalMs: 60000,
+        swanProviderAllowlist: ["app_context"],
       };
 
       const result = validateConfig(config);
@@ -115,6 +167,12 @@ describe("config validation", () => {
         webPort: 3001,
         logLevel: "invalid" as never,
         authEnabled: true,
+        swanArtifactRoot: "./runtime/swan",
+        swanMaxThreadsPerSession: 5,
+        swanMaxGlobalThreads: 20,
+        swanSessionIdleTtlMs: 1800000,
+        swanWatchIntervalMs: 60000,
+        swanProviderAllowlist: ["app_context"],
       };
 
       const result = validateConfig(config);
@@ -130,6 +188,12 @@ describe("config validation", () => {
         webPort: -1,
         logLevel: "invalid" as never,
         authEnabled: true,
+        swanArtifactRoot: "",
+        swanMaxThreadsPerSession: 0,
+        swanMaxGlobalThreads: 0,
+        swanSessionIdleTtlMs: 0,
+        swanWatchIntervalMs: 0,
+        swanProviderAllowlist: [],
       };
 
       const result = validateConfig(config);

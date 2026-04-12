@@ -10,11 +10,27 @@ import type {
   VelocitySnapshot,
 } from "./models.js";
 import { CANONICAL_EVENT_TYPES } from "./models.js";
+import type {
+  SwanActivityEvent,
+  SwanArtifactProjection,
+  SwanFinding,
+  SwanMediaReference,
+} from "./swan-models.js";
+import {
+  SWAN_ACTIVITY_TYPES,
+  SWAN_ARTIFACT_PROJECTIONS,
+  SWAN_FINDING_VERIFICATION_STATUSES,
+  SWAN_PROJECTION_TARGETS,
+  SWAN_TARGET_TYPES,
+} from "./swan-models.js";
 import {
   ALERT_SCHEMA_VERSION,
   CANONICAL_EVENT_SCHEMA_VERSION,
   OBJECT_STATE_SCHEMA_VERSION,
   SOURCE_SCHEMA_VERSION,
+  SWAN_ACTIVITY_SCHEMA_VERSION,
+  SWAN_ARTIFACT_PROJECTION_SCHEMA_VERSION,
+  SWAN_FINDING_SCHEMA_VERSION,
 } from "./versions.js";
 
 export type ValidationResult<T> =
@@ -689,5 +705,272 @@ export function validateAlert(input: unknown): ValidationResult<Alert> {
     summary,
     explanation,
     confidence,
+  });
+}
+
+function validateMediaReference(
+  value: unknown,
+  issues: string[],
+  key: string,
+): SwanMediaReference | undefined {
+  if (!isRecord(value)) {
+    issues.push(`${key} must be an object`);
+    return undefined;
+  }
+
+  const mediaType = readRequiredString(value, "media_type", issues, ["image", "video"]);
+  const url = readRequiredString(value, "url", issues);
+  const thumbnailUrl = readOptionalString(value, "thumbnail_url", issues);
+  const title = readOptionalString(value, "title", issues);
+
+  if (!mediaType || !url) {
+    return undefined;
+  }
+
+  return {
+    media_type: mediaType as SwanMediaReference["media_type"],
+    url,
+    thumbnail_url: thumbnailUrl ?? null,
+    title: title ?? null,
+  };
+}
+
+export function validateSwanActivityEvent(input: unknown): ValidationResult<SwanActivityEvent> {
+  const issues: string[] = [];
+
+  if (!isRecord(input)) {
+    return failure(["swan activity event must be an object"]);
+  }
+
+  const schemaVersion = readRequiredString(input, "schema_version", issues);
+  const activityId = readRequiredString(input, "activity_id", issues);
+  const sessionId = readRequiredString(input, "session_id", issues);
+  const clientSessionId = readRequiredString(input, "client_session_id", issues);
+  const userId = readRequiredString(input, "user_id", issues);
+  const activityType = readRequiredString(input, "activity_type", issues, SWAN_ACTIVITY_TYPES);
+  const targetType = readOptionalString(input, "target_type", issues);
+  const targetId = readOptionalString(input, "target_id", issues);
+  const route = readOptionalString(input, "route", issues);
+  const mode = readOptionalString(input, "mode", issues);
+  const activityKey = readRequiredString(input, "activity_key", issues);
+  const context = readRequiredObject(input, "context", issues);
+  const occurredAt = readRequiredIsoDateTime(input, "occurred_at", issues);
+
+  if (schemaVersion && schemaVersion !== SWAN_ACTIVITY_SCHEMA_VERSION) {
+    issues.push(`schema_version must equal ${SWAN_ACTIVITY_SCHEMA_VERSION}`);
+  }
+
+  if (
+    targetType !== undefined &&
+    targetType !== null &&
+    !SWAN_TARGET_TYPES.includes(targetType as (typeof SWAN_TARGET_TYPES)[number])
+  ) {
+    issues.push(`target_type must be one of: ${SWAN_TARGET_TYPES.join(", ")}`);
+  }
+
+  if (mode !== undefined && mode !== null && !["live", "replay"].includes(mode)) {
+    issues.push("mode must be one of: live, replay");
+  }
+
+  if (
+    issues.length > 0 ||
+    !schemaVersion ||
+    !activityId ||
+    !sessionId ||
+    !clientSessionId ||
+    !userId ||
+    !activityType ||
+    !activityKey ||
+    !context ||
+    !occurredAt
+  ) {
+    return failure(issues);
+  }
+
+  return success({
+    schema_version: schemaVersion,
+    activity_id: activityId,
+    session_id: sessionId,
+    client_session_id: clientSessionId,
+    user_id: userId,
+    activity_type: activityType as SwanActivityEvent["activity_type"],
+    target_type: (targetType ?? null) as SwanActivityEvent["target_type"],
+    target_id: targetId ?? null,
+    route: route ?? null,
+    mode: (mode ?? null) as SwanActivityEvent["mode"],
+    activity_key: activityKey,
+    context,
+    occurred_at: occurredAt,
+  });
+}
+
+export function validateSwanFinding(input: unknown): ValidationResult<SwanFinding> {
+  const issues: string[] = [];
+
+  if (!isRecord(input)) {
+    return failure(["swan finding must be an object"]);
+  }
+
+  const schemaVersion = readRequiredString(input, "schema_version", issues);
+  const findingId = readRequiredString(input, "finding_id", issues);
+  const sessionId = readRequiredString(input, "session_id", issues);
+  const threadId = readRequiredString(input, "thread_id", issues);
+  const provider = readRequiredString(input, "provider", issues);
+  const targetType = readRequiredString(input, "target_type", issues, SWAN_TARGET_TYPES);
+  const targetId = readRequiredString(input, "target_id", issues);
+  const findingKind = readRequiredString(input, "finding_kind", issues);
+  const title = readRequiredString(input, "title", issues);
+  const summary = readRequiredString(input, "summary", issues);
+  const details = readRequiredObject(input, "details", issues);
+  const verificationStatus = readRequiredString(
+    input,
+    "verification_status",
+    issues,
+    SWAN_FINDING_VERIFICATION_STATUSES,
+  );
+  const confidence = readRequiredNumber(input, "confidence", issues, { min: 0, max: 1 });
+  const projectionTargets = readRequiredStringArray(input, "projection_targets", issues);
+  const sourceUrls = readRequiredStringArray(input, "source_urls", issues);
+  const generatedAt = readRequiredIsoDateTime(input, "generated_at", issues);
+  const updatedAt = readRequiredIsoDateTime(input, "updated_at", issues);
+  const lat = readOptionalNumber(input, "lat", issues);
+  const lon = readOptionalNumber(input, "lon", issues);
+
+  if (schemaVersion && schemaVersion !== SWAN_FINDING_SCHEMA_VERSION) {
+    issues.push(`schema_version must equal ${SWAN_FINDING_SCHEMA_VERSION}`);
+  }
+
+  if (projectionTargets) {
+    for (const projectionTarget of projectionTargets) {
+      if (!SWAN_PROJECTION_TARGETS.includes(projectionTarget as never)) {
+        issues.push(
+          `projection_targets entries must be one of: ${SWAN_PROJECTION_TARGETS.join(", ")}`,
+        );
+      }
+    }
+  }
+
+  let media: SwanMediaReference[] | undefined;
+  if (!Array.isArray(input.media)) {
+    issues.push("media must be an array");
+  } else {
+    media = input.media
+      .map((entry, index) => validateMediaReference(entry, issues, `media[${index}]`))
+      .filter((entry): entry is SwanMediaReference => entry !== undefined);
+
+    if (media.length !== input.media.length) {
+      media = undefined;
+    }
+  }
+
+  if (
+    issues.length > 0 ||
+    !schemaVersion ||
+    !findingId ||
+    !sessionId ||
+    !threadId ||
+    !provider ||
+    !targetType ||
+    !targetId ||
+    !findingKind ||
+    !title ||
+    !summary ||
+    !details ||
+    !verificationStatus ||
+    confidence === undefined ||
+    !projectionTargets ||
+    !sourceUrls ||
+    !generatedAt ||
+    !updatedAt ||
+    !media
+  ) {
+    return failure(issues);
+  }
+
+  return success({
+    schema_version: schemaVersion,
+    finding_id: findingId,
+    session_id: sessionId,
+    thread_id: threadId,
+    provider,
+    target_type: targetType as SwanFinding["target_type"],
+    target_id: targetId,
+    finding_kind: findingKind,
+    title,
+    summary,
+    details,
+    verification_status: verificationStatus as SwanFinding["verification_status"],
+    confidence,
+    projection_targets: projectionTargets as SwanFinding["projection_targets"],
+    source_urls: sourceUrls,
+    media,
+    lat: lat ?? null,
+    lon: lon ?? null,
+    generated_at: generatedAt,
+    updated_at: updatedAt,
+  });
+}
+
+export function validateSwanArtifactProjection(
+  input: unknown,
+): ValidationResult<SwanArtifactProjection> {
+  const issues: string[] = [];
+
+  if (!isRecord(input)) {
+    return failure(["swan artifact projection must be an object"]);
+  }
+
+  const schemaVersion = readRequiredString(input, "schema_version", issues);
+  const sessionId = readRequiredString(input, "session_id", issues);
+  const projection = readRequiredString(input, "projection", issues, SWAN_ARTIFACT_PROJECTIONS);
+  const generatedAt = readRequiredIsoDateTime(input, "generated_at", issues);
+  const data = readRequiredObject(input, "data", issues);
+
+  if (schemaVersion && schemaVersion !== SWAN_ARTIFACT_PROJECTION_SCHEMA_VERSION) {
+    issues.push(`schema_version must equal ${SWAN_ARTIFACT_PROJECTION_SCHEMA_VERSION}`);
+  }
+
+  if (projection === "panels" && data) {
+    if (!isRecord(data.objects) || !isRecord(data.alerts) || !isRecord(data.incidents)) {
+      issues.push("panels projection must include objects, alerts, and incidents maps");
+    }
+  }
+
+  if (projection === "map" && data) {
+    if (!Array.isArray(data.overlays)) {
+      issues.push("map projection must include overlays array");
+    }
+  }
+
+  if (projection === "notifications" && data) {
+    if (!Array.isArray(data.items)) {
+      issues.push("notifications projection must include items array");
+    }
+
+    const unreadCount = readOptionalNumber(data, "unread_count", issues);
+    if (unreadCount === undefined) {
+      issues.push("notifications projection must include unread_count");
+    }
+  }
+
+  if (projection === "session" && data) {
+    if (!Object.hasOwn(data, "session")) {
+      issues.push("session projection must include session");
+    }
+    if (!isRecord(data.thread_counts)) {
+      issues.push("session projection must include thread_counts object");
+    }
+  }
+
+  if (issues.length > 0 || !schemaVersion || !sessionId || !projection || !generatedAt || !data) {
+    return failure(issues);
+  }
+
+  return success({
+    schema_version: schemaVersion,
+    session_id: sessionId,
+    projection: projection as SwanArtifactProjection["projection"],
+    generated_at: generatedAt,
+    data: data as SwanArtifactProjection["data"],
   });
 }

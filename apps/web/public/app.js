@@ -20,6 +20,7 @@ const maxReconnectAttempts = 5;
 const latestStates = new Map();
 let _connectionState = "disconnected";
 let hasCenteredOnLiveData = false;
+let currentAlertId = null;
 
 const sessionState = {
   token: null,
@@ -107,6 +108,21 @@ const visualState = {
   panoptic: false,
 };
 
+const swanState = {
+  clientSessionId: null,
+  enabled: false,
+  session: null,
+  projections: {
+    session: null,
+    panels: null,
+    map: null,
+    notifications: null,
+  },
+  overlayEntities: new Map(),
+  seenNotificationIds: new Set(),
+  pendingActivities: new Map(),
+};
+
 // ===== DOM REFERENCES =====
 const dom = {
   // Header
@@ -115,6 +131,9 @@ const dom = {
   connectionText: document.getElementById("connection-text") || { textContent: "" },
   sessionStatus: document.getElementById("session-status") || { textContent: "" },
   authButton: document.getElementById("auth-button"),
+  swanToggle: document.getElementById("swan-toggle"),
+  swanStatus: document.getElementById("swan-status") || { textContent: "" },
+  swanNotifications: document.getElementById("swan-notifications"),
   timeDisplay: document.getElementById("time-display") || { textContent: "" },
   activeLayersCount: document.getElementById("active-layers-count") || { textContent: "" },
 
@@ -301,6 +320,81 @@ function getApiBaseUrl() {
   return apiBaseUrl;
 }
 
+function getSwanClientSessionId() {
+  if (swanState.clientSessionId) {
+    return swanState.clientSessionId;
+  }
+
+  const storageKey = "swan_client_session_id";
+  const stored =
+    typeof window !== "undefined" && window.sessionStorage
+      ? window.sessionStorage.getItem(storageKey)
+      : null;
+
+  if (stored) {
+    swanState.clientSessionId = stored;
+    return stored;
+  }
+
+  const nextId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `swan_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  if (typeof window !== "undefined" && window.sessionStorage) {
+    window.sessionStorage.setItem(storageKey, nextId);
+  }
+
+  swanState.clientSessionId = nextId;
+  return nextId;
+}
+
+function getSwanHeaders(extraHeaders = {}) {
+  return {
+    "Content-Type": "application/json",
+    "X-Client-Session-Id": getSwanClientSessionId(),
+    ...getAuthHeaders(),
+    ...extraHeaders,
+  };
+}
+
+function updateSwanUI() {
+  const isActive = swanState.enabled && swanState.session;
+  if (dom.swanToggle) {
+    dom.swanToggle.textContent = isActive ? "SWAN ON" : "SWAN OFF";
+    dom.swanToggle.classList.toggle("active", Boolean(isActive));
+    dom.swanToggle.disabled = !sessionState.isAuthenticated;
+  }
+
+  if (dom.swanStatus) {
+    const unread =
+      swanState.projections.notifications?.data?.unread_count ||
+      swanState.projections.notifications?.data?.items?.length ||
+      0;
+    dom.swanStatus.textContent = isActive ? `ACTIVE ${unread}` : "IDLE";
+    dom.swanStatus.classList.toggle("active", Boolean(isActive));
+  }
+}
+
+function showSwanToast(notification) {
+  if (!dom.swanNotifications) return;
+  if (swanState.seenNotificationIds.has(notification.finding_id)) return;
+
+  swanState.seenNotificationIds.add(notification.finding_id);
+  const toast = document.createElement("div");
+  toast.className = "swan-toast";
+  toast.innerHTML = `
+    <div class="swan-toast-title">${notification.title}</div>
+    <div class="swan-toast-summary">${notification.summary}</div>
+    <div class="swan-toast-meta">${notification.verification_status.replace("_", " ")}</div>
+  `;
+
+  dom.swanNotifications.appendChild(toast);
+  window.setTimeout(() => {
+    toast.remove();
+  }, 5000);
+}
+
 function showAuthModal() {
   dom.loginModal?.classList.remove("hidden");
   dom.usernameInput?.focus();
@@ -400,6 +494,9 @@ async function login(username, password) {
       dom.loginModal.classList.add("hidden");
       updateStatus("AUTHENTICATED");
       loadAlerts();
+      hydrateSwanSession().catch((error) => {
+        console.error("Failed to hydrate Swan after login:", error);
+      });
       if (currentMode === "live") {
         loadLatestState();
       }
@@ -414,6 +511,10 @@ async function login(username, password) {
 }
 
 function logout() {
+  const hadSwan = swanState.enabled;
+  if (hadSwan) {
+    disableSwan().catch(() => {});
+  }
   if (sessionState.token) {
     fetch(`${apiBaseUrl}/auth/logout`, {
       method: "POST",
@@ -427,7 +528,9 @@ function logout() {
   sessionState.isAuthenticated = false;
   localStorage.removeItem("auth_token");
   latestStates.clear();
+  swanState.seenNotificationIds.clear();
   updateSessionUI();
+  updateSwanUI();
   updateStatus("LOGGED OUT");
   renderMapMarkers();
   dom.alertsCount.textContent = "0";
@@ -473,15 +576,18 @@ async function initSession() {
       sessionState.isAuthenticated = true;
       updateSessionUI();
       updateStatus("SESSION RESTORED");
+      await hydrateSwanSession();
     } else {
       localStorage.removeItem("auth_token");
       sessionState.isAuthenticated = false;
       updateSessionUI();
+      updateSwanUI();
     }
   }
 
   // Auth button event
   document.getElementById("auth-button").addEventListener("click", handleAuthClick);
+  dom.swanToggle?.addEventListener("click", toggleSwan);
 
   // Login modal events
   dom.submitLogin.addEventListener("click", () => {
@@ -501,6 +607,283 @@ async function initSession() {
   dom.closeLogin.addEventListener("click", () => {
     dom.loginModal.classList.add("hidden");
   });
+}
+
+// ===== SWAN =====
+function getSwanFindingsForTarget(targetType, targetId) {
+  const panels = swanState.projections.panels?.data;
+  if (!panels || !targetId) return [];
+
+  switch (targetType) {
+    case "object":
+      return panels.objects?.[targetId] || [];
+    case "alert":
+      return panels.alerts?.[targetId] || [];
+    case "incident":
+      return panels.incidents?.[targetId] || [];
+    default:
+      return [];
+  }
+}
+
+function renderSwanInsights(targetType, targetId) {
+  const findings = getSwanFindingsForTarget(targetType, targetId);
+  if (!findings || findings.length === 0) {
+    return "";
+  }
+
+  return `
+    <div class="swan-insights">
+      <div class="swan-insights-title">SWAN INSIGHTS</div>
+      ${findings
+        .map(
+          (finding) => `
+            <div class="swan-insight-item">
+              <div class="swan-insight-head">
+                <div class="swan-insight-title">${finding.title}</div>
+                <div class="swan-insight-verification">${finding.verification_status.replace("_", " ")}</div>
+              </div>
+              <div class="swan-insight-summary">${finding.summary}</div>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function refreshSwanDetailsForCurrentContext() {
+  if (selectedObjectId) {
+    const state =
+      currentMode === "live" ? latestStates.get(selectedObjectId) : getCurrentReplayState();
+    if (state) {
+      updateInspectorFromState(selectedObjectId, state);
+    }
+  }
+
+  if (incidentState.currentIncident) {
+    renderIncidentPanel();
+  }
+
+  if (currentAlertId && dom.alertModal && !dom.alertModal.classList.contains("hidden")) {
+    showAlertDetail(currentAlertId, { emitActivity: false }).catch((error) => {
+      console.error("Failed to refresh Swan alert detail:", error);
+    });
+  }
+}
+
+async function fetchSwanArtifact(artifactKey) {
+  if (!swanState.session?.session_id || !sessionState.isAuthenticated) {
+    return null;
+  }
+
+  const response = await fetch(
+    `${apiBaseUrl}/swan/artifacts/${swanState.session.session_id}/${artifactKey}`,
+    {
+      headers: getSwanHeaders(),
+    },
+  );
+
+  if (handleUnauthorized(response) || !response.ok) {
+    return null;
+  }
+
+  return response.json();
+}
+
+function handleSwanProjectionData(artifactKey, data) {
+  if (!data) return;
+
+  if (artifactKey === "session") {
+    swanState.projections.session = data;
+  } else if (artifactKey === "panels") {
+    swanState.projections.panels = data;
+    refreshSwanDetailsForCurrentContext();
+  } else if (artifactKey === "map") {
+    swanState.projections.map = data;
+    renderSwanMapOverlays();
+  } else if (artifactKey === "notifications") {
+    swanState.projections.notifications = data;
+    for (const item of data.data?.items || []) {
+      showSwanToast(item);
+    }
+  }
+
+  updateSwanUI();
+}
+
+async function refreshSwanProjections() {
+  if (!swanState.session) return;
+
+  const [sessionProjection, panelsProjection, mapProjection, notificationsProjection] =
+    await Promise.all([
+      fetchSwanArtifact("session"),
+      fetchSwanArtifact("panels"),
+      fetchSwanArtifact("map"),
+      fetchSwanArtifact("notifications"),
+    ]);
+
+  handleSwanProjectionData("session", sessionProjection);
+  handleSwanProjectionData("panels", panelsProjection);
+  handleSwanProjectionData("map", mapProjection);
+  handleSwanProjectionData("notifications", notificationsProjection);
+}
+
+async function hydrateSwanSession() {
+  if (!sessionState.isAuthenticated) {
+    swanState.enabled = false;
+    swanState.session = null;
+    swanState.projections = { session: null, panels: null, map: null, notifications: null };
+    clearSwanOverlayEntities();
+    updateSwanUI();
+    return;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/swan/session`, {
+    headers: getSwanHeaders(),
+  }).catch(() => null);
+
+  if (!response || handleUnauthorized(response) || !response.ok) {
+    swanState.enabled = false;
+    swanState.session = null;
+    updateSwanUI();
+    return;
+  }
+
+  const payload = await response.json();
+  if (!payload?.session) {
+    swanState.enabled = false;
+    swanState.session = null;
+    swanState.projections = { session: null, panels: null, map: null, notifications: null };
+    clearSwanOverlayEntities();
+    updateSwanUI();
+    return;
+  }
+
+  swanState.enabled = true;
+  swanState.session = payload.session;
+  if (payload.projections) {
+    swanState.projections = payload.projections;
+  }
+  await refreshSwanProjections();
+  if (!eventSource) {
+    connectToLiveEvents();
+  }
+  updateSwanUI();
+}
+
+async function enableSwan() {
+  if (!sessionState.isAuthenticated) {
+    showAuthModal();
+    return;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/swan/session`, {
+    method: "POST",
+    headers: getSwanHeaders(),
+    body: JSON.stringify({
+      client_session_id: getSwanClientSessionId(),
+      route: window.location.pathname,
+      mode: currentMode,
+      context: {
+        selected_object_id: selectedObjectId,
+        active_layers: Object.entries(layerState)
+          .filter(([, enabled]) => enabled)
+          .map(([layerId]) => layerId),
+      },
+    }),
+  });
+
+  if (handleUnauthorized(response) || !response.ok) {
+    return;
+  }
+
+  const payload = await response.json();
+  swanState.enabled = true;
+  swanState.session = payload.session;
+  swanState.projections = payload.projections || swanState.projections;
+  await refreshSwanProjections();
+  if (!eventSource) {
+    connectToLiveEvents();
+  }
+  updateSwanUI();
+}
+
+async function disableSwan() {
+  if (!sessionState.isAuthenticated) {
+    swanState.enabled = false;
+    swanState.session = null;
+    updateSwanUI();
+    return;
+  }
+
+  await fetch(`${apiBaseUrl}/swan/session`, {
+    method: "DELETE",
+    headers: getSwanHeaders(),
+  }).catch(() => {});
+
+  swanState.enabled = false;
+  swanState.session = null;
+  swanState.projections = { session: null, panels: null, map: null, notifications: null };
+  clearSwanOverlayEntities();
+  if (currentMode !== "live") {
+    disconnectFromLiveEvents();
+  }
+  updateSwanUI();
+}
+
+function toggleSwan() {
+  if (swanState.enabled) {
+    disableSwan();
+  } else {
+    enableSwan();
+  }
+}
+
+function emitSwanActivity(activityType, options = {}) {
+  if (!swanState.enabled || !swanState.session || !sessionState.isAuthenticated) {
+    return;
+  }
+
+  const activityKey =
+    options.activityKey ||
+    `${activityType}:${options.targetType || "none"}:${options.targetId || "none"}`;
+  const existingTimeout = swanState.pendingActivities.get(activityKey);
+  if (existingTimeout) {
+    window.clearTimeout(existingTimeout);
+  }
+
+  const timeoutId = window.setTimeout(async () => {
+    swanState.pendingActivities.delete(activityKey);
+    try {
+      const response = await fetch(`${apiBaseUrl}/swan/activity`, {
+        method: "POST",
+        headers: getSwanHeaders(),
+        body: JSON.stringify({
+          client_session_id: getSwanClientSessionId(),
+          activity_type: activityType,
+          target_type: options.targetType || null,
+          target_id: options.targetId || null,
+          route: window.location.pathname,
+          mode: currentMode,
+          context: {
+            ...(options.context || {}),
+            activity_key: activityKey,
+          },
+        }),
+      });
+
+      if (handleUnauthorized(response) || !response.ok) {
+        return;
+      }
+
+      await response.json();
+    } catch (error) {
+      console.error("Failed to emit Swan activity:", error);
+    }
+  }, 200);
+
+  swanState.pendingActivities.set(activityKey, timeoutId);
 }
 
 // ===== CESIUM / MAP FUNCTIONS =====
@@ -563,11 +946,32 @@ function initCesium() {
   handler.setInputAction((click) => {
     const pickedObject = viewer.scene.pick(click.position);
     if (Cesium.defined(pickedObject) && pickedObject.id?.properties) {
+      const swanFindingId = pickedObject.id.properties.swanFindingId?.getValue?.();
+      if (swanFindingId) {
+        handleSwanFindingSelection(swanFindingId);
+        return;
+      }
       const objectId = pickedObject.id.properties.objectId.getValue();
       if (objectId) {
         selectObject(objectId);
+        return;
       }
     }
+
+    const cartesian = viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+    if (!cartesian) {
+      return;
+    }
+
+    const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+    emitSwanActivity("map_selection_changed", {
+      targetType: "map_selection",
+      targetId: `${Cesium.Math.toDegrees(cartographic.latitude).toFixed(4)},${Cesium.Math.toDegrees(cartographic.longitude).toFixed(4)}`,
+      context: {
+        lat: Cesium.Math.toDegrees(cartographic.latitude),
+        lon: Cesium.Math.toDegrees(cartographic.longitude),
+      },
+    });
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
   // Update coordinates display
@@ -582,6 +986,8 @@ function initCesium() {
     const zoom = Math.max(1, Math.min(20, Math.round(20 - Math.log2(height / 100))));
     dom.zoomLevel.textContent = `ZOOM: ${zoom}`;
   });
+
+  renderSwanMapOverlays();
 }
 
 function renderMapMarkers() {
@@ -712,6 +1118,14 @@ function selectObject(objectId) {
     updateCCTVSection(objectId, state);
   }
   renderMapMarkers();
+  emitSwanActivity("object_selected", {
+    targetType: "object",
+    targetId: objectId,
+    context: {
+      selected_object_id: objectId,
+      selected_mode: currentMode,
+    },
+  });
 }
 
 function getCurrentReplayState() {
@@ -786,6 +1200,7 @@ function updateInspectorFromState(objectId, state) {
     }
   }
 
+  html += renderSwanInsights("object", objectId);
   dom.inspectorContent.innerHTML = html;
 }
 
@@ -1037,6 +1452,13 @@ async function loadReplay() {
     replayState.currentIndex = 0;
     updateStatus(`LOADED ${payload.item_count} ITEMS`);
     renderReplay();
+    emitSwanActivity("replay_query_submitted", {
+      targetType: "replay_window",
+      targetId: requestBody.object_id || "global",
+      context: {
+        replay_query: requestBody,
+      },
+    });
 
     // Show events panel
     dom.eventsPanel.classList.remove("hidden");
@@ -1119,6 +1541,13 @@ function switchToLiveMode() {
   loadLatestState();
   loadSourceHealth();
   renderMapMarkers();
+  emitSwanActivity("mode_switched", {
+    targetType: "mode",
+    targetId: "live",
+    context: {
+      mode: "live",
+    },
+  });
 }
 
 function switchToReplayMode() {
@@ -1129,9 +1558,18 @@ function switchToReplayMode() {
   dom.modeValue.textContent = "REPLAY";
   dom.modeValue.classList.remove("live");
 
-  disconnectFromLiveEvents();
+  if (!swanState.enabled) {
+    disconnectFromLiveEvents();
+  }
   updateStatus("REPLAY MODE");
   renderReplay();
+  emitSwanActivity("mode_switched", {
+    targetType: "mode",
+    targetId: "replay",
+    context: {
+      mode: "replay",
+    },
+  });
 }
 
 // ===== LIVE EVENTS =====
@@ -1147,18 +1585,55 @@ function connectToLiveEvents() {
       const data = JSON.parse(event.data);
 
       if (data.type === "connection_info") {
-        if (lastSequence === 0) {
+        if (currentMode === "live" && lastSequence === 0) {
           loadLatestState();
         }
         updateConnectionStatus("connected");
         reconnectAttempts = 0;
         lastSequence = data.payload.server_sequence;
-        updateStatus("LIVE FEED CONNECTED");
+        if (currentMode === "live") {
+          updateStatus("LIVE FEED CONNECTED");
+        }
       } else if (data.type === "object_state_update") {
         if (data.sequence) {
           lastSequence = data.sequence;
         }
-        handleLiveStateUpdate(data.payload);
+        if (currentMode === "live") {
+          handleLiveStateUpdate(data.payload);
+        }
+      } else if (data.type === "swan_projection_update") {
+        if (
+          swanState.enabled &&
+          swanState.session &&
+          data.payload.session_id === swanState.session.session_id
+        ) {
+          fetchSwanArtifact(data.payload.artifact_key)
+            .then((artifact) => handleSwanProjectionData(data.payload.artifact_key, artifact))
+            .catch((error) => {
+              console.error("Failed to refresh Swan projection:", error);
+            });
+        }
+      } else if (data.type === "swan_session_update") {
+        if (
+          swanState.enabled &&
+          swanState.session &&
+          data.payload.session_id === swanState.session.session_id
+        ) {
+          hydrateSwanSession().catch((error) => {
+            console.error("Failed to hydrate Swan session:", error);
+          });
+        }
+      } else if (data.type === "swan_notification") {
+        if (
+          swanState.enabled &&
+          swanState.session &&
+          data.payload.session_id === swanState.session.session_id
+        ) {
+          showSwanToast(data.payload.notification);
+          fetchSwanArtifact("notifications")
+            .then((artifact) => handleSwanProjectionData("notifications", artifact))
+            .catch(() => {});
+        }
       }
     } catch {
       // Ignore parse errors
@@ -1175,7 +1650,7 @@ function connectToLiveEvents() {
 
       const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000);
       setTimeout(() => {
-        if (currentMode === "live") {
+        if (currentMode === "live" || swanState.enabled) {
           connectToLiveEvents();
         }
       }, delay);
@@ -1199,6 +1674,74 @@ function disconnectFromLiveEvents() {
   }
   reconnectAttempts = 0;
   updateConnectionStatus("disconnected");
+}
+
+function clearSwanOverlayEntities() {
+  if (!viewer || !swanState.overlayEntities) return;
+
+  for (const entity of swanState.overlayEntities.values()) {
+    viewer.entities.remove(entity);
+  }
+  swanState.overlayEntities.clear();
+}
+
+function renderSwanMapOverlays() {
+  if (!viewer || typeof Cesium === "undefined") return;
+
+  clearSwanOverlayEntities();
+  const overlays = swanState.projections.map?.data?.overlays || [];
+
+  for (const overlay of overlays) {
+    if (typeof overlay.lat !== "number" || typeof overlay.lon !== "number") {
+      continue;
+    }
+
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(overlay.lon, overlay.lat, 150),
+      point: {
+        pixelSize: 12,
+        color: Cesium.Color.fromCssColorString("#00ff41").withAlpha(0.85),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+      },
+      label: {
+        text: overlay.title,
+        font: "10px monospace",
+        fillColor: Cesium.Color.fromCssColorString("#00ff41"),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -14),
+        show: false,
+      },
+      properties: {
+        swanFindingId: overlay.finding_id,
+      },
+    });
+
+    swanState.overlayEntities.set(overlay.finding_id, entity);
+  }
+}
+
+function handleSwanFindingSelection(findingId) {
+  const overlays = swanState.projections.map?.data?.overlays || [];
+  const finding = overlays.find((item) => item.finding_id === findingId);
+  if (!finding) return;
+
+  if (finding.target_type === "object") {
+    selectObject(finding.target_id);
+    return;
+  }
+
+  if (finding.target_type === "alert") {
+    showAlertDetail(finding.target_id);
+    return;
+  }
+
+  if (finding.target_type === "incident") {
+    openIncident(finding.target_id);
+  }
 }
 
 function handleLiveStateUpdate(state) {
@@ -1564,6 +2107,14 @@ async function openIncident(incidentId) {
     }
 
     updateStatus(`INCIDENT: ${incident.title.toUpperCase()}`);
+    emitSwanActivity("incident_opened", {
+      targetType: "incident",
+      targetId: incidentId,
+      context: {
+        incident_title: incident.title,
+        incident_status: incident.status,
+      },
+    });
   } catch (error) {
     console.error("Failed to open incident:", error);
     updateStatus("INCIDENT LOAD FAILED");
@@ -1613,6 +2164,10 @@ function renderIncidentPanel() {
   renderChapters();
   renderLinkedAlerts();
   renderCorrelationTimeline();
+  dom.incidentChapters.insertAdjacentHTML(
+    "beforeend",
+    renderSwanInsights("incident", incident.incident_id),
+  );
 }
 
 function updateSectionCounts() {
@@ -2315,8 +2870,9 @@ async function createIncident() {
   }
 }
 
-async function showAlertDetail(alertId) {
+async function showAlertDetail(alertId, options = {}) {
   try {
+    currentAlertId = alertId;
     const response = await fetch(`${apiBaseUrl}/alerts/${alertId}`, {
       headers: getAuthHeaders(),
     });
@@ -2382,6 +2938,7 @@ async function showAlertDetail(alertId) {
           : ""
       }
     `;
+    dom.alertDetailContent.insertAdjacentHTML("beforeend", renderSwanInsights("alert", alertId));
 
     // Add event click handlers
     dom.alertDetailContent.querySelectorAll(".alert-event-link").forEach((btn) => {
@@ -2434,10 +2991,21 @@ async function showAlertDetail(alertId) {
         .addEventListener("click", () => showLinkIncidentModal(alertId));
     }
     document.getElementById("back-alerts").addEventListener("click", () => {
+      currentAlertId = null;
       dom.alertModal.classList.add("hidden");
     });
 
     dom.alertModal.classList.remove("hidden");
+    if (options.emitActivity !== false) {
+      emitSwanActivity("alert_opened", {
+        targetType: "alert",
+        targetId: alertId,
+        context: {
+          alert_summary: alertData.summary,
+          alert_status: alertData.status,
+        },
+      });
+    }
   } catch (error) {
     console.error("Failed to load alert detail:", error);
   }
@@ -2654,6 +3222,7 @@ function initEventListeners() {
 
   // Close alert modal
   dom.closeAlert.addEventListener("click", () => {
+    currentAlertId = null;
     dom.alertModal.classList.add("hidden");
   });
 
@@ -2668,11 +3237,21 @@ function initEventListeners() {
     updateActiveLayersCount();
     renderMapMarkers();
     renderTrack();
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "flights",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerMilitary.addEventListener("change", (e) => {
     layerState.military = e.target.checked;
     updateActiveLayersCount();
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "military",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerEarthquakes.addEventListener("change", (e) => {
@@ -2688,6 +3267,11 @@ function initEventListeners() {
         clearExternalLayerEntities("earthquakes");
       }
     }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "earthquakes",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerSatellites.addEventListener("change", (e) => {
@@ -2703,6 +3287,11 @@ function initEventListeners() {
         clearExternalLayerEntities("satellites");
       }
     }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "satellites",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerTraffic.addEventListener("change", (e) => {
@@ -2718,6 +3307,11 @@ function initEventListeners() {
         clearExternalLayerEntities("traffic");
       }
     }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "traffic",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerWeather.addEventListener("change", (e) => {
@@ -2733,6 +3327,11 @@ function initEventListeners() {
         clearExternalLayerEntities("weather");
       }
     }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "weather",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerCctv.addEventListener("change", (e) => {
@@ -2746,6 +3345,11 @@ function initEventListeners() {
         updateCCTVSection(selectedObjectId, state);
       }
     }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "cctv",
+      context: { enabled: e.target.checked },
+    });
   });
 
   dom.layerBikeshare.addEventListener("change", (e) => {
@@ -2761,6 +3365,11 @@ function initEventListeners() {
         clearExternalLayerEntities("bikeshare");
       }
     }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "bikeshare",
+      context: { enabled: e.target.checked },
+    });
   });
 
   // Inference layer toggles
@@ -3389,8 +3998,8 @@ function renderInferenceList() {
           <div class="inference-item-description">${description}</div>
           ${evidence ? `<div class="inference-item-evidence">Evidence: ${evidence}</div>` : ""}
           ${time ? `<div class="inference-item-time">${new Date(time).toLocaleString()}</div>` : ""}
-        </div>
-      `;
+      </div>
+    `;
     })
     .join("");
 
@@ -3557,6 +4166,7 @@ async function init() {
   syncLayerStateFromDom();
   updateActiveLayersCount();
   updateVisualEffects();
+  updateSwanUI();
 
   // Start clock
   setInterval(updateTime, 1000);

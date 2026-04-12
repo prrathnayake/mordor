@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "activity_id": "act_swan_1",
+  "session_id": "swan_session_1",
+  "client_session_id": "client_1",
+  "user_id": "usr_operator",
+  "activity_type": "object_selected",
+  "target_type": "object",
+  "target_id": "veh_42",
+  "route": "/",
+  "mode": "live",
+  "activity_key": "object_selected:object:veh_42",
+  "context": {
+    "selected_object_id": "veh_42",
+    "active_layers": ["flights", "cctv"]
+  },
+  "occurred_at": "2026-04-12T02:15:00Z"
+}

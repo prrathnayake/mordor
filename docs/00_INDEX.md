@@ -62,6 +62,9 @@ That means:
 17. `17_RISK_REGISTER.md`  
     Major project risks and mitigations.
 
+18. `runbooks/SWAN_PROTOCOL.md`
+    Swan protocol lifecycle, runtime artifacts, and operator runbook guidance.
+
 ## Core build philosophy
 Build this as a **time-aware geospatial event platform**, not as a giant "AI everything" system.
 

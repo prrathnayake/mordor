@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Swan Activity Event",
+  "type": "object",
+  "x-contract-name": "swanActivity",
+  "x-schema-version": "1.0.0",
+  "required": [
+    "schema_version",
+    "activity_id",
+    "session_id",
+    "client_session_id",
+    "user_id",
+    "activity_type",
+    "activity_key",
+    "context",
+    "occurred_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "activity_id": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "client_session_id": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "activity_type": {
+      "type": "string"
+    },
+    "target_type": {
+      "type": ["string", "null"]
+    },
+    "target_id": {
+      "type": ["string", "null"]
+    },
+    "route": {
+      "type": ["string", "null"]
+    },
+    "mode": {
+      "type": ["string", "null"]
+    },
+    "activity_key": {
+      "type": "string"
+    },
+    "context": {
+      "type": "object"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

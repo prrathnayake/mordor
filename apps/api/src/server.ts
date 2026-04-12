@@ -31,6 +31,11 @@ import {
   type ReplayQueryRequest,
   validateReplayQueryRequest,
 } from "../../../packages/replay/src/index.js";
+import {
+  type SwanActivityEvent,
+  type SwanFinding,
+  SwanProtocolService,
+} from "../../../packages/swan/src/index.js";
 import { loadJsonFixture } from "../../../packages/test-fixtures/src/index.js";
 import { runCaptureJob } from "./capture-service.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
@@ -274,14 +279,123 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export function createApiServer(options: ApiServerOptions): RunningApiServer {
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function resolveClientSessionId(
+  request: IncomingMessage,
+  url: URL,
+  body?: Record<string, unknown>,
+): string | null {
+  const headerValue = request.headers["x-client-session-id"];
+  if (typeof headerValue === "string" && headerValue.trim() !== "") {
+    return headerValue.trim();
+  }
+
+  const queryValue = url.searchParams.get("client_session_id");
+  if (typeof queryValue === "string" && queryValue.trim() !== "") {
+    return queryValue.trim();
+  }
+
+  const bodyValue = body?.client_session_id;
+  if (typeof bodyValue === "string" && bodyValue.trim() !== "") {
+    return bodyValue.trim();
+  }
+
+  return null;
+}
+
+function buildSwanContext(
+  base: Record<string, unknown>,
+  extras?: { route?: unknown; mode?: unknown },
+): Record<string, unknown> {
+  const nextContext = { ...base };
+  if (typeof extras?.route === "string") {
+    nextContext.route = extras.route;
+  }
+  if (extras?.mode === "live" || extras?.mode === "replay") {
+    nextContext.mode = extras.mode;
+  }
+  return nextContext;
+}
+
+async function getMissingSwanTables(persistence: PostgresPersistenceGateway): Promise<string[]> {
+  const expectedTables = [
+    "swan_sessions",
+    "swan_activity_events",
+    "swan_threads",
+    "swan_findings",
+    "swan_artifacts",
+  ];
+
+  const result = await persistence.getDatabase().pool.query<{
+    table_name: string;
+    table_exists: boolean;
+  }>(
+    `
+      SELECT
+        expected.table_name,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.tables actual
+          WHERE actual.table_schema = 'public'
+            AND actual.table_name = expected.table_name
+        ) AS table_exists
+      FROM unnest($1::text[]) AS expected(table_name)
+    `,
+    [expectedTables],
+  );
+
+  return result.rows.filter((row) => !row.table_exists).map((row) => row.table_name);
+}
+
+function writeSwanUnavailable(response: ServerResponse, missingTables?: string[]): void {
+  writeJson(response, 503, {
+    error: "swan_unavailable",
+    message: "SWAN schema is not initialized",
+    missing_tables: missingTables ?? [],
+  });
+}
+
+export async function createApiServer(options: ApiServerOptions): Promise<RunningApiServer> {
   const logger = createLogger("api-server");
   const persistence = PostgresPersistenceGateway.fromConnectionString(options.connection_string);
   const clock = options.clock ?? systemClock;
+  const config = getConfigFromEnv();
+  const missingSwanTables = await getMissingSwanTables(persistence);
+  const swanService =
+    missingSwanTables.length === 0
+      ? new SwanProtocolService(
+          persistence.getDatabase(),
+          logger,
+          {
+            artifactRoot: config.swanArtifactRoot,
+            maxThreadsPerSession: config.swanMaxThreadsPerSession,
+            maxGlobalThreads: config.swanMaxGlobalThreads,
+            sessionIdleTtlMs: config.swanSessionIdleTtlMs,
+            watchIntervalMs: config.swanWatchIntervalMs,
+            providerAllowlist: config.swanProviderAllowlist,
+            externalResearchFeeds: (process.env.SWAN_EXTERNAL_RESEARCH_FEEDS || "")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean),
+          },
+          (event) => liveEventBus.publish(event as LiveEvent),
+        )
+      : null;
 
   logger.info("Starting API server", {
     connection_string: options.connection_string.replace(/:[^:@]+@/, ":***@"),
   });
+
+  if (missingSwanTables.length > 0) {
+    logger.warn("SWAN service disabled because required tables are missing", {
+      missing_tables: missingSwanTables,
+    });
+  }
 
   setObjectStateUpdateCallback((state) => {
     liveEventBus.publish({
@@ -883,6 +997,200 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
             unsubscribe();
           });
 
+          return;
+        }
+
+        if (request.method === "POST" && url.pathname === "/swan/session") {
+          if (!swanService) {
+            writeSwanUnavailable(response, missingSwanTables);
+            return;
+          }
+
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const body = asRecord(await readJsonBody(request));
+          const clientSessionId = resolveClientSessionId(request, url, body);
+          if (!clientSessionId) {
+            writeJson(response, 400, { error: "client_session_id is required" });
+            return;
+          }
+
+          const result = await swanService.enableSession({
+            user_id: authContext.user.user_id,
+            client_session_id: clientSessionId,
+            context: buildSwanContext(asRecord(body.context), {
+              route: body.route,
+              mode: body.mode,
+            }),
+          });
+
+          writeJson(response, 201, result);
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname === "/swan/session") {
+          if (!swanService) {
+            writeSwanUnavailable(response, missingSwanTables);
+            return;
+          }
+
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const clientSessionId = resolveClientSessionId(request, url);
+          if (!clientSessionId) {
+            writeJson(response, 400, { error: "client_session_id is required" });
+            return;
+          }
+
+          const result = await swanService.getSessionByClient(
+            authContext.user.user_id,
+            clientSessionId,
+          );
+
+          writeJson(response, 200, result ?? { session: null });
+          return;
+        }
+
+        if (request.method === "DELETE" && url.pathname === "/swan/session") {
+          if (!swanService) {
+            writeSwanUnavailable(response, missingSwanTables);
+            return;
+          }
+
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const clientSessionId = resolveClientSessionId(request, url);
+          if (!clientSessionId) {
+            writeJson(response, 400, { error: "client_session_id is required" });
+            return;
+          }
+
+          await swanService.disableSession(authContext.user.user_id, clientSessionId);
+          writeJson(response, 200, { success: true });
+          return;
+        }
+
+        if (request.method === "POST" && url.pathname === "/swan/activity") {
+          if (!swanService) {
+            writeSwanUnavailable(response, missingSwanTables);
+            return;
+          }
+
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const body = asRecord(await readJsonBody(request));
+          const clientSessionId = resolveClientSessionId(request, url, body);
+          if (!clientSessionId) {
+            writeJson(response, 400, { error: "client_session_id is required" });
+            return;
+          }
+
+          if (typeof body.activity_type !== "string") {
+            writeJson(response, 400, { error: "activity_type is required" });
+            return;
+          }
+
+          const result = await swanService.recordActivity({
+            user_id: authContext.user.user_id,
+            client_session_id: clientSessionId,
+            activity_type: body.activity_type as SwanActivityEvent["activity_type"],
+            target_type:
+              typeof body.target_type === "string"
+                ? (body.target_type as SwanActivityEvent["target_type"])
+                : null,
+            target_id: typeof body.target_id === "string" ? body.target_id : null,
+            route: typeof body.route === "string" ? body.route : null,
+            mode:
+              body.mode === "live" || body.mode === "replay"
+                ? (body.mode as SwanActivityEvent["mode"])
+                : null,
+            context: buildSwanContext(asRecord(body.context), {
+              route: body.route,
+              mode: body.mode,
+            }),
+          });
+
+          writeJson(response, 202, result);
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname === "/swan/findings") {
+          if (!swanService) {
+            writeSwanUnavailable(response, missingSwanTables);
+            return;
+          }
+
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const clientSessionId = resolveClientSessionId(request, url);
+          if (!clientSessionId) {
+            writeJson(response, 400, { error: "client_session_id is required" });
+            return;
+          }
+
+          const limit = Number.parseInt(url.searchParams.get("limit") ?? "50", 10);
+          const findings = await swanService.listFindings({
+            user_id: authContext.user.user_id,
+            client_session_id: clientSessionId,
+            target_type:
+              (url.searchParams.get("target_type") as SwanFinding["target_type"] | null) ??
+              undefined,
+            target_id: url.searchParams.get("target_id") ?? undefined,
+            verification_status:
+              (url.searchParams.get("verification_status") as
+                | SwanFinding["verification_status"]
+                | null) ?? undefined,
+            limit,
+          });
+
+          writeJson(response, 200, { findings });
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname.match(/^\/swan\/artifacts\/[^/]+\/.+$/)) {
+          if (!swanService) {
+            writeSwanUnavailable(response, missingSwanTables);
+            return;
+          }
+
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const prefix = "/swan/artifacts/";
+          const remainder = url.pathname.slice(prefix.length);
+          const firstSlash = remainder.indexOf("/");
+          const sessionId = remainder.slice(0, firstSlash);
+          const artifactKey = remainder.slice(firstSlash + 1);
+
+          const artifact = await swanService.readArtifact(
+            authContext.user.user_id,
+            sessionId,
+            artifactKey,
+          );
+
+          if (!artifact) {
+            writeJson(response, 404, { error: "artifact not found" });
+            return;
+          }
+
+          writeJson(response, 200, artifact);
           return;
         }
 
@@ -1799,6 +2107,7 @@ export function createApiServer(options: ApiServerOptions): RunningApiServer {
     persistence,
     async close() {
       logger.info("Shutting down API server");
+      await swanService?.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {
@@ -1835,7 +2144,7 @@ export async function startApiServer(options: {
     }
   }
 
-  const runningServer = createApiServer(options);
+  const runningServer = await createApiServer(options);
 
   await new Promise<void>((resolve, reject) => {
     runningServer.server.once("error", reject);

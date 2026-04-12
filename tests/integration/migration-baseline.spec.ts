@@ -23,6 +23,11 @@ describe("initial migration baseline", () => {
             "latest_object_states",
             "raw_payloads",
             "sources",
+            "swan_activity_events",
+            "swan_artifacts",
+            "swan_findings",
+            "swan_sessions",
+            "swan_threads",
             "tracked_objects",
           ],
         ],
@@ -41,6 +46,11 @@ describe("initial migration baseline", () => {
         "latest_object_states",
         "raw_payloads",
         "sources",
+        "swan_activity_events",
+        "swan_artifacts",
+        "swan_findings",
+        "swan_sessions",
+        "swan_threads",
         "tracked_objects",
       ]);
       expect(postgisExtension.rows[0]?.extname).toBe("postgis");

@@ -176,3 +176,17 @@ Do not mix them all into one uncontrolled global store.
 3. Alerts must always expose evidence.
 4. Client must support full reload and state rehydration.
 5. UI animations must never alter the authoritative event truth.
+
+## Swan frontend integration
+Swan is integrated into the existing tactical shell rather than a separate workspace. The browser client keeps the feature lightweight by:
+- offering an explicit Swan toggle and compact status chip in the header
+- emitting only debounced semantic activity events, never raw pointer streams or keystroke telemetry
+- attaching route, mode, selection, and active-layer context to each Swan event
+- hydrating `session`, `panels`, `map`, and `notifications` artifacts through the API
+- subscribing to Swan updates through the shared `/live/events` stream
+
+UI enrichment rules:
+- panel findings are appended to existing object, alert, and incident detail views
+- only `cross_checked` and `trusted_source` findings may surface as notifications or map overlays
+- replay mode may still receive Swan enrichment updates, but live object-state rendering remains scoped to live mode only
+- reload must rehydrate the current Swan projections from artifact endpoints before waiting for new stream events
