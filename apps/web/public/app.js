@@ -4,7 +4,7 @@
  * Integrates with existing Chrona Twin backend functionality
  */
 
-const apiBaseUrl = window.__APP_CONFIG__?.apiBaseUrl || "http://localhost:3001";
+const apiBaseUrl = window.__APP_CONFIG__?.apiBaseUrl || "http://127.0.0.1:3000";
 console.log("API Base URL:", apiBaseUrl);
 
 // ===== STATE =====

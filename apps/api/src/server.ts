@@ -67,6 +67,13 @@ interface ApiServerOptions {
   disableLiveWorldService?: boolean;
 }
 
+class InvalidJsonBodyError extends Error {
+  constructor() {
+    super("Request body must be valid JSON");
+    this.name = "InvalidJsonBodyError";
+  }
+}
+
 export interface RunningApiServer {
   readonly server: Server;
   readonly persistence: PostgresPersistenceGateway;
@@ -142,7 +149,11 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     return {};
   }
 
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new InvalidJsonBodyError();
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -2011,6 +2022,14 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           message: "Route not found",
         });
       } catch (error) {
+        if (error instanceof InvalidJsonBodyError) {
+          writeJson(response, 400, {
+            error: "invalid_json",
+            message: error.message,
+          });
+          return;
+        }
+
         const message = error instanceof Error ? error.message : "Unexpected API failure";
         logger.error("Request error", { error: message });
         writeJson(response, 500, {
@@ -2094,7 +2113,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     throw new Error("DATABASE_URL must be set to start the API server");
   }
 
-  const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3001;
+  const port = process.env.API_PORT
+    ? Number.parseInt(process.env.API_PORT, 10)
+    : process.env.PORT
+      ? Number.parseInt(process.env.PORT, 10)
+      : 3000;
 
   startApiServer({ connection_string: connectionString, port }).then(
     async ({ port: boundPort, persistence }) => {

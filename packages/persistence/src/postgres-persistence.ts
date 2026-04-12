@@ -2864,8 +2864,8 @@ export class PostgresPersistenceGateway
         SELECT 
           sr.*,
           ST_Distance(
-            ST_SetSRID(ST_Point($1, $2), 4326),
-            ST_SetSRID(ST_Point(sr.lat, sr.lon), 4326)
+            ST_SetSRID(ST_Point($1, $2), 4326)::geography,
+            ST_SetSRID(ST_Point(sr.lon, sr.lat), 4326)::geography
           ) AS distance_m
         FROM source_registry sr
         WHERE sr.lat IS NOT NULL AND sr.lon IS NOT NULL

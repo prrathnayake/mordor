@@ -19,13 +19,13 @@ export {
   MilitaryFlightsAdapter,
 } from "./adapters/military-flights.js";
 export { createNOAAWeatherAdapter, NOAAWeatherAdapter } from "./adapters/noaa-weather.js";
-export { createStreetTrafficAdapter, StreetTrafficAdapter } from "./adapters/street-traffic.js";
 // Adapters
 export {
   createOpenSkyFlightsAdapter,
   OpenSkyFlightsAdapter,
   type OpenSkyFlightsFetchResult,
 } from "./adapters/opensky-flights.js";
+export { createStreetTrafficAdapter, StreetTrafficAdapter } from "./adapters/street-traffic.js";
 export {
   createUSGSEarthquakeAdapter,
   USGSEarthquakeAdapter,

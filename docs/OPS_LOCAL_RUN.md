@@ -1,70 +1,91 @@
 # Local Run Instructions
 
 ## Prerequisites
-- Node.js 22+
+
+- Node.js 24.x
+- npm 11+
 - PostgreSQL 15+ with PostGIS extension
+- a working container runtime if you want to run integration or e2e suites through `testcontainers`
 
 ## Environment Setup
 
-1. Set the DATABASE_URL environment variable:
+1. Set the database connection:
 ```bash
 export DATABASE_URL="postgres://user:password@localhost:5432/chronadb"
 ```
 
 2. Install dependencies:
 ```bash
-npm install
+npm ci
+```
+
+3. Copy local env defaults if needed:
+```bash
+cp .env.example .env
 ```
 
 ## Running the API Server
 
-Start the API server on the default port (3001):
+Default API port is `3000`:
+
 ```bash
-npm run start:api
+npm run api:dev
 ```
 
-Or with a custom port:
+Custom API port:
+
 ```bash
-PORT=3002 npm run start:api
+API_PORT=3002 npm run api:dev
+```
+
+## Running the Web Server
+
+Default web port is `3001` and the default API target is `http://127.0.0.1:3000`:
+
+```bash
+npm run web:dev
+```
+
+Custom ports:
+
+```bash
+API_PORT=3002 WEB_PORT=3003 API_BASE_URL=http://127.0.0.1:3002 npm run web:dev
+```
+
+## Running the Fixture Worker
+
+```bash
+WORKER_INPUT_FILE=./packages/test-fixtures/fixtures/adapters/fixture-telemetry/valid.request.json \
+DATABASE_URL="$DATABASE_URL" \
+npm run worker:fixture
 ```
 
 ## Running Tests
 
-Run the full validation suite:
+Full verification:
+
 ```bash
 npm run validate
 ```
 
-Run only unit/integration tests:
-```bash
-npm run test:vitest
-```
+Focused suites:
 
-Run only e2e tests:
 ```bash
+npm run test:unit
+npm run test:contract
+npm run test:integration
+npm run test:replay
 npm run test:e2e
-```
-
-## Running with Docker
-
-Build the image:
-```bash
-docker build -t chrona-twin .
-```
-
-Run the container:
-```bash
-docker run -p 3001:3001 -e DATABASE_URL="postgres://user:password@host:5432/db" chrona-twin
 ```
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| DATABASE_URL | Yes | - | PostgreSQL connection string |
-| PORT | No | 3001 | API server port |
-| API_PORT | No | 3000 | Alternative API port |
-| WEB_PORT | No | 3001 | Web server port |
-| LOG_LEVEL | No | info | Logging level (debug, info, warn, error) |
-| AUTH_ENABLED | No | true | Enable authentication |
-| NODE_ENV | No | development | Environment (development, production) |
+| `DATABASE_URL` | Yes | - | PostgreSQL connection string |
+| `API_PORT` | No | `3000` | API server port |
+| `WEB_PORT` | No | `3001` | Web server port |
+| `API_BASE_URL` | No | `http://127.0.0.1:3000` | Browser app target for API requests |
+| `LOG_LEVEL` | No | `info` | Logging level |
+| `AUTH_ENABLED` | No | `true` | Enable authentication |
+| `NODE_ENV` | No | `development` | Runtime environment |

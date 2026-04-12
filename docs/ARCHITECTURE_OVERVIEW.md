@@ -1,196 +1,150 @@
 # Architecture Overview
 
-## System Design
+## Project Goal
 
-Chrona Twin is a modular monolith application built with TypeScript. It follows clean architecture principles with clear package boundaries.
+Chrona Twin is a browser-based geospatial digital twin for operational monitoring. The current codebase is aimed at:
 
-## High-Level Architecture
+- ingesting telemetry and camera observations into a canonical event history
+- serving live and replay views of object state over a tactical Cesium-based UI
+- generating alerts and linking them to evidence
+- supporting incident playback, capture jobs, external data overlays, and SWAN advisory intelligence
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Web Browser                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │   Maps UI   │  │  Timeline   │  │    Alert Panel          │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ HTTP + SSE
-┌─────────────────────────────────────────────────────────────────┐
-│                         API Server                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │  REST API    │  │  Live SSE   │  │   Auth Middleware       │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-┌──────────────────┐  ┌──────────────┐  ┌──────────────────┐
-│  Ingestion       │  │  Persistence │  │  Live Event Bus  │
-│  Adapters        │  │  Gateway     │  │                  │
-└──────────────────┘  └──────────────┘  └──────────────────┘
-              │               │               │
-              └───────────────┼───────────────┘
-                              ▼
-              ┌─────────────────────────────────────┐
-              │     PostgreSQL + PostGIS            │
-              │  - canonical_events                 │
-              │  - object_states                    │
-              │  - alerts                           │
-              └─────────────────────────────────────┘
-```
+## Current Architecture
 
-## Package Structure
+Chrona Twin is implemented as a TypeScript modular monolith. Runtime entrypoints stay in `apps/`, while domain and infrastructure concerns are pushed into `packages/`.
 
-### apps/api
-HTTP server providing REST endpoints and SSE live event streaming.
+```text
+browser (Cesium tactical UI)
+  -> apps/web static server
+  -> talks to apps/api over HTTP + SSE
 
-**Responsibilities:**
-- HTTP request handling
-- Authentication middleware
-- Alert rules evaluation
-- Live event publishing
+apps/api
+  -> auth/session handling
+  -> ingestion endpoints
+  -> replay/state queries
+  -> alerts/incidents/capture/inference/source registry
+  -> SWAN session/activity/artifact endpoints
+  -> live event streaming via /live/events
 
-**Key Endpoints:**
-- `/ingest/*` - Data ingestion
-- `/replay/query` - Historical queries
-- `/alerts/*` - Alert management
-- `/live/events` - SSE stream
+apps/worker
+  -> fixture-oriented ingestion job wrapper
 
-### apps/web
-Static file server serving the browser application.
+packages/*
+  -> adapters + contracts + domain projection
+  -> ingestion orchestration
+  -> persistence and migrations
+  -> live-world cache integration
+  -> external-data adapters
+  -> replay assembly
+  -> alerts and SWAN services
 
-**Responsibilities:**
-- Serve HTML/CSS/JS
-- API proxy for development
-
-### packages/adapters
-Data normalization adapters for different source types.
-
-**Adapters:**
-- `fixture-telemetry` - GPS telemetry data
-- `camera-observation` - Camera metadata
-
-### packages/alerts
-Alert rules engine for anomaly detection.
-
-**Rules:**
-- Object stale detection
-- Source error detection
-- Source disconnection detection
-- Low speed warning
-
-### packages/auth
-Token-based authentication service.
-
-**Features:**
-- User authentication
-- Role-based authorization
-- Token validation and expiration
-
-### packages/domain
-Core domain logic for object state projection.
-
-**Responsibilities:**
-- Canonical event application to state
-- Deterministic state computation
-
-### packages/persistence
-PostgreSQL/PostGIS persistence layer.
-
-**Responsibilities:**
-- Data persistence
-- Query execution
-- Migration management
-
-### packages/replay
-Replay query logic and state reconstruction.
-
-**Responsibilities:**
-- Event ordering
-- Time window queries
-- State reconstruction
-
-## Data Flow
-
-### Ingestion Flow
-
-1. External system sends data to `/ingest/*`
-2. Adapter validates and normalizes input
-3. Canonical events are created
-4. Persistence layer stores events
-5. Alert rules are evaluated
-6. Alerts are persisted if triggered
-7. State projections are updated
-8. Live event bus publishes state updates
-
-### Live Monitoring Flow
-
-1. Browser connects to `/live/events`
-2. Server sends connection info with sequence number
-3. Server sends initial latest state
-4. On new events, server publishes state updates
-5. Browser updates map markers
-
-### Replay Flow
-
-1. User selects time window and optional object filter
-2. API queries canonical events
-3. Events are sorted by observed_at timestamp
-4. State projections are computed for each event
-5. Results are returned to browser for visualization
-
-### Alert Investigation Flow
-
-1. User views alert list
-2. User clicks alert to see details
-3. Evidence events are clickable
-4. User can jump to replay with pre-filled time window
-
-## Authentication Flow
-
-1. User submits credentials to `/auth/login`
-2. Server validates against mock user store
-3. Server returns JWT token (30-min expiry)
-4. Browser stores token in localStorage
-5. Subsequent requests include `Authorization: Bearer <token>`
-6. On page reload, token is validated via `/auth/validate`
-7. Invalid/expired tokens are cleared
-
-## State Management
-
-### Object State Projection
-
-When events are ingested, they're applied to create object states:
-
-```
-state_n = applyCanonicalEvent(state_{n-1}, event_n)
+PostgreSQL + PostGIS
+  -> canonical history, latest state, alerts, incidents, evidence, source registry,
+     external layers, inferred intelligence, and SWAN tables
 ```
 
-This ensures deterministic replay - the same events always produce the same states.
+## Runtime Surfaces
 
-### Live Event Bus
+### `apps/api`
 
-The live event bus maintains:
-- Current sequence number
-- Recent events for reconnection backfill
-- Subscribers for SSE connections
+The API is a Node HTTP server, not an Express app. It is the main orchestration boundary and owns:
 
-## Security
+- auth endpoints and bearer-token validation
+- fixture telemetry and camera observation ingestion
+- replay queries and latest-state / track endpoints
+- alert CRUD-lite operations
+- incident, capture-job, and evidence-freeze APIs
+- external layer refresh and source registry endpoints
+- inferred intelligence endpoints
+- SWAN session, activity, finding, and artifact APIs
+- live event fanout over SSE
 
-- Token-based authentication with 30-minute expiration
-- Role-based authorization (viewer < operator < admin)
-- Operator role required for alert modifications
-- No secrets stored in code
+### `apps/web`
 
-## Scalability Notes
+The web app is a server-rendered static asset host for a tactical UI built with plain HTML/CSS/JavaScript plus Cesium. It is not currently a React app. The UI shell includes:
 
-Current design is suitable for:
-- Single server deployment
-- ~10,000 objects
-- ~100 sources
-- 1-minute event latency
+- live vs replay mode controls
+- Cesium globe viewport
+- alert and source-health panels
+- external layer toggles
+- incident playback and evidence controls
+- inferred intelligence overlays
+- SWAN toggle, status, and advisory surfaces
 
-For scale, consider:
-- Read replicas for replay queries
-- Message queue for ingestion
-- CDN for static assets
+### `apps/worker`
+
+The worker is currently narrow and fixture-driven. It wraps fixture telemetry ingestion against the shared ingestion and persistence packages.
+
+## Package Boundaries
+
+- `packages/adapters`: source normalization for fixture telemetry and camera observations
+- `packages/alerts`: alert rule evaluation and identifiers
+- `packages/auth`: login, token validation, and role model
+- `packages/config`: env parsing and runtime defaults
+- `packages/contracts`: schemas and shared model definitions
+- `packages/domain`: deterministic object-state projection
+- `packages/external-data`: adapters for flights, earthquakes, satellites, weather, bikeshare, and traffic
+- `packages/ingestion`: validation, dedupe, quarantine, and canonical write orchestration
+- `packages/live-world`: in-memory or Redis-backed live snapshot cache
+- `packages/logging`: structured logger
+- `packages/persistence`: Postgres/PostGIS gateway and migrations runner
+- `packages/replay`: replay query validation and ordered timeline assembly
+- `packages/swan`: advisory session/thread/finding/artifact workflow
+- `packages/test-fixtures`: golden payloads and fixture loaders
+
+## Core Data Flows
+
+### Ingest to Truth
+
+1. A client posts telemetry or camera observations to `apps/api`.
+2. `packages/ingestion` validates the payload and either quarantines failures or normalizes valid records.
+3. Canonical events are written append-only through `packages/persistence`.
+4. `packages/domain` projects latest object state.
+5. `packages/alerts` evaluates the resulting events.
+6. The API emits live updates to connected clients.
+
+### Replay
+
+1. The browser submits a replay window.
+2. `packages/replay` validates the request and reads ordered canonical events.
+3. The API returns timeline items with event and `state_after_event` projections.
+4. The tactical UI renders the sequence deterministically on the globe and timeline.
+
+### Live World
+
+1. The API optionally refreshes live-flight data and caches a snapshot through `packages/live-world`.
+2. `/state/latest`, `/state/tracks/:objectId`, and `/live/events` expose either cached live data or database-backed state.
+3. The web client merges live snapshots with layer and selection state.
+
+### SWAN Advisory Lane
+
+1. The browser enables a SWAN session and emits semantic activity.
+2. `packages/swan` schedules advisory threads and persists findings/artifacts.
+3. SWAN projections are stored separately from canonical truth and published through shared live channels.
+4. The UI renders SWAN context as advisory overlays and notifications.
+
+## Storage Model
+
+Important persisted areas include:
+
+- canonical event history: `canonical_events`
+- latest materialized state: `latest_object_states`
+- source metadata and health: `sources`, `source_health`, `source_registry`, `source_links`
+- alert workflow: `alerts`
+- incident investigation: `incidents`, `incident_chapters`, `incident_links`
+- evidence capture: `capture_jobs`, `capture_snapshots`, `evidence_freeze`
+- external overlays: `external_data_layers`, `external_data_events`
+- inferred intelligence: `inferred_events`, `degradation_zones`, related tables
+- SWAN advisory state: `swan_sessions`, `swan_activity_events`, `swan_threads`, `swan_findings`, `swan_artifacts`
+
+## Current Defaults
+
+- API default port: `3000`
+- Web default port: `3001`
+- Web-to-API default base URL: `http://127.0.0.1:3000`
+- Toolchain target: Node `24.x`, npm `11+`
+
+## Known Constraints
+
+- Integration and e2e tests rely on `testcontainers`, so they need a working container runtime.
+- The top-level docs pack contains planning material as well as current-state docs; when in doubt, prefer the runtime entrypoints plus this document and `README.md`.

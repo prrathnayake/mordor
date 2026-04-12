@@ -20,7 +20,9 @@
 ## Open Notes
 - The repo already contains unrelated in-progress changes; future Codex work should avoid reverting them.
 - A branch-name mismatch exists between the requested primary branch (`main`) and the current checkout (`master`). Future runs should verify branch intent before branch-sensitive work.
+- Integration and e2e suites are currently blocked in this environment because `testcontainers` could not find a working container runtime.
 
 ## Last Completed Task
 - 2026-04-12 10:44:31 +10:00: Initialized repo-local Codex workflow artifacts, created today's memory folder, and established `tests/manual/outputs/` as the isolated manual output path.
 - 2026-04-12 10:48:30 +10:00: Prepared a focused commit for the instruction and memory scaffolding while leaving the repo's unrelated SWAN/docs changes untouched.
+- 2026-04-13 09:56:17 +10:00: Collected current project/architecture context from code, refreshed the primary runtime docs, fixed API/web startup port mismatches, corrected nearest-source distance calculations to meters in both persistence and SWAN queries, added `400 invalid_json` handling for malformed API request bodies, and verified the changes with lint, typecheck, and focused unit suites.

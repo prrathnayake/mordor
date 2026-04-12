@@ -119,7 +119,7 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
 
       response.statusCode = 404;
       response.setHeader("Content-Type", "text/plain; charset=utf-8");
-      response.end(`Not found: ${extname(url.pathname)}`);
+      response.end(`Not found: ${url.pathname}`);
     } catch (error) {
       response.statusCode = 500;
       response.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -168,8 +168,13 @@ export async function startWebServer(options: {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const apiBaseUrl = process.env.API_BASE_URL ?? "http://127.0.0.1:3001";
-  const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 8080;
+  const apiPort = process.env.API_PORT ? Number.parseInt(process.env.API_PORT, 10) : 3000;
+  const apiBaseUrl = process.env.API_BASE_URL ?? `http://127.0.0.1:${apiPort}`;
+  const port = process.env.WEB_PORT
+    ? Number.parseInt(process.env.WEB_PORT, 10)
+    : process.env.PORT
+      ? Number.parseInt(process.env.PORT, 10)
+      : 3001;
 
   startWebServer({ api_base_url: apiBaseUrl, port }).then(({ port: boundPort }) => {
     console.log(`Web server listening on http://0.0.0.0:${boundPort}`);
