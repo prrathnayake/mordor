@@ -242,6 +242,9 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
   const persistence = PostgresPersistenceGateway.fromConnectionString(options.connection_string);
   const clock = options.clock ?? systemClock;
   const config = getConfigFromEnv();
+  let closing = false;
+  let activeRequestCount = 0;
+  let activeRequestsDrainedResolver: (() => void) | null = null;
   const missingSwanTables = await getMissingSwanTables(persistence);
   const swanService =
     missingSwanTables.length === 0
@@ -318,34 +321,57 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
       });
   await liveWorldService.start();
 
+  async function waitForActiveRequestsToDrain(timeoutMs = 30000): Promise<void> {
+    if (activeRequestCount === 0) {
+      return;
+    }
+
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        activeRequestsDrainedResolver = resolve;
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
+
   const server = createServer(
     { IncomingMessage: IncomingMessage, ServerResponse: ServerResponse },
     async (request, response) => {
-      addCorsHeaders(response);
-
-      if (request.method === "OPTIONS") {
-        response.statusCode = 204;
-        response.end();
-        return;
-      }
-
-      if (!request.url) {
-        writeJson(response, 404, {
-          error: "not_found",
-          message: "Route not found",
-        });
-        return;
-      }
-
-      const url = new URL(request.url, "http://127.0.0.1");
-
-      const rawAuthHeader = request.headers.authorization;
-      const authHeader = typeof rawAuthHeader === "string" ? rawAuthHeader : null;
-      const authContext = authHeader?.startsWith("Bearer ")
-        ? validateToken(authHeader.substring(7))
-        : { user: null, isAuthenticated: false };
+      activeRequestCount += 1;
 
       try {
+        addCorsHeaders(response);
+
+        if (closing) {
+          writeJson(response, 503, {
+            error: "server_shutting_down",
+            message: "API server is shutting down",
+          });
+          return;
+        }
+
+        if (request.method === "OPTIONS") {
+          response.statusCode = 204;
+          response.end();
+          return;
+        }
+
+        if (!request.url) {
+          writeJson(response, 404, {
+            error: "not_found",
+            message: "Route not found",
+          });
+          return;
+        }
+
+        const url = new URL(request.url, "http://127.0.0.1");
+
+        const rawAuthHeader = request.headers.authorization;
+        const authHeader = typeof rawAuthHeader === "string" ? rawAuthHeader : null;
+        const authContext = authHeader?.startsWith("Bearer ")
+          ? validateToken(authHeader.substring(7))
+          : { user: null, isAuthenticated: false };
+
         logger.debug("Incoming request", { method: request.method, pathname: url.pathname });
 
         if (request.method === "GET" && url.pathname === "/health") {
@@ -2036,6 +2062,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           error: "internal_error",
           message,
         });
+      } finally {
+        activeRequestCount = Math.max(0, activeRequestCount - 1);
+        if (closing && activeRequestCount === 0) {
+          activeRequestsDrainedResolver?.();
+          activeRequestsDrainedResolver = null;
+        }
       }
     },
   );
@@ -2045,6 +2077,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
     persistence,
     async close() {
       logger.info("Shutting down API server");
+      closing = true;
       await liveWorldService.close();
       await swanService?.close();
       await new Promise<void>((resolve, reject) => {
@@ -2058,6 +2091,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         });
       });
 
+      await waitForActiveRequestsToDrain();
       await persistence.close();
       logger.info("API server shut down");
     },

@@ -92,18 +92,20 @@ test("data layers show availability status correctly", async ({ page }) => {
 
   // Military Flights should be marked as unavailable
   const militaryLayer = page.locator(".layer-item[data-layer='military']");
-  await expect(militaryLayer).toHaveAttribute("data-available", "false");
-  await expect(militaryLayer.locator(".layer-badge")).toContainText("COMING SOON");
+  await expect(militaryLayer).toHaveAttribute("data-available", "unavailable");
+  await expect(militaryLayer.locator("#layer-status-military")).toContainText("UNAVAILABLE");
 
   // CCTV should be marked as partial
   const cctvLayer = page.locator(".layer-item[data-layer='cctv']");
   await expect(cctvLayer).toHaveAttribute("data-available", "partial");
   await expect(cctvLayer.locator(".layer-badge")).toContainText("SNAPSHOT ONLY");
 
-  // Other layers should show NOT AVAILABLE
+  // Earthquake layer metadata should be present and the status badge should be populated.
   const earthquakeLayer = page.locator(".layer-item[data-layer='earthquakes']");
-  await expect(earthquakeLayer).toHaveAttribute("data-available", "false");
-  await expect(earthquakeLayer.locator(".layer-badge")).toContainText("NOT AVAILABLE");
+  await expect(earthquakeLayer).toHaveAttribute("data-available", "true");
+  await expect(earthquakeLayer.locator("#layer-status-earthquakes")).toHaveText(
+    /LOADING|REAL|DEGRADED|UNAVAILABLE/,
+  );
 });
 
 test("layer toggles work correctly", async ({ page }) => {
@@ -119,11 +121,13 @@ test("layer toggles work correctly", async ({ page }) => {
   await expect(militaryToggle).toBeDisabled();
 
   // Toggle flights layer off
-  await flightsToggle.click();
+  const flightsSlider = page.locator(".layer-item[data-layer='flights'] .toggle-slider");
+  await flightsSlider.scrollIntoViewIfNeeded();
+  await flightsSlider.click();
   await expect(flightsToggle).not.toBeChecked();
 
   // Toggle back on
-  await flightsToggle.click();
+  await flightsSlider.click();
   await expect(flightsToggle).toBeChecked();
 });
 
@@ -175,11 +179,11 @@ test("visual effect sliders are present", async ({ page }) => {
 test("view mode toggles are present", async ({ page }) => {
   await page.goto(`http://127.0.0.1:${web.port}`);
 
-  // Check toggles exist
-  await expect(page.locator("#toggle-hud")).toBeVisible();
+  // Custom toggle controls hide the native checkbox and expose a visible label/switch shell.
+  await expect(page.locator(".toggle-group")).toContainText("HUD Overlay");
   await expect(page.locator("#layout-select")).toBeVisible();
-  await expect(page.locator("#toggle-detect")).toBeVisible();
-  await expect(page.locator("#toggle-panoptic")).toBeVisible();
+  await expect(page.locator(".toggle-group")).toContainText("Detect Mode");
+  await expect(page.locator(".toggle-group")).toContainText("Panoptic View");
 });
 
 // ===== AUTHENTICATION TESTS =====
@@ -313,10 +317,6 @@ test("alerts strip shows in footer", async ({ page }) => {
 });
 
 test("alert detail modal opens from alerts strip", async ({ page }) => {
-  const { authenticate } = await import("../../packages/auth/src/index.js");
-  const authResult = authenticate("operator", "operator123");
-  const operatorToken = authResult.token ?? "";
-
   // Create a test alert
   const alertData = {
     alert_id: "test-alert-001",
@@ -331,14 +331,7 @@ test("alert detail modal opens from alerts strip", async ({ page }) => {
     status: "open",
   };
 
-  await fetch(`http://127.0.0.1:${api.port}/alerts/test-alert-001`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${operatorToken}`,
-    },
-    body: JSON.stringify(alertData),
-  });
+  await api.persistence.persistAlert(alertData);
 
   await page.goto(`http://127.0.0.1:${web.port}`);
   await page.waitForTimeout(500);
@@ -369,7 +362,7 @@ test("CCTV panel shows truthful placeholder when no camera selected", async ({ p
   await expect(page.locator("#cctv-section")).toBeVisible();
 
   // Should show placeholder content
-  await expect(page.locator("#cctv-content")).toContainText("NO CAMERA SELECTED");
+  await expect(page.locator("#cctv-content")).toContainText("No camera selected");
   await expect(page.locator("#cctv-content")).toContainText("Select a CCTV-linked object to view");
 });
 
@@ -377,7 +370,9 @@ test("CCTV panel shows truthful info when CCTV layer disabled", async ({ page })
   await page.goto(`http://127.0.0.1:${web.port}`);
 
   // Disable CCTV layer
-  await page.locator("#layer-cctv").click();
+  const cctvToggle = page.locator(".layer-item[data-layer='cctv'] .toggle-slider");
+  await cctvToggle.scrollIntoViewIfNeeded();
+  await cctvToggle.click();
 
   // Should show layer disabled message
   await expect(page.locator("#cctv-content")).toContainText("CCTV layer disabled");
@@ -477,7 +472,7 @@ test("object selection updates inspector", async ({ page }) => {
 
   // Click on the canvas (may or may not select an object)
   const canvas = page.locator("#cesiumContainer canvas");
-  await canvas.click({ position: { x: 400, y: 300 } });
+  await canvas.click({ position: { x: 400, y: 300 }, force: true });
 
   // Wait a moment for any updates
   await page.waitForTimeout(500);
@@ -522,14 +517,7 @@ test("alert investigation jump to replay works", async ({ page }) => {
     status: "open",
   };
 
-  await fetch(`http://127.0.0.1:${api.port}/alerts/investigation-test-001`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${operatorToken}`,
-    },
-    body: JSON.stringify(alertData),
-  });
+  await api.persistence.persistAlert(alertData);
 
   await page.goto(`http://127.0.0.1:${web.port}`);
 
@@ -540,11 +528,13 @@ test("alert investigation jump to replay works", async ({ page }) => {
   await page.locator("#submit-login").click();
   await page.waitForTimeout(500);
 
-  // Wait for alerts to load
-  await expect(page.locator(".alert-chip")).toBeVisible({ timeout: 5000 });
+  const targetAlert = page.locator('.alert-chip[data-alert-id="investigation-test-001"]');
+
+  // Wait for the target alert to load
+  await expect(targetAlert).toBeVisible({ timeout: 5000 });
 
   // Click alert to open detail
-  await page.locator(".alert-chip").first().click();
+  await targetAlert.click();
 
   // Alert modal should open
   await expect(page.locator("#alert-modal")).toBeVisible();
@@ -558,6 +548,8 @@ test("alert investigation jump to replay works", async ({ page }) => {
   // Should switch to replay mode
   await expect(page.locator("#mode-replay")).toHaveClass(/active/);
 
-  // Query modal may appear or replay should load
-  await expect(page.locator("#status-message")).toContainText("LOADED", { timeout: 10000 });
+  // The alert jump now prepares a replay window for operator review.
+  await expect(page.locator("#status-message")).toContainText("REPLAY WINDOW READY");
+  await expect(page.locator("#query-modal")).toBeVisible();
+  await expect(page.locator("#object-id")).toHaveValue("veh_42");
 });

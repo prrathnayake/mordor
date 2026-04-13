@@ -1,11 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { USGSEarthquakeAdapter } from "../../../packages/external-data/src/adapters/usgs-earthquakes.js";
 
 // Mock the fetch API
 global.fetch = vi.fn();
 
 describe("USGS Earthquake Adapter", () => {
-  const adapter = new USGSEarthquakeAdapter();
+  let adapter: USGSEarthquakeAdapter;
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    (global.fetch as ReturnType<typeof vi.fn>).mockReset();
+    adapter = new USGSEarthquakeAdapter();
+  });
 
   describe("source definition", () => {
     it("should have correct source metadata", () => {
@@ -160,9 +166,13 @@ describe("USGS Earthquake Adapter", () => {
     });
 
     it("should return error on network failure", async () => {
-      (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("Network error"));
+      vi.useFakeTimers();
+      (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("Network error"));
 
-      const result = await adapter.fetch();
+      const resultPromise = adapter.fetch();
+      await vi.runAllTimersAsync();
+      const result = await resultPromise;
+      vi.useRealTimers();
 
       expect(result.success).toBe(false);
       expect(result.events).toHaveLength(0);
@@ -213,10 +223,10 @@ describe("USGS Earthquake Adapter", () => {
 
       // Verify URL was constructed correctly
       const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-      const url = fetchCall[0];
-      expect(url).toContain("starttime=2024-04-01T00:00:00");
-      expect(url).toContain("endtime=2024-04-02T00:00:00");
-      expect(url).toContain("minmagnitude=2.5");
+      const url = new URL(fetchCall[0]);
+      expect(url.searchParams.get("starttime")).toBe("2024-04-01T00:00:00");
+      expect(url.searchParams.get("endtime")).toBe("2024-04-02T00:00:00");
+      expect(url.searchParams.get("minmagnitude")).toBe("2.5");
     });
   });
 

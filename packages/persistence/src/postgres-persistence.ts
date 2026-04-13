@@ -1597,6 +1597,20 @@ export class PostgresPersistenceGateway
       lon: number | null;
       linked_chapter_id: string | null;
     }>;
+    inferences: Array<{
+      marker_id: string;
+      inference_id: string;
+      type: string;
+      subtype: string;
+      timestamp: string;
+      title: string;
+      description: string;
+      confidence: number;
+      confidence_level: string;
+      severity: string;
+      lat: number | null;
+      lon: number | null;
+    }>;
     chapters: Array<{
       chapter_id: string;
       title: string;
@@ -1648,8 +1662,16 @@ export class PostgresPersistenceGateway
           il.event_id,
           il.alert_id,
           il.external_event_id,
-          COALESCE(ST_Y(ce.geometry), ea.lat, eed.lat, ST_Y(ic.position::geometry)) as lat,
-          COALESCE(ST_X(ce.geometry), ea.lon, eed.lon, ST_X(ic.position::geometry)) as lon,
+          COALESCE(
+            ST_Y(ce.geometry),
+            ST_Y(eed.geometry),
+            ST_Y(ic.position::geometry)
+          ) as lat,
+          COALESCE(
+            ST_X(ce.geometry),
+            ST_X(eed.geometry),
+            ST_X(ic.position::geometry)
+          ) as lon,
           ic.chapter_id as linked_chapter_id
         FROM incident_links il
         LEFT JOIN canonical_events ce ON il.event_id = ce.event_id
@@ -1680,6 +1702,8 @@ export class PostgresPersistenceGateway
       [incidentId],
     );
 
+    const inferenceMarkers = await this.listInferenceTimelineMarkers(incidentId);
+
     return {
       incident: {
         incident_id: incident.incident_id,
@@ -1694,7 +1718,7 @@ export class PostgresPersistenceGateway
         marker_id: row.marker_id,
         type: row.marker_type,
         timestamp: new Date(row.timestamp).toISOString(),
-        title: row.source_id,
+        title: row.title,
         description: row.description,
         severity: row.severity,
         layer_id: row.layer_id,
@@ -1705,6 +1729,7 @@ export class PostgresPersistenceGateway
         lon: row.lon,
         linked_chapter_id: row.linked_chapter_id,
       })),
+      inferences: inferenceMarkers,
       chapters: chaptersResult.rows.map((row) => ({
         chapter_id: row.chapter_id,
         title: row.title,
@@ -2493,6 +2518,7 @@ export class PostgresPersistenceGateway
       FROM inferred_events
       WHERE inferred_status = 'active'
     `;
+    let needsOrderBy = true;
 
     const params: string[] = [];
 
@@ -2516,10 +2542,13 @@ export class PostgresPersistenceGateway
         WHERE iil.incident_id = $1
         ORDER BY itm.timestamp DESC
       `;
+      needsOrderBy = false;
       params.push(incidentId);
     }
 
-    query += " ORDER BY timestamp DESC";
+    if (needsOrderBy) {
+      query += " ORDER BY timestamp DESC";
+    }
 
     const result = await this.database.pool.query(query, params);
     return result.rows.map((row) => ({

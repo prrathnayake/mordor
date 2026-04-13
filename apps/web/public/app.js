@@ -1495,16 +1495,20 @@ function updateInspectorFromState(objectId, state) {
 }
 
 // ===== CCTV / SOURCE PANEL SECTION =====
+function renderCCTVPlaceholder(title, hint) {
+  dom.cctvContent.innerHTML = `
+    <div class="cctv-placeholder">
+      <div class="placeholder-icon">📷</div>
+      <div class="placeholder-text">${title}</div>
+      <div class="placeholder-hint">${hint}</div>
+    </div>
+  `;
+}
+
 async function updateCCTVSection(objectId, state) {
   // Check if CCTV layer is enabled
   if (!layerState.cctv) {
-    dom.cctvContent.innerHTML = `
-      <div class="cctv-placeholder">
-        <div class="placeholder-icon">📷</div>
-        <div class="placeholder-text">CCTV layer disabled</div>
-        <div class="placeholder-hint">Enable CCTV Mesh layer to view camera data</div>
-      </div>
-    `;
+    renderCCTVPlaceholder("CCTV layer disabled", "Enable CCTV Mesh layer to view camera data");
     return;
   }
 
@@ -3396,7 +3400,8 @@ function jumpToReplayFromAlert(alert) {
 
     switchToReplayMode();
     dom.alertModal.classList.add("hidden");
-    loadReplay();
+    dom.queryModal.classList.remove("hidden");
+    updateStatus("REPLAY WINDOW READY");
   }
 }
 
@@ -3709,13 +3714,16 @@ function initEventListeners() {
   dom.layerCctv.addEventListener("change", (e) => {
     layerState.cctv = e.target.checked;
     updateActiveLayersCount();
-    // Refresh CCTV panel if object selected
-    if (selectedObjectId) {
+    if (!e.target.checked) {
+      renderCCTVPlaceholder("CCTV layer disabled", "Enable CCTV Mesh layer to view camera data");
+    } else if (selectedObjectId) {
       const state =
         currentMode === "live" ? latestStates.get(selectedObjectId) : getCurrentReplayState();
       if (state) {
         updateCCTVSection(selectedObjectId, state);
       }
+    } else {
+      renderCCTVPlaceholder("No camera selected", "Select a CCTV-linked object to view");
     }
     emitSwanActivity("layer_toggled", {
       targetType: "layer",

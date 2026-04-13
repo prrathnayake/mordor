@@ -40,9 +40,9 @@ The PostgreSQL container automatically runs migrations from `infra/migrations/` 
 For local development without Docker:
 
 ```bash
-npm install
-npm run api:dev    # Start API on port 3001
-npm run web:dev    # Start web server on port 8080
+npm ci
+npm run api:dev    # Start API on port 3000
+npm run web:dev    # Start web server on port 3001
 ```
 
 ## Environment Variables

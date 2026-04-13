@@ -16,6 +16,7 @@ interface PendingRequest {
   url: string;
   options: RequestInit;
   attempt: number;
+  skipRateLimitOnce: boolean;
 }
 
 export class RateLimitedHttpClient {
@@ -43,6 +44,7 @@ export class RateLimitedHttpClient {
         url,
         options,
         attempt: 0,
+        skipRateLimitOnce: false,
       });
       this.processQueue();
     });
@@ -56,19 +58,22 @@ export class RateLimitedHttpClient {
     this.isProcessing = true;
 
     try {
-      const now = Date.now();
-      const timeSinceLastRequest = now - this.lastRequestTime;
-      const waitTime = Math.max(0, this.config.rateLimitMs - timeSinceLastRequest);
-
-      if (waitTime > 0) {
-        await this.delay(waitTime);
-      }
-
       const request = this.pendingRequests.shift();
       if (!request) {
         return;
       }
 
+      if (!request.skipRateLimitOnce) {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+        const waitTime = Math.max(0, this.config.rateLimitMs - timeSinceLastRequest);
+
+        if (waitTime > 0) {
+          await this.delay(waitTime);
+        }
+      }
+
+      request.skipRateLimitOnce = false;
       this.lastRequestTime = Date.now();
 
       try {
@@ -78,6 +83,7 @@ export class RateLimitedHttpClient {
         if (request.attempt < this.config.maxRetries) {
           // Retry with exponential backoff
           request.attempt++;
+          request.skipRateLimitOnce = true;
           const backoffMs = Math.min(1000 * 2 ** request.attempt, 30000);
           await this.delay(backoffMs);
           this.pendingRequests.unshift(request);

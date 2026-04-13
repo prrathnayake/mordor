@@ -30,7 +30,13 @@ export async function setupAuthenticatedApi(): Promise<AuthenticatedTestSetup> {
   };
 }
 
-export async function teardownAuthenticatedApi(setup: AuthenticatedTestSetup): Promise<void> {
+export async function teardownAuthenticatedApi(
+  setup: AuthenticatedTestSetup | null | undefined,
+): Promise<void> {
+  if (!setup) {
+    return;
+  }
+
   await setup.api.close();
   await setup.environment.stop();
 }

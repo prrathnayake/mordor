@@ -64,7 +64,7 @@ services:
     container_name: mordor-web
     environment:
       NODE_ENV: production
-      API_BASE_URL: http://api:3001
+      API_BASE_URL: http://127.0.0.1:3001
       PORT: 8080
     ports:
       - "8080:8080"

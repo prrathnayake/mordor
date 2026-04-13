@@ -1,11 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CelesTrakAdapter } from "../../../packages/external-data/src/adapters/celestrak-satellites.js";
 
 // Mock the fetch API
 global.fetch = vi.fn();
 
 describe("CelesTrak Satellite Adapter", () => {
-  const adapter = new CelesTrakAdapter();
+  let adapter: CelesTrakAdapter;
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    (global.fetch as ReturnType<typeof vi.fn>).mockReset();
+    adapter = new CelesTrakAdapter();
+  });
 
   describe("source definition", () => {
     it("should have correct source metadata", () => {

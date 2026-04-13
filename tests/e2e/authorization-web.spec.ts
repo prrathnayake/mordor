@@ -93,13 +93,11 @@ test("logout clears session", async ({ page }) => {
   // Wait for login to complete - modal closes and status updates
   await expect(page.locator("#login-modal")).toBeHidden({ timeout: 5000 });
 
-  // Logout - accept the dialog that appears
-  const dialogPromise = page.waitForEvent("dialog");
+  // Logout immediately resets the session state in the current UI.
   await page.locator("#auth-button").click();
-  const dialog = await dialogPromise;
-  await dialog.accept();
 
-  // Verify logout state - status message changes to LOGGED OUT
+  await expect(page.locator("#auth-button")).toHaveText("LOGIN");
+  await expect(page.locator(".session-status")).toContainText("NO SESSION");
   await expect(page.locator("#status-message")).toContainText("LOGGED OUT");
 });
 

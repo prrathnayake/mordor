@@ -181,8 +181,12 @@ test("layer toggles control visibility", async ({ page, request }) => {
   await page.waitForTimeout(500);
   // In new UI, flights layer is default on
   const flightsCheckbox = page.locator("#layer-flights");
-  await flightsCheckbox.uncheck();
-  await flightsCheckbox.check();
+  const flightsToggle = page.locator('[data-layer="flights"] .toggle-slider');
+  await flightsToggle.scrollIntoViewIfNeeded();
+  await flightsToggle.click();
+  await expect(flightsCheckbox).not.toBeChecked();
+  await flightsToggle.click();
+  await expect(flightsCheckbox).toBeChecked();
 });
 
 test("rejects malformed input end to end and quarantines the raw payload", async ({ request }) => {

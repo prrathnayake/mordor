@@ -1,10 +1,36 @@
 import { expect, test } from "@playwright/test";
+import { startApiServer } from "../../apps/api/src/index.js";
+import { startWebServer } from "../../apps/web/src/server.js";
+import { startPostgresTestEnvironment } from "../helpers/postgres-test-environment.js";
+
+test.describe.configure({ mode: "serial" });
+
+let environment: Awaited<ReturnType<typeof startPostgresTestEnvironment>>;
+let api: Awaited<ReturnType<typeof startApiServer>>;
+let web: Awaited<ReturnType<typeof startWebServer>>;
 
 test.describe("External Data Layers E2E", () => {
+  test.beforeAll(async () => {
+    environment = await startPostgresTestEnvironment();
+    api = await startApiServer({
+      connection_string: environment.connection_string,
+      skipConfigValidation: true,
+    });
+    web = await startWebServer({
+      api_base_url: `http://127.0.0.1:${api.port}`,
+    });
+  });
+
   test.beforeEach(async ({ page }) => {
     // Navigate to the app and wait for it to load
-    await page.goto("/");
+    await page.goto(`http://127.0.0.1:${web.port}`);
     await page.waitForLoadState("networkidle");
+  });
+
+  test.afterAll(async () => {
+    await web.close();
+    await api.close();
+    await environment.stop();
   });
 
   test("should display layer metadata in left rail", async ({ page }) => {
@@ -27,12 +53,14 @@ test.describe("External Data Layers E2E", () => {
 
   test("should toggle earthquake layer on/off", async ({ page }) => {
     const checkbox = page.locator("#layer-earthquakes");
+    const toggle = page.locator('[data-layer="earthquakes"] .toggle-slider');
 
     // Initially unchecked
     await expect(checkbox).not.toBeChecked();
 
     // Toggle on
-    await checkbox.click();
+    await toggle.scrollIntoViewIfNeeded();
+    await toggle.click();
     await expect(checkbox).toBeChecked();
 
     // Wait for data to load (may take a few seconds)
@@ -43,7 +71,7 @@ test.describe("External Data Layers E2E", () => {
     await expect(count).toBeVisible();
 
     // Toggle off
-    await checkbox.click();
+    await toggle.click();
     await expect(checkbox).not.toBeChecked();
   });
 
@@ -79,7 +107,9 @@ test.describe("External Data Layers E2E", () => {
 
   test("should render earthquake markers on globe when enabled", async ({ page }) => {
     // Enable earthquakes layer
-    await page.locator("#layer-earthquakes").click();
+    const toggle = page.locator('[data-layer="earthquakes"] .toggle-slider');
+    await toggle.scrollIntoViewIfNeeded();
+    await toggle.click();
 
     // Wait for data to load and render
     await page.waitForTimeout(5000);

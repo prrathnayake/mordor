@@ -1,38 +1,22 @@
-import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runMigrations } from "../../packages/persistence/src/database.js";
 import { PostgresPersistenceGateway } from "../../packages/persistence/src/index.js";
+import { startPostgresTestEnvironment } from "../helpers/postgres-test-environment.js";
 
 // Skip these tests if running in CI without Docker
 const describeIfDocker = process.env.CI && !process.env.DOCKER_HOST ? describe.skip : describe;
 
 describeIfDocker("External Data Layer API Integration", () => {
-  let container: StartedTestContainer;
+  let environment: Awaited<ReturnType<typeof startPostgresTestEnvironment>>;
   let persistence: PostgresPersistenceGateway;
 
   beforeAll(async () => {
-    // Start PostgreSQL container
-    container = await new GenericContainer("postgis/postgis:16-3.4")
-      .withEnvironment({
-        POSTGRES_USER: "test",
-        POSTGRES_PASSWORD: "test",
-        POSTGRES_DB: "test",
-      })
-      .withExposedPorts(5432)
-      .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
-      .start();
-
-    const connectionString = `postgresql://test:test@${container.getHost()}:${container.getMappedPort(5432)}/test`;
-
-    persistence = PostgresPersistenceGateway.fromConnectionString(connectionString);
-
-    // Run migrations
-    await runMigrations(persistence.getDatabase());
+    environment = await startPostgresTestEnvironment();
+    persistence = PostgresPersistenceGateway.fromConnectionString(environment.connection_string);
   }, 120000);
 
   afterAll(async () => {
     await persistence?.close();
-    await container?.stop();
+    await environment?.stop();
   });
 
   describe("External Data Layer Persistence", () => {

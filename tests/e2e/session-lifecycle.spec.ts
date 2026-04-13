@@ -70,15 +70,13 @@ test("logout clears session completely", async ({ page }) => {
   await expect(page.locator("#login-modal")).toBeHidden({ timeout: 5000 });
   await expect(page.locator("#auth-button")).toHaveText("LOGOUT");
 
-  // Logout - accept the dialog
-  const dialogPromise = page.waitForEvent("dialog");
+  // Logout immediately resets the current session state.
   await page.locator("#auth-button").click();
-  const dialog = await dialogPromise;
-  await dialog.accept();
 
   // Verify logged out
   await expect(page.locator(".session-status")).toContainText("NO SESSION");
   await expect(page.locator("#auth-button")).toHaveText("LOGIN");
+  await expect(page.locator("#status-message")).toContainText("LOGGED OUT");
 });
 
 test("replay works after session is re-established", async ({ page }) => {

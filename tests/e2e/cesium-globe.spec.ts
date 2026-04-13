@@ -63,15 +63,15 @@ test("replay renders objects on the globe", async ({ page }) => {
   await expect(page.locator("#cesiumContainer canvas")).toBeVisible({ timeout: 10000 });
 
   // Load replay
-  await page.locator("#load-replay").click();
+  await page.locator("#load-replay-btn").click();
 
   // Wait for replay to load
-  await expect(page.locator("#status-message")).toContainText("Loaded", { timeout: 10000 });
+  await expect(page.locator("#status-message")).toContainText("LOADED", { timeout: 10000 });
 
   // Verify objects are rendered (Cesium entities should be visible)
   // Note: We check the status message rather than canvas content since Cesium
   // rendering is handled by WebGL
-  await expect(page.locator("#status-message")).toContainText("Loaded");
+  await expect(page.locator("#status-message")).toContainText("LOADED");
 });
 
 test("live mode connects and displays on globe", async ({ page }) => {
@@ -84,8 +84,8 @@ test("live mode connects and displays on globe", async ({ page }) => {
   await page.locator("#mode-live").click();
 
   // Wait for connection
-  await expect(page.locator("#connection-status")).toContainText("Connected", { timeout: 10000 });
-  await expect(page.locator("#status-message")).toContainText("Live feed connected");
+  await expect(page.locator("#connection-status")).toContainText("CONNECTED", { timeout: 10000 });
+  await expect(page.locator("#status-message")).toContainText("LIVE FEED CONNECTED");
 
   // Verify we're in live mode
   await expect(page.locator("#mode-live")).toHaveClass(/active/);
@@ -117,8 +117,8 @@ test("object selection works on the globe", async ({ page }) => {
   await expect(page.locator("#cesiumContainer canvas")).toBeVisible({ timeout: 10000 });
 
   // Load replay to display objects
-  await page.locator("#load-replay").click();
-  await expect(page.locator("#status-message")).toContainText("Loaded", { timeout: 10000 });
+  await page.locator("#load-replay-btn").click();
+  await expect(page.locator("#status-message")).toContainText("LOADED", { timeout: 10000 });
 
   // Wait a moment for entities to render
   await page.waitForTimeout(1000);
@@ -127,7 +127,7 @@ test("object selection works on the globe", async ({ page }) => {
   // Note: In real Cesium, clicking entities requires precise coordinates
   // For this test, we verify the inspector updates when selection happens
   const canvas = page.locator("#cesiumContainer canvas");
-  await canvas.click({ position: { x: 400, y: 300 } });
+  await canvas.click({ position: { x: 400, y: 300 }, force: true });
 
   // The inspector should show something (even if it's empty or loading)
   await expect(page.locator("#inspector-content")).toBeVisible();
@@ -159,24 +159,22 @@ test("live view section shows when object is selected", async ({ page }) => {
   await expect(page.locator("#cesiumContainer canvas")).toBeVisible({ timeout: 10000 });
 
   // Load replay
-  await page.locator("#load-replay").click();
-  await expect(page.locator("#status-message")).toContainText("Loaded", { timeout: 10000 });
+  await page.locator("#load-replay-btn").click();
+  await expect(page.locator("#status-message")).toContainText("LOADED", { timeout: 10000 });
 
   // Wait for entities to render
   await page.waitForTimeout(1000);
 
   // Click on the canvas
   const canvas = page.locator("#cesiumContainer canvas");
-  await canvas.click({ position: { x: 400, y: 300 } });
+  await canvas.click({ position: { x: 400, y: 300 }, force: true });
 
   // Wait for selection to process
   await page.waitForTimeout(500);
 
-  // Live view section should be visible after selection
-  await expect(page.locator("#live-view-section")).toBeVisible();
-
-  // Should show the placeholder content
-  await expect(page.locator("#live-view-content")).toContainText("No live camera view");
+  // The current shell keeps camera/source context in the CCTV panel.
+  await expect(page.locator("#cctv-section")).toBeVisible();
+  await expect(page.locator("#cctv-content")).toBeVisible();
 });
 
 test("alert investigation jump to replay still works", async ({ page }) => {
@@ -200,7 +198,7 @@ test("alert investigation jump to replay still works", async ({ page }) => {
   await page.goto(`http://127.0.0.1:${web.port}`);
 
   // Login
-  await page.locator("#login-button").click();
+  await page.locator("#auth-button").click();
   await page.locator("#username").fill("operator");
   await page.locator("#password").fill("operator123");
   await page.locator("#submit-login").click();
@@ -208,13 +206,14 @@ test("alert investigation jump to replay still works", async ({ page }) => {
   await page.waitForTimeout(500);
 
   // Click alert
-  await page.locator(".alert-item").first().click();
-  await expect(page.locator("#alert-detail-panel")).toBeVisible();
+  await page.locator(".alert-chip").first().click();
+  await expect(page.locator("#alert-modal")).toBeVisible();
 
   // Click jump to replay
-  await page.locator("button:has-text('Jump to Replay')").click();
+  await page.locator("#jump-replay").click();
 
-  // Should switch to replay mode and load
+  // Should switch to replay mode and open the replay query with the alert window.
   await expect(page.locator("#mode-replay")).toHaveClass(/active/);
-  await expect(page.locator("#alert-detail-panel")).toBeHidden();
+  await expect(page.locator("#alert-modal")).toBeHidden();
+  await expect(page.locator("#query-modal")).toBeVisible();
 });

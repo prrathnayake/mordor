@@ -80,3 +80,9 @@ Reviewed `.env` and `.gitignore`, re-read the required memory files, staged only
 collect context on what is this project and what is the goal of this project, then find the archtecture of this project. then design. create documentations for this project if missing any. then start to review the code to identify bugs and issues. then fix them. keep loop[ on this debug and fix loop for 5-6 times to identify and fix issues that blocking features.
 ### Assistant Final Response Summary
 Mapped the project goal and current modular-monolith architecture from the repo, refreshed the main current-state docs (`README.md`, `docs/ARCHITECTURE_OVERVIEW.md`, `docs/INDEX.md`, `docs/OPS_LOCAL_RUN.md`), fixed runtime startup/default-port mismatches, corrected nearest-source distance calculations to meters in both persistence and SWAN code paths, hardened malformed JSON API handling to return `400 invalid_json`, and verified the changes with lint, typecheck, and focused unit tests while noting that deeper integration/e2e loops are blocked locally by the absence of a working container runtime for `testcontainers`.
+
+## 2026-04-13 11:46:05 +10:00
+### User Message
+review code and identify bugs and issues and fix all of them and test full sysytem. find as much as you can analyse codelogic and find missing featues that need to improve current UI details. go each code file and start review
+### Assistant Final Response Summary
+Ran a deep review/fix loop across backend, SWAN, external-data adapters, UI behavior, and automated tests; fixed multiple runtime and UI issues, stabilized the shared Postgres test harness, removed the external-data retry/rate-limit defect, hardened API shutdown to avoid pool-after-end teardown races, updated stale unit/integration/e2e specs, and finished with a full green `npm run validate`.

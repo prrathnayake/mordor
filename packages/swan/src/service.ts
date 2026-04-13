@@ -200,7 +200,10 @@ export class SwanProtocolService {
   private readonly schedulerInterval: NodeJS.Timeout;
   private readonly recurringInterval: NodeJS.Timeout;
   private readonly expiryInterval: NodeJS.Timeout;
+  private runningBackgroundTaskCount = 0;
+  private backgroundTasksDrainedResolver: (() => void) | null = null;
   private schemaUnavailable = false;
+  private closing = false;
 
   constructor(
     database: PostgresDatabase,
@@ -237,16 +240,40 @@ export class SwanProtocolService {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
     clearInterval(this.schedulerInterval);
     clearInterval(this.recurringInterval);
     clearInterval(this.expiryInterval);
+    await Promise.all([this.waitForRunningThreadsToDrain(), this.waitForBackgroundTasksToDrain()]);
   }
 
-  private async runBackgroundTask(operation: string, run: () => Promise<unknown>): Promise<void> {
-    if (this.schemaUnavailable) {
+  private async waitForRunningThreadsToDrain(timeoutMs = 30000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+
+    while (this.runningThreadIds.size > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  private async waitForBackgroundTasksToDrain(timeoutMs = 30000): Promise<void> {
+    if (this.runningBackgroundTaskCount === 0) {
       return;
     }
 
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        this.backgroundTasksDrainedResolver = resolve;
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
+
+  private async runBackgroundTask(operation: string, run: () => Promise<unknown>): Promise<void> {
+    if (this.schemaUnavailable || this.closing) {
+      return;
+    }
+
+    this.runningBackgroundTaskCount += 1;
     try {
       await run();
     } catch (error) {
@@ -263,6 +290,12 @@ export class SwanProtocolService {
         operation,
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      this.runningBackgroundTaskCount = Math.max(0, this.runningBackgroundTaskCount - 1);
+      if (this.runningBackgroundTaskCount === 0) {
+        this.backgroundTasksDrainedResolver?.();
+        this.backgroundTasksDrainedResolver = null;
+      }
     }
   }
 
@@ -676,6 +709,10 @@ export class SwanProtocolService {
   }
 
   private async drainQueue(): Promise<void> {
+    if (this.closing) {
+      return;
+    }
+
     if (this.runningThreadIds.size >= this.config.maxGlobalThreads) {
       return;
     }
