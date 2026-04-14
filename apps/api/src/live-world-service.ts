@@ -23,9 +23,28 @@ export async function refreshExternalDataLayer(
   layerId: string,
   persistence: PostgresPersistenceGateway,
   logger: Logger,
+  publishLiveEvent?: (event: LiveEvent) => void,
 ): Promise<{ success: boolean; message: string; count?: number; error?: string }> {
   const startTime = Date.now();
   logger.info("Refreshing external data layer", { layer_id: layerId });
+
+  function publishLayerUpdate(
+    status: "real" | "degraded" | "unavailable",
+    count: number,
+    errorMessage?: string,
+  ): void {
+    publishLiveEvent?.({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: layerId,
+        status,
+        count,
+        last_update: new Date().toISOString(),
+        error_message: errorMessage ?? null,
+      },
+    });
+  }
 
   try {
     let result: { success: boolean; events: ExternalDataEvent[]; error?: string };
@@ -78,6 +97,8 @@ export async function refreshExternalDataLayer(
         },
       });
 
+      publishLayerUpdate(result.events.length > 0 ? "real" : "degraded", result.events.length);
+
       return {
         success: true,
         message: `Layer ${layerId} refreshed successfully`,
@@ -96,6 +117,8 @@ export async function refreshExternalDataLayer(
       },
     });
 
+    publishLayerUpdate("degraded", 0, result.error);
+
     return {
       success: false,
       message: `Layer ${layerId} refresh failed`,
@@ -113,6 +136,8 @@ export async function refreshExternalDataLayer(
         error_at: new Date().toISOString(),
       },
     });
+
+    publishLayerUpdate("degraded", 0, errorMessage);
 
     logger.warn("External data layer refresh error", {
       layer_id: layerId,
@@ -361,11 +386,21 @@ export async function createLiveWorldService(input: {
         continue;
       }
 
-      await refreshExternalDataLayer(layer.layer_id, input.persistence, input.logger);
+      await refreshExternalDataLayer(
+        layer.layer_id,
+        input.persistence,
+        input.logger,
+        input.publishLiveEvent,
+      );
 
       const intervalMs = Math.max(layer.update_cadence_seconds * 1000, 60_000);
       const timeout = setInterval(() => {
-        void refreshExternalDataLayer(layer.layer_id, input.persistence, input.logger);
+        void refreshExternalDataLayer(
+          layer.layer_id,
+          input.persistence,
+          input.logger,
+          input.publishLiveEvent,
+        );
       }, intervalMs);
       externalLayerTimeouts.set(layer.layer_id, timeout);
     }

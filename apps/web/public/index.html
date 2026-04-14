@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/tactical-styles.css" />
     <script>
       window.CESIUM_BASE_URL = "/cesium/";
-      window.__APP_CONFIG__ = { apiBaseUrl: "__API_BASE_URL__" };
+      window.__APP_CONFIG__ = __APP_CONFIG_JSON__;
     </script>
     <script src="/cesium/Cesium.js"></script>
   </head>
@@ -104,6 +104,7 @@
                 <div class="layer-meta">
                   <span class="layer-count" id="layer-count-earthquakes">--</span>
                   <span class="layer-status" id="layer-status-earthquakes">LOADING</span>
+                  <span class="layer-update" id="layer-update-earthquakes">--</span>
                 </div>
               </div>
               <label class="layer-toggle">
@@ -123,6 +124,7 @@
                 <div class="layer-meta">
                   <span class="layer-count" id="layer-count-satellites">--</span>
                   <span class="layer-status" id="layer-status-satellites">LOADING</span>
+                  <span class="layer-update" id="layer-update-satellites">--</span>
                 </div>
               </div>
               <label class="layer-toggle">
@@ -142,6 +144,7 @@
                 <div class="layer-meta">
                   <span class="layer-count" id="layer-count-traffic">--</span>
                   <span class="layer-status degraded" id="layer-status-traffic">DEGRADED</span>
+                  <span class="layer-update" id="layer-update-traffic">--</span>
                 </div>
               </div>
               <label class="layer-toggle">
@@ -161,6 +164,7 @@
                 <div class="layer-meta">
                   <span class="layer-count" id="layer-count-weather">--</span>
                   <span class="layer-status degraded" id="layer-status-weather">DEGRADED</span>
+                  <span class="layer-update" id="layer-update-weather">--</span>
                 </div>
               </div>
               <label class="layer-toggle">
@@ -199,6 +203,7 @@
                 <div class="layer-meta">
                   <span class="layer-count" id="layer-count-bikeshare">--</span>
                   <span class="layer-status" id="layer-status-bikeshare">LOADING</span>
+                  <span class="layer-update" id="layer-update-bikeshare">--</span>
                 </div>
               </div>
               <label class="layer-toggle">
@@ -337,6 +342,30 @@
               <button type="button" class="preset-button" data-preset="clean" id="preset-clean">
                 <span class="preset-label">CLEAN</span>
                 <span class="preset-desc">Minimal</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="control-section">
+            <h3>MAP SURFACE</h3>
+            <div class="surface-grid">
+              <button
+                type="button"
+                class="surface-button active"
+                data-surface="satellite"
+                id="surface-satellite"
+              >
+                <span class="surface-label">SAT</span>
+                <span class="surface-desc">Aerial Imagery</span>
+              </button>
+              <button
+                type="button"
+                class="surface-button"
+                data-surface="street"
+                id="surface-street"
+              >
+                <span class="surface-label">STREET</span>
+                <span class="surface-desc">Road Labels</span>
               </button>
             </div>
           </div>

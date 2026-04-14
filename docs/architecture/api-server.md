@@ -36,7 +36,7 @@ interface ApiServerOptions {
 }
 ```
 
-#### `refreshExternalDataLayer(layerId, persistence, logger)`
+#### `refreshExternalDataLayer(layerId, persistence, logger, publishLiveEvent?)`
 
 Fetches fresh data from external sources and persists them to the database. Supports:
 - earthquakes (USGS)
@@ -67,8 +67,11 @@ data: {"type": "object_state_update", "timestamp": "...", "payload": {...}}
 ```
 
 - Supports reconnection via `since_sequence` parameter
+- Accepts optional `west/south/east/north` query params for viewport-scoped external-layer
+  snapshots on the live stream
 - Maintains event history buffer (1000 events)
-- Publishes: object state updates, source health updates, connection info
+- Publishes: object state updates, source health updates, connection info, and external layer
+  refresh notifications
 
 ### Ingestion Pipeline
 

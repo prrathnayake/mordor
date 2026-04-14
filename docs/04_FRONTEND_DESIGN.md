@@ -80,9 +80,13 @@ Contains:
 ## Rendering rules
 ### Live mode
 - show current object positions
+- update live objects and high-value overlays incrementally when fresh events arrive
 - smooth movement visually but do not invent missing truth
 - mark stale objects clearly
 - show source health if live feed pauses
+- show relative freshness at layer level so operators can see when each feed last refreshed
+- reconnect scoped live subscriptions when the operator changes viewport enough that overlay
+  relevance changes materially
 
 ### Replay mode
 - render only from historical event stream

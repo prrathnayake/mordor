@@ -41,8 +41,9 @@ describe("Tactical UI Shell Integration", () => {
       const content = await response.text();
       expect(content).toContain("MORDOR");
       expect(content).toContain("tactical");
-      expect(content).toContain("TileMapServiceImageryProvider.fromUrl");
-      expect(content).toContain("NaturalEarthII");
+      expect(content).toContain("createBaseImageryProvider");
+      expect(content).toContain("ArcGisMapServerImageryProvider.fromUrl");
+      expect(content).toContain("OpenStreetMapImageryProvider");
       expect(content).toContain('"2026-04-05T10:15:00Z"');
       expect(content).toContain("loadReplay();");
     });
@@ -55,6 +56,8 @@ describe("Tactical UI Shell Integration", () => {
       expect(content).toContain("MORDOR");
       expect(content).toContain("tactical-styles.css");
       expect(content).toContain('data-theme="crt"');
+      expect(content).toContain('"provider":"arcgis-world-imagery"');
+      expect(content).toContain('"streetScene":{"provider":"none"');
     });
   });
 
@@ -101,6 +104,26 @@ describe("Tactical UI Shell Integration", () => {
       expect(html).toContain('data-preset="nvg"');
       expect(html).toContain('data-preset="flir"');
       expect(html).toContain('data-preset="clean"');
+    });
+
+    it("should contain map surface switch buttons", async () => {
+      const response = await fetch(`http://127.0.0.1:${web.port}/`);
+      const html = await response.text();
+
+      expect(html).toContain('data-surface="satellite"');
+      expect(html).toContain('data-surface="street"');
+      expect(html).toContain('id="surface-satellite"');
+      expect(html).toContain('id="surface-street"');
+    });
+
+    it("should expose ground-view inspector controls in app.js", async () => {
+      const response = await fetch(`http://127.0.0.1:${web.port}/app.js`);
+      const content = await response.text();
+
+      expect(content).toContain("ensureStreetSceneTileset");
+      expect(content).toContain("createGooglePhotorealistic3DTileset");
+      expect(content).toContain("createOsmBuildingsAsync");
+      expect(content).toContain("inspector-ground-view");
     });
 
     it("should contain visual control sliders", async () => {

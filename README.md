@@ -187,6 +187,13 @@ Note: integration and e2e suites rely on `testcontainers`, so they need a workin
 | `API_PORT` | API server port | `3000` |
 | `WEB_PORT` | Web server port | `3001` |
 | `API_BASE_URL` | Web app API origin | `http://127.0.0.1:3000` |
+| `MAP_IMAGERY_PROVIDER` | Cesium basemap provider (`arcgis-world-imagery`, `osm-street`, `url-template`) | `arcgis-world-imagery` |
+| `MAP_IMAGERY_URL` | Optional basemap URL override | provider default |
+| `MAP_IMAGERY_CREDIT` | Optional basemap attribution override | provider default |
+| `MAP_IMAGERY_MAX_LEVEL` | Optional max zoom level for tile-based providers | `19` |
+| `STREET_SCENE_PROVIDER` | Optional close-range 3D scene provider (`none`, `google-photorealistic`, `osm-buildings`) | `none` |
+| `CESIUM_ION_TOKEN` | Optional Cesium ion token for 3D tiles integrations | unset |
+| `GOOGLE_MAPS_API_KEY` | Optional Google Maps key for photorealistic 3D tiles | unset |
 | `LOG_LEVEL` | Logging level | `info` |
 | `AUTH_ENABLED` | Enable authentication | `true` |
 | `NODE_ENV` | Environment | `development` |

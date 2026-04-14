@@ -99,6 +99,43 @@ describeIfDocker("External Data Layer API Integration", () => {
       expect(la?.lon).toBe(-118.2437);
     });
 
+    it("should fetch external data events within viewport bounds", async () => {
+      await persistence.clearExternalDataEvents("earthquakes");
+
+      const events = [
+        {
+          event_id: "eq_bounds_1",
+          external_id: "bounds_sf",
+          event_type: "earthquake_observed",
+          observed_at: new Date().toISOString(),
+          lat: 37.7749,
+          lon: -122.4194,
+          payload: { magnitude: 4.1, place: "San Francisco" },
+        },
+        {
+          event_id: "eq_bounds_2",
+          external_id: "bounds_ny",
+          event_type: "earthquake_observed",
+          observed_at: new Date().toISOString(),
+          lat: 40.7128,
+          lon: -74.006,
+          payload: { magnitude: 3.3, place: "New York" },
+        },
+      ];
+
+      await persistence.persistExternalDataEvents("earthquakes", events);
+
+      const fetched = await persistence.fetchExternalDataEvents("earthquakes", {
+        west: -123,
+        south: 37,
+        east: -122,
+        north: 38,
+      });
+
+      expect(fetched).toHaveLength(1);
+      expect(fetched[0]?.external_id).toBe("bounds_sf");
+    });
+
     it("should clear external data events", async () => {
       await persistence.clearExternalDataEvents("earthquakes");
 

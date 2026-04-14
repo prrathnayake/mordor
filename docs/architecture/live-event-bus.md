@@ -61,6 +61,44 @@ interface ConnectionInfoEvent extends LiveEvent {
 }
 ```
 
+### External Layer Update
+
+Published when an external layer refresh finishes and the browser should reload only that
+layer's data:
+
+```typescript
+interface ExternalLayerUpdate extends LiveEvent {
+  type: "external_layer_update";
+  payload: {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;
+    last_update: string;
+    error_message: string | null;
+  };
+}
+```
+
+### External Layer Snapshot Update
+
+Emitted by the SSE endpoint for each subscriber after the server applies that subscriber's
+viewport bounds and materializes the current matching events:
+
+```typescript
+interface ExternalLayerSnapshotUpdate extends LiveEvent {
+  type: "external_layer_snapshot_update";
+  payload: {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;       // events in this subscriber's viewport
+    total_count: number; // full layer count from the refresh pass
+    last_update: string;
+    error_message: string | null;
+    events: ExternalLayerEvent[];
+  };
+}
+```
+
 ## API Reference
 
 ### `subscribe(listener: LiveEventListener): () => void`
@@ -118,7 +156,16 @@ eventSource.onmessage = (event) => {
 
 // Optional: reconnect with last sequence
 const es = new EventSource('/live/events?since_sequence=50');
+
+// Optional: include viewport bounds for scoped external-layer snapshots
+const bounded = new EventSource(
+  '/live/events?since_sequence=50&west=-123&south=37&east=-122&north=38'
+);
 ```
+
+The live event bus still stores canonical `external_layer_update` events. The API server
+materializes them into `external_layer_snapshot_update` per subscriber so each connection can
+receive only the events relevant to its current viewport.
 
 ## Event Flow
 
@@ -149,6 +196,7 @@ The event bus maintains a rolling buffer of recent events:
 - **maxRecentEvents**: 1000 events (configurable in code)
 - Events older than buffer are discarded
 - Sequence numbers continue incrementing
+- Reconnect backfill covers external layer refresh notifications as well as object-state updates
 
 ## Error Handling
 

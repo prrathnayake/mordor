@@ -259,6 +259,10 @@ GET /layers/earthquakes/data
 POST /layers/earthquakes/refresh
 ```
 
+When the API live-world service auto-refreshes a layer, it also publishes an
+`external_layer_update` event over `/live/events`. The web client can use that signal to
+reload only the affected layer instead of polling and redrawing every external layer at once.
+
 The refresh process:
 1. Calls adapter's fetch method
 2. Persists events to `external_data_events` table

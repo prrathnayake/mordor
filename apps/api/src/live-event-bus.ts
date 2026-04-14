@@ -11,6 +11,8 @@ export interface LiveEvent {
     | "source_health_update"
     | "connection_info"
     | "live_snapshot_update"
+    | "external_layer_update"
+    | "external_layer_snapshot_update"
     | "swan_session_update"
     | "swan_thread_update"
     | "swan_projection_update"
@@ -60,6 +62,39 @@ export interface LiveSnapshotUpdate extends LiveEvent {
     provider: string;
     status: "real" | "degraded";
     auth_mode: "authenticated" | "anonymous";
+  };
+}
+
+export interface ExternalLayerUpdate extends LiveEvent {
+  type: "external_layer_update";
+  payload: {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;
+    last_update: string;
+    error_message: string | null;
+  };
+}
+
+export interface ExternalLayerSnapshotUpdate extends LiveEvent {
+  type: "external_layer_snapshot_update";
+  payload: {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;
+    total_count: number;
+    last_update: string;
+    error_message: string | null;
+    events: Array<{
+      event_id: string;
+      external_id: string;
+      event_type: string;
+      observed_at: string;
+      lat: number;
+      lon: number;
+      altitude_m: number | null;
+      payload: Record<string, unknown>;
+    }>;
   };
 }
 

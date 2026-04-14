@@ -52,6 +52,25 @@ Custom ports:
 API_PORT=3002 WEB_PORT=3003 API_BASE_URL=http://127.0.0.1:3002 npm run web:dev
 ```
 
+Sharper globe imagery:
+
+```bash
+MAP_IMAGERY_PROVIDER=arcgis-world-imagery npm run web:dev
+```
+
+Once the web app is running, use the `MAP SURFACE` buttons in the right rail to switch
+between satellite imagery and a street-map view without restarting the app.
+
+Optional close-range scene support:
+
+```bash
+STREET_SCENE_PROVIDER=osm-buildings npm run web:dev
+```
+
+After selecting an object, use the inspector's `ENTER GROUND VIEW` action to dive the
+camera to a low-angle street/ground perspective. The control stays disabled when no
+street-scene provider is configured, so the rest of the tactical UI keeps working normally.
+
 ## Running the Fixture Worker
 
 ```bash
@@ -86,6 +105,13 @@ npm run test:e2e
 | `API_PORT` | No | `3000` | API server port |
 | `WEB_PORT` | No | `3001` | Web server port |
 | `API_BASE_URL` | No | `http://127.0.0.1:3000` | Browser app target for API requests |
+| `MAP_IMAGERY_PROVIDER` | No | `arcgis-world-imagery` | Globe basemap provider: `arcgis-world-imagery`, `osm-street`, or `url-template` |
+| `MAP_IMAGERY_URL` | No | provider default | Optional basemap URL override |
+| `MAP_IMAGERY_CREDIT` | No | provider default | Optional attribution override for custom tiles |
+| `MAP_IMAGERY_MAX_LEVEL` | No | `19` | Maximum zoom level for tile-based imagery |
+| `STREET_SCENE_PROVIDER` | No | `none` | Optional close-range 3D scene provider: `none`, `google-photorealistic`, or `osm-buildings` |
+| `CESIUM_ION_TOKEN` | No | unset | Optional Cesium ion token for OSM/ion 3D tiles |
+| `GOOGLE_MAPS_API_KEY` | No | unset | Optional Google Maps key for photorealistic 3D tiles |
 | `LOG_LEVEL` | No | `info` | Logging level |
 | `AUTH_ENABLED` | No | `true` | Enable authentication |
 | `NODE_ENV` | No | `development` | Runtime environment |

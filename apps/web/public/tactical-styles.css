@@ -1008,6 +1008,12 @@ body {
   gap: var(--spacing-xs);
 }
 
+.surface-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-xs);
+}
+
 .preset-button {
   display: flex;
   flex-direction: column;
@@ -1042,6 +1048,45 @@ body {
 }
 
 .preset-desc {
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.surface-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.surface-button:hover {
+  border-color: var(--border-highlight);
+  background: var(--bg-tertiary);
+}
+
+.surface-button.active {
+  border-color: var(--accent-primary);
+  background: rgba(0, 255, 65, 0.1);
+}
+
+.surface-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--text-primary);
+  letter-spacing: 0.1em;
+}
+
+.surface-button.active .surface-label {
+  color: var(--accent-primary);
+}
+
+.surface-desc {
   font-size: 9px;
   color: var(--text-dim);
   margin-top: 2px;
@@ -1216,6 +1261,56 @@ body {
   font-size: 11px;
   color: var(--text-primary);
   font-family: var(--font-mono);
+}
+
+.inspector-ground-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--border-color);
+}
+
+.inspector-ground-view-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.inspector-ground-view-status {
+  font-size: 9px;
+  color: var(--accent-primary);
+  letter-spacing: 0.08em;
+}
+
+.inspector-ground-view-button {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(0, 255, 65, 0.1);
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.inspector-ground-view-button:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background: rgba(0, 255, 65, 0.16);
+}
+
+.inspector-ground-view-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.inspector-ground-view-hint {
+  font-size: 9px;
+  color: var(--text-dim);
 }
 
 /* CCTV Section */

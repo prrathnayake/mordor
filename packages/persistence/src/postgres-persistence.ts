@@ -1144,7 +1144,15 @@ export class PostgresPersistenceGateway
     }
   }
 
-  async fetchExternalDataEvents(layerId: string): Promise<
+  async fetchExternalDataEvents(
+    layerId: string,
+    bounds?: {
+      west: number;
+      south: number;
+      east: number;
+      north: number;
+    },
+  ): Promise<
     Array<{
       event_id: string;
       layer_id: string;
@@ -1157,6 +1165,17 @@ export class PostgresPersistenceGateway
       payload: Record<string, unknown>;
     }>
   > {
+    const params: unknown[] = [layerId];
+    let boundsClause = "";
+
+    if (bounds) {
+      params.push(bounds.west, bounds.south, bounds.east, bounds.north);
+      boundsClause = `
+        AND ST_X(geometry) BETWEEN $2 AND $4
+        AND ST_Y(geometry) BETWEEN $3 AND $5
+      `;
+    }
+
     const result = await this.database.pool.query(
       `
         SELECT 
@@ -1170,9 +1189,10 @@ export class PostgresPersistenceGateway
           payload
         FROM external_data_events
         WHERE layer_id = $1
+          ${boundsClause}
         ORDER BY observed_at DESC
       `,
-      [layerId],
+      params,
     );
 
     return result.rows.map((row) => ({

@@ -92,3 +92,75 @@ Ran a deep review/fix loop across backend, SWAN, external-data adapters, UI beha
 review this codebase, not for find code issues but to organize this repo files and folders into more structured and organized way to increase redability and maintainability. so understand the current files and folder structure and re organized in to clean structure
 ### Assistant Final Response Summary
 Reorganized the repo for readability and maintainability by moving Docker and Compose support files out of the root into `infra/compose` and `infra/docker`, relocating current-state documentation into topical `docs/architecture`, `docs/runbooks`, and `docs/tests` folders, refreshing the root and docs indexes to explain the new layout, updating the compose config to use the new paths, and confirming `npm run gate:docs` still passes while noting that `npm run lint` is currently blocked by pre-existing formatting drift elsewhere in the repo.
+
+## 2026-04-14 12:19:23 +10:00
+### User Message
+In this current code version there are no capabilities to handdle reallife data live to show real world information changes in UI. as an exmple in  the UI iwant to se live routers on planes and satalights and other information changes on real time in dashborad. how can i achive this, any suggesions
+### Assistant Final Response Summary
+Reviewed the repo and explained that it already has real-time building blocks including the API live-world service, `/live/events` SSE stream, OpenSky flight polling, CelesTrak and other external-data adapters, and Cesium layer rendering in the web client; advised a practical roadmap centered on streaming external-layer updates over SSE, normalizing live sources into canonical track/event shapes, adding bounded geographic subscriptions and freshness metadata, and improving the UI with incremental flight/satellite track updates instead of mostly periodic reloads.
+
+## 2026-04-14 12:25:15 +10:00
+### User Message
+proceed
+### Assistant Final Response Summary
+Implemented the next step in that roadmap by adding a new `external_layer_update` SSE event, publishing it from external-layer refreshes in the API, updating the tactical UI to refresh only the affected enabled external layer when the event arrives, syncing the architecture docs to the new live contract, and verifying the change with TypeScript plus the focused live-resilience integration test.
+
+## 2026-04-14 12:35:23 +10:00
+### User Message
+okay proceed
+### Assistant Final Response Summary
+Improved the tactical UI’s live continuity by updating live flight entities in place instead of redrawing the whole flight layer, reconciling satellite entities across refreshes instead of clearing and recreating them, adding relative freshness timestamps to external layer rows in the left rail, documenting the new frontend expectation for incremental live updates, and verifying the browser script with `node --check` plus `npm run typecheck` and the live-resilience integration spec while noting a pre-existing unrelated Biome warning in `apps/web/public/app.js`.
+
+## 2026-04-14 12:40:33 +10:00
+### User Message
+yes proceed
+### Assistant Final Response Summary
+Implemented viewport-aware external layer loading by adding optional `west/south/east/north` bounds filtering to external-event reads in persistence and the `/layers/:layerId/data` API, wiring the web client to include the current Cesium view rectangle in layer fetches and to reload enabled layers after camera move-end, and verifying the change with `node --check apps/web/public/app.js`, `npm run typecheck`, and focused integration tests for live SSE resilience and bounds filtering.
+
+## 2026-04-14 12:46:04 +10:00
+### User Message
+proceed
+### Assistant Final Response Summary
+Added viewport-scoped live subscriptions for external overlays by having the API SSE endpoint transform `external_layer_update` events into subscriber-specific `external_layer_snapshot_update` payloads filtered to the connection’s bounds, reconnecting the browser EventSource when the viewport changes materially, updating the live-event/API/frontend docs to describe the new behavior, and verifying with `node --check apps/web/public/app.js`, `npm run typecheck`, and focused integration tests for both live SSE resilience and bounded external-event reads.
+
+## 2026-04-14 12:24:28 +10:00
+### User Message
+this this project we have diffent sources to fetch live informations for analyse and show on UI. check current sources. do a research to find other inportant source that can collect real information to make this application on place to analyse golbal informations to identify pattens in future.
+### Assistant Final Response Summary
+Reviewed the current repo implementation and found active support for OpenSky live flights plus external-data adapters for USGS earthquakes, CelesTrak satellites, NOAA weather alerts/radar metadata, CityBikes bikeshare, conditional traffic, and an intentionally unavailable military layer; then researched official external sources and recommended a priority expansion order focused on maritime vessel intelligence, wildfire hotspots, global disaster feeds, space weather, air quality, and carefully-scoped global event/news signals to strengthen future pattern analysis.
+
+## 2026-04-14 12:28:40 +10:00
+### User Message
+n this current UI when xoom in the eartch it start to get blury. what i want is when it zooming user should be able to se street view clearly. check current codebase and find a accurate way to give this UI capability
+### Assistant Final Response Summary
+Inspected the current Cesium setup, found that the globe was using the bundled low-resolution `NaturalEarthII` texture, replaced it with a configurable basemap pipeline served through the web app config, defaulted the UI to sharper ArcGIS World Imagery while supporting OSM and custom XYZ tiles, updated the runbook/config docs and the tactical-shell integration test, and verified with `npm run typecheck` plus `npx vitest run tests/integration/tactical-shell.spec.ts`.
+
+## 2026-04-14 12:40:40 +10:00
+### User Message
+yes procced
+### Assistant Final Response Summary
+Added a `MAP SURFACE` control to the tactical UI so users can switch between satellite imagery and a street-map basemap at runtime, implemented Cesium base-layer swapping without disturbing live entities or overlays, updated the local runbook to mention the new in-app control, and re-verified the web shell with `npm run typecheck` plus `npx vitest run tests/integration/tactical-shell.spec.ts`.
+
+## 2026-04-14 12:44:40 +10:00
+### User Message
+proceed, and make sure this new code updates does not broke current sysytem and update UI component to use these fetures
+### Assistant Final Response Summary
+Extended the tactical UI with a safe, config-gated ground-view feature by adding optional street-scene settings to the web config, wiring Cesium 3D tiles support for Google photorealistic tiles or OSM buildings, exposing an `ENTER GROUND VIEW` control in the inspector for selected positioned objects, keeping the feature disabled by default so existing behavior remains stable, and verifying the system with TypeScript, integration, and focused Playwright Cesium smoke tests.
+
+## 2026-04-14 12:40:05 +10:00
+### User Message
+Inspect this Chrona Twin repo and answer only this: what are the current extension points for adding new always-on external/live sources, ingestion workers, persistence, SSE/live event publishing, and capture/evidence storage? Focus on relevant files and give a concise architecture map with file paths. Do not make changes.
+### Assistant Final Response Summary
+Mapped the current extension seams without changing code: `packages/contracts` defines the source and capture models, `packages/external-data` holds the live source adapters and registry, `apps/api/src/live-world-service.ts` and `apps/api/src/live-event-bus.ts` drive live polling and SSE publication, `apps/api/src/server.ts` exposes `/live/events`, `/layers`, `/sources`, and capture/evidence routes, `packages/persistence/src/postgres-persistence.ts` contains the Postgres gateway methods for source, layer, capture, and evidence storage, `apps/api/src/capture-service.ts` is the capture-worker logic, `apps/worker/src/index.ts` is the current worker entrypoint, and `apps/web/public/app.js` is the present hardcoded UI rendering seam for layers and source panels.
+
+## 2026-04-14 12:39:54 +10:00
+### User Message
+Inspect this Chrona Twin repo and answer only this: how could autonomous agents safely add or update UI surfaces/components in the current web client? Identify the current frontend architecture, best extension seams, and constraints for adding dynamic panels/widgets/layers without breaking the app. Do not make changes.
+### Assistant Final Response Summary
+Reviewed the current web client architecture and identified the safe extension seams for autonomous UI growth: the app is an imperative Cesium shell with static HTML panels, hardcoded layer/detail renderers, and a narrow declarative path through SWAN projections and existing layer/incident APIs; future agent-driven UI should stay schema-backed, registry-driven, and sanitized rather than injecting arbitrary DOM or HTML.
+
+## 2026-04-14 12:41:32 +10:00
+### User Message
+for now im mailnly targeting collect multiple informations from multiple sources to to create world simulation. as an example currently usa and iran having war. so through this platform i should be able to monitor something like , what happening iran where bombing happens, when i select that incident i should able to view location on the map and show other related informations and videos an d imagescollected from internet. spwan multi agent harness responsible for collecting and storing information live 24/7. so find ways to fetch videos, news, images and other informations. agents should have tools to create components in UI when need to show informations. so basically agent collect analyse and find pattens while updating UI dashboard, self creating UI components to expand UI itself when informations are collelected.
+### Assistant Final Response Summary
+Verified the geopolitical example cautiously, used parallel repo explorers to map the ingestion and UI seams, and designed a repo-aligned 24/7 public-source intelligence harness with authoritative event collectors, media/news/image enrichment agents, provenance-aware incident and evidence storage, live SSE/SWAN-driven dashboard updates, and schema-backed agent-generated UI manifests instead of unsafe arbitrary self-modifying frontend code.

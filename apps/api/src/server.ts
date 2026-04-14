@@ -162,6 +162,67 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function parseBoundsFromSearchParams(url: URL):
+  | { west: number; south: number; east: number; north: number }
+  | null {
+  const west = url.searchParams.get("west");
+  const south = url.searchParams.get("south");
+  const east = url.searchParams.get("east");
+  const north = url.searchParams.get("north");
+
+  if (!west && !south && !east && !north) {
+    return null;
+  }
+
+  const parsed = {
+    west: Number.parseFloat(west ?? ""),
+    south: Number.parseFloat(south ?? ""),
+    east: Number.parseFloat(east ?? ""),
+    north: Number.parseFloat(north ?? ""),
+  };
+
+  if (Object.values(parsed).some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+
+  return parsed;
+}
+
+async function materializeLiveEventForStream(
+  event: LiveEvent,
+  persistence: PostgresPersistenceGateway,
+  bounds?: { west: number; south: number; east: number; north: number } | null,
+): Promise<LiveEvent> {
+  if (event.type !== "external_layer_update") {
+    return event;
+  }
+
+  const payload = event.payload as {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;
+    last_update: string;
+    error_message: string | null;
+  };
+
+  const events = await persistence.fetchExternalDataEvents(payload.layer_id, bounds ?? undefined);
+
+  return {
+    type: "external_layer_snapshot_update",
+    timestamp: event.timestamp,
+    sequence: event.sequence,
+    payload: {
+      layer_id: payload.layer_id,
+      status: payload.status,
+      count: events.length,
+      total_count: payload.count,
+      last_update: payload.last_update,
+      error_message: payload.error_message,
+      events,
+    },
+  };
+}
+
 function resolveClientSessionId(
   request: IncomingMessage,
   url: URL,
@@ -932,24 +993,42 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           });
 
           const sinceSequence = Number.parseInt(url.searchParams.get("since_sequence") ?? "0", 10);
+          const bounds = parseBoundsFromSearchParams(url);
+          let closed = false;
+
+          const writeEvent = async (event: LiveEvent) => {
+            if (closed) {
+              return;
+            }
+            const outgoing = await materializeLiveEventForStream(event, persistence, bounds);
+            if (!closed) {
+              response.write(`data: ${JSON.stringify(outgoing)}\n\n`);
+            }
+          };
 
           if (sinceSequence > 0) {
             const missedEvents = liveEventBus.getRecentEvents(sinceSequence);
             for (const event of missedEvents) {
-              response.write(`data: ${JSON.stringify(event)}\n\n`);
+              await writeEvent(event);
             }
           }
 
           const connectionInfo = liveEventBus.getConnectionInfo();
           response.write(`data: ${JSON.stringify(connectionInfo)}\n\n`);
 
+          let pendingWrite = Promise.resolve();
           const listener = (event: LiveEvent) => {
-            response.write(`data: ${JSON.stringify(event)}\n\n`);
+            pendingWrite = pendingWrite
+              .then(async () => {
+                await writeEvent(event);
+              })
+              .catch(() => {});
           };
 
           const unsubscribe = liveEventBus.subscribe(listener);
 
           request.on("close", () => {
+            closed = true;
             unsubscribe();
           });
 
@@ -1221,7 +1300,8 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
               return;
             }
 
-            const events = await persistence.fetchExternalDataEvents(layerId);
+            const bounds = parseBoundsFromSearchParams(url);
+            const events = await persistence.fetchExternalDataEvents(layerId, bounds ?? undefined);
 
             writeJson(response, 200, {
               layer_id: layerId,
@@ -1249,7 +1329,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
               return;
             }
 
-            const result = await refreshExternalDataLayer(layerId, persistence, logger);
+            const result = await refreshExternalDataLayer(
+              layerId,
+              persistence,
+              logger,
+              (event) => liveEventBus.publish(event),
+            );
             writeJson(response, result.success ? 200 : 503, result);
             return;
           }

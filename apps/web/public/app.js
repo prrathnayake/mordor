@@ -4,11 +4,27 @@
  * Integrates with existing Chrona Twin backend functionality
  */
 
-const apiBaseUrl = window.__APP_CONFIG__?.apiBaseUrl || "http://127.0.0.1:3000";
+const appConfig = window.__APP_CONFIG__ || {};
+const apiBaseUrl = appConfig.apiBaseUrl || "http://127.0.0.1:3000";
 console.log("API Base URL:", apiBaseUrl);
+
+const defaultMapImageryConfig = {
+  provider: "arcgis-world-imagery",
+  url: null,
+  credit: null,
+  maxLevel: 19,
+};
+
+const defaultStreetSceneConfig = {
+  provider: "none",
+  ionToken: null,
+  googleApiKey: null,
+};
 
 // ===== STATE =====
 let viewer;
+let baseImagerySwapToken = 0;
+let streetSceneLoadPromise = null;
 const objectEntities = new Map();
 let trackEntity = null;
 let selectedObjectId = null;
@@ -24,8 +40,17 @@ let hasCenteredOnLiveData = false;
 let currentAlertId = null;
 let liveSnapshotRequest = null;
 let pendingLiveSnapshotReload = false;
+const liveFlightsMeta = {
+  count: 0,
+  generatedAt: null,
+};
+const externalLayerRequests = new Map();
+const pendingExternalLayerReloads = new Set();
+let externalLayerViewportReloadTimer = null;
+let liveEventsBoundsSignature = "";
 let selectedSatelliteId = null;
 let satelliteOrbitEntity = null;
+let streetSceneTileset = null;
 
 const sessionState = {
   token: null,
@@ -111,6 +136,9 @@ const visualState = {
   layout: "expanded",
   detect: false,
   panoptic: false,
+  mapSurface: appConfig.mapImagery?.provider === "osm-street" ? "street" : "satellite",
+  streetSceneReady: false,
+  streetSceneStatus: "idle",
 };
 
 const swanState = {
@@ -201,11 +229,14 @@ const dom = {
 
   // Visual Controls
   presetButtons: document.querySelectorAll(".preset-button"),
+  surfaceButtons: document.querySelectorAll(".surface-button"),
   bloomSlider: document.getElementById("bloom-slider"),
   sharpenSlider: document.getElementById("sharpen-slider"),
   pixelateSlider: document.getElementById("pixelate-slider"),
   distortionSlider: document.getElementById("distortion-slider"),
   instabilitySlider: document.getElementById("instability-slider"),
+  surfaceSatellite: document.getElementById("surface-satellite"),
+  surfaceStreet: document.getElementById("surface-street"),
   toggleHud: document.getElementById("toggle-hud"),
   layoutSelect: document.getElementById("layout-select"),
   toggleDetect: document.getElementById("toggle-detect"),
@@ -326,6 +357,247 @@ function canManageAlerts() {
 
 function getApiBaseUrl() {
   return apiBaseUrl;
+}
+
+function getMapImageryConfig() {
+  return {
+    ...defaultMapImageryConfig,
+    ...(appConfig.mapImagery || {}),
+  };
+}
+
+function getStreetSceneConfig() {
+  return {
+    ...defaultStreetSceneConfig,
+    ...(appConfig.streetScene || {}),
+  };
+}
+
+function isStreetSceneConfigured() {
+  return getStreetSceneConfig().provider !== "none";
+}
+
+function configureCesiumCredentials() {
+  const streetScene = getStreetSceneConfig();
+
+  if (streetScene.ionToken) {
+    Cesium.Ion.defaultAccessToken = streetScene.ionToken;
+  }
+
+  if (streetScene.googleApiKey && Cesium.GoogleMaps) {
+    Cesium.GoogleMaps.defaultApiKey = streetScene.googleApiKey;
+  }
+}
+
+function getMapImageryConfigForSurface(surface = visualState.mapSurface) {
+  const configured = getMapImageryConfig();
+
+  if (surface === "street") {
+    if (configured.provider === "osm-street") {
+      return configured;
+    }
+
+    return {
+      ...defaultMapImageryConfig,
+      provider: "osm-street",
+      url: null,
+      credit: null,
+      maxLevel: 19,
+    };
+  }
+
+  if (configured.provider === "osm-street") {
+    return defaultMapImageryConfig;
+  }
+
+  return configured;
+}
+
+async function createBaseImageryProvider(surface = visualState.mapSurface) {
+  const mapImagery = getMapImageryConfigForSurface(surface);
+  const provider = mapImagery.provider || defaultMapImageryConfig.provider;
+  const credit = mapImagery.credit || undefined;
+  const maxLevel =
+    typeof mapImagery.maxLevel === "number" && Number.isFinite(mapImagery.maxLevel)
+      ? mapImagery.maxLevel
+      : defaultMapImageryConfig.maxLevel;
+
+  switch (provider) {
+    case "osm-street":
+      return new Cesium.OpenStreetMapImageryProvider({
+        url: mapImagery.url || "https://tile.openstreetmap.org/",
+        credit,
+        maximumLevel: maxLevel,
+      });
+    case "url-template":
+      if (!mapImagery.url) {
+        throw new Error("MAP_IMAGERY_URL is required when MAP_IMAGERY_PROVIDER=url-template");
+      }
+      return new Cesium.UrlTemplateImageryProvider({
+        url: mapImagery.url,
+        credit,
+        maximumLevel: maxLevel,
+      });
+    case "arcgis-world-imagery":
+    default:
+      return Cesium.ArcGisMapServerImageryProvider.fromUrl(
+        mapImagery.url || "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
+        {
+          credit,
+          enablePickFeatures: false,
+        },
+      );
+  }
+}
+
+async function createStreetSceneTileset() {
+  const streetScene = getStreetSceneConfig();
+
+  switch (streetScene.provider) {
+    case "google-photorealistic":
+      return Cesium.createGooglePhotorealistic3DTileset(
+        {
+          key: streetScene.googleApiKey || undefined,
+          onlyUsingWithGoogleGeocoder: true,
+        },
+        {
+          enableCollision: true,
+          maximumScreenSpaceError: 8,
+        },
+      );
+    case "osm-buildings":
+      return Cesium.createOsmBuildingsAsync({
+        enableCollision: true,
+      });
+    default:
+      throw new Error("Street scene provider is not configured");
+  }
+}
+
+async function ensureStreetSceneTileset() {
+  if (!viewer || typeof Cesium === "undefined") {
+    throw new Error("Viewer unavailable");
+  }
+
+  if (!isStreetSceneConfigured()) {
+    throw new Error("Street scene not configured");
+  }
+
+  if (streetSceneTileset) {
+    visualState.streetSceneReady = true;
+    visualState.streetSceneStatus = "ready";
+    return streetSceneTileset;
+  }
+
+  if (!streetSceneLoadPromise) {
+    visualState.streetSceneStatus = "loading";
+    streetSceneLoadPromise = createStreetSceneTileset()
+      .then((tileset) => {
+        tileset.show = true;
+        viewer.scene.primitives.add(tileset);
+        streetSceneTileset = tileset;
+        visualState.streetSceneReady = true;
+        visualState.streetSceneStatus = "ready";
+        return tileset;
+      })
+      .catch((error) => {
+        visualState.streetSceneReady = false;
+        visualState.streetSceneStatus = "error";
+        streetSceneLoadPromise = null;
+        throw error;
+      });
+  }
+
+  return streetSceneLoadPromise;
+}
+
+function updateMapSurfaceControls() {
+  dom.surfaceButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.surface === visualState.mapSurface);
+  });
+}
+
+function getStreetSceneStatusLabel() {
+  if (!isStreetSceneConfigured()) {
+    return "UNAVAILABLE";
+  }
+
+  switch (visualState.streetSceneStatus) {
+    case "loading":
+      return "LOADING";
+    case "ready":
+      return "READY";
+    case "error":
+      return "ERROR";
+    default:
+      return "STANDBY";
+  }
+}
+
+function bindInspectorActions(state) {
+  const groundViewButton = document.getElementById("inspector-ground-view");
+  if (!groundViewButton) {
+    return;
+  }
+
+  groundViewButton.addEventListener("click", async () => {
+    if (!state?.position) {
+      return;
+    }
+
+    try {
+      updateStatus("GROUND VIEW");
+      await ensureStreetSceneTileset();
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          state.position.lon,
+          state.position.lat,
+          Math.max(state.position.altitude_m || 0, 120),
+        ),
+        orientation: {
+          heading: Cesium.Math.toRadians(state.velocity?.heading_deg || 0),
+          pitch: Cesium.Math.toRadians(-18),
+          roll: 0,
+        },
+        duration: 1.4,
+      });
+    } catch (error) {
+      console.error("Failed to enter ground view:", error);
+      updateStatus("GROUND VIEW UNAVAILABLE");
+    }
+
+    if (selectedObjectId) {
+      const nextState =
+        currentMode === "live" ? latestStates.get(selectedObjectId) : getCurrentReplayState();
+      updateInspectorFromState(selectedObjectId, nextState);
+    }
+  });
+}
+
+async function setMapSurface(surface) {
+  if (!viewer || typeof Cesium === "undefined") return;
+
+  visualState.mapSurface = surface;
+  updateMapSurfaceControls();
+  updateStatus(surface === "street" ? "STREET MAP" : "SATELLITE MAP");
+
+  const swapToken = ++baseImagerySwapToken;
+
+  try {
+    const provider = await createBaseImageryProvider(surface);
+    if (swapToken !== baseImagerySwapToken) {
+      return;
+    }
+
+    const imageryLayers = viewer.imageryLayers;
+    if (imageryLayers.length > 0) {
+      imageryLayers.remove(imageryLayers.get(0), true);
+    }
+    imageryLayers.addImageryProvider(provider, 0);
+  } catch (error) {
+    console.error("Failed to swap map imagery:", error);
+    updateStatus("BASEMAP ERROR");
+  }
 }
 
 function getSwanClientSessionId() {
@@ -1009,6 +1281,88 @@ function buildFlightLabel(state) {
   return `${callsign}\n${altitudeText}  HDG ${headingText}`;
 }
 
+function formatRelativeAge(timestamp) {
+  if (!timestamp) {
+    return "--";
+  }
+
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return "--";
+  }
+
+  const ageSeconds = Math.max(0, Math.round((Date.now() - parsed.getTime()) / 1000));
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s ago`;
+  }
+  if (ageSeconds < 3600) {
+    return `${Math.round(ageSeconds / 60)}m ago`;
+  }
+  return `${Math.round(ageSeconds / 3600)}h ago`;
+}
+
+function getExternalLayerBoundsQuery() {
+  if (!viewer || typeof Cesium === "undefined") {
+    return "";
+  }
+
+  const rectangle = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
+  if (!rectangle) {
+    return "";
+  }
+
+  const west = Cesium.Math.toDegrees(rectangle.west);
+  const south = Cesium.Math.toDegrees(rectangle.south);
+  const east = Cesium.Math.toDegrees(rectangle.east);
+  const north = Cesium.Math.toDegrees(rectangle.north);
+
+  if ([west, south, east, north].some((value) => !Number.isFinite(value))) {
+    return "";
+  }
+
+  // Skip wraparound rectangles for now and fall back to global fetch.
+  if (east < west) {
+    return "";
+  }
+
+  const params = new URLSearchParams({
+    west: west.toFixed(4),
+    south: south.toFixed(4),
+    east: east.toFixed(4),
+    north: north.toFixed(4),
+  });
+
+  return `?${params.toString()}`;
+}
+
+function getExternalLayerBoundsSignature() {
+  return getExternalLayerBoundsQuery();
+}
+
+function scheduleViewportExternalLayerReload() {
+  if (externalLayerViewportReloadTimer) {
+    clearTimeout(externalLayerViewportReloadTimer);
+  }
+
+  externalLayerViewportReloadTimer = setTimeout(() => {
+    externalLayerViewportReloadTimer = null;
+    for (const [layerId, layer] of externalLayerState.layers) {
+      if (!layer.enabled) {
+        continue;
+      }
+      void queueExternalLayerReload(layerId);
+    }
+
+    const nextBoundsSignature = getExternalLayerBoundsSignature();
+    if (
+      nextBoundsSignature !== liveEventsBoundsSignature &&
+      (currentMode === "live" || swanState.enabled)
+    ) {
+      connectToLiveEvents();
+    }
+  }, 350);
+}
+
 function getSparseLabelStride(stateCount) {
   if (visualState.detect) {
     return 1;
@@ -1063,17 +1417,86 @@ function buildProjectedTrackPoints(state) {
 }
 
 function updateFlightsLayerMeta(payload) {
-  const count = payload?.states?.length || 0;
-  dom.flightsCount.textContent = `${count.toLocaleString()} LIVE`;
+  liveFlightsMeta.count = payload?.states?.length || 0;
+  liveFlightsMeta.generatedAt = payload?.generated_at || null;
+  dom.flightsCount.textContent = `${liveFlightsMeta.count.toLocaleString()} LIVE`;
+  dom.flightsUpdate.textContent = formatRelativeAge(liveFlightsMeta.generatedAt);
+}
 
-  if (payload?.generated_at) {
-    const generatedAt = new Date(payload.generated_at);
-    const ageSeconds = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
-    dom.flightsUpdate.textContent =
-      ageSeconds < 60 ? `${ageSeconds}s ago` : `${Math.round(ageSeconds / 60)}m ago`;
-  } else {
-    dom.flightsUpdate.textContent = "--";
+function buildFlightEntitySpec(objectId, state, showLabel) {
+  const isSelected = selectedObjectId === objectId;
+  const altitude = state.position?.altitude_m || 0;
+  let color =
+    state.status === "ground"
+      ? Cesium.Color.fromCssColorString("#f59e0b")
+      : Cesium.Color.fromCssColorString("#38bdf8");
+
+  if (visualState.preset === "nvg") {
+    color = Cesium.Color.fromCssColorString("#39ff14");
+  } else if (visualState.preset === "flir") {
+    color = Cesium.Color.fromCssColorString(isSelected ? "#ff6b35" : "#ffaa00");
   }
+
+  const outlineColor = isSelected
+    ? Cesium.Color.fromCssColorString("#ffffff")
+    : Cesium.Color.fromCssColorString("#1b1b18");
+
+  return {
+    position: cartesianFromLatLon(state.position.lat, state.position.lon, altitude),
+    point: {
+      pixelSize: isSelected ? 11 : 6,
+      color: color,
+      outlineColor: outlineColor,
+      outlineWidth: isSelected ? 2 : 1,
+    },
+    label: {
+      text: buildFlightLabel(state),
+      show: showLabel,
+      font: "10px monospace",
+      fillColor: color,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 2,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      pixelOffset: new Cesium.Cartesian2(0, -16),
+      distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
+        0,
+        visualState.detect ? 20_000_000 : 2_500_000,
+      ),
+    },
+  };
+}
+
+function upsertLiveFlightEntity(objectId, state, showLabel) {
+  const spec = buildFlightEntitySpec(objectId, state, showLabel);
+  const existing = objectEntities.get(objectId);
+
+  if (existing) {
+    existing.position = spec.position;
+    existing.point = spec.point;
+    existing.ellipse = undefined;
+    existing.label = spec.label;
+    existing.properties = {
+      objectId: objectId,
+      state: state,
+    };
+    return existing;
+  }
+
+  const entity = viewer.entities.add({
+    ...spec,
+    properties: {
+      objectId: objectId,
+      state: state,
+    },
+  });
+  objectEntities.set(objectId, entity);
+  return entity;
+}
+
+function refreshFreshnessDisplays() {
+  dom.flightsUpdate.textContent = formatRelativeAge(liveFlightsMeta.generatedAt);
+  updateLayerRailUI();
 }
 
 function initCesium() {
@@ -1092,12 +1515,12 @@ function initCesium() {
     return;
   }
 
+  configureCesiumCredentials();
+
   viewer = new Cesium.Viewer("cesiumContainer", {
     terrainProvider: new Cesium.EllipsoidTerrainProvider(),
     baseLayer: Cesium.ImageryLayer.fromProviderAsync(
-      Cesium.TileMapServiceImageryProvider.fromUrl(
-        Cesium.buildModuleUrl("Assets/Textures/NaturalEarthII"),
-      ),
+      createBaseImageryProvider(visualState.mapSurface),
     ),
     sceneMode: Cesium.SceneMode.SCENE3D,
     baseLayerPicker: false,
@@ -1113,6 +1536,12 @@ function initCesium() {
   // Set initial view to full globe
   viewer.camera.setView({
     destination: Cesium.Cartesian3.fromDegrees(0, 0, 20000000),
+  });
+
+  updateMapSurfaceControls();
+
+  viewer.camera.moveEnd.addEventListener(() => {
+    scheduleViewportExternalLayerReload();
   });
 
   // Handle object selection
@@ -1207,14 +1636,43 @@ function initCesium() {
 function renderMapMarkers() {
   if (!viewer || typeof Cesium === "undefined") return;
 
-  // Remove all existing object entities
+  // Only render if flights layer is enabled
+  if (!layerState.flights) {
+    for (const entity of objectEntities.values()) {
+      viewer.entities.remove(entity);
+    }
+    objectEntities.clear();
+    return;
+  }
+
+  if (currentMode === "live") {
+    const sparseStride = getSparseLabelStride(latestStates.size || 1);
+    const renderedIds = new Set();
+    let index = 0;
+
+    for (const [objectId, state] of latestStates) {
+      if (!state.position) continue;
+      const isSelected = selectedObjectId === objectId;
+      const showLabel = isSelected || index % sparseStride === 0;
+      upsertLiveFlightEntity(objectId, state, showLabel);
+      renderedIds.add(objectId);
+      index += 1;
+    }
+
+    for (const [objectId, entity] of objectEntities) {
+      if (renderedIds.has(objectId)) {
+        continue;
+      }
+      viewer.entities.remove(entity);
+      objectEntities.delete(objectId);
+    }
+    return;
+  }
+
   for (const entity of objectEntities.values()) {
     viewer.entities.remove(entity);
   }
   objectEntities.clear();
-
-  // Only render if flights layer is enabled
-  if (!layerState.flights) return;
 
   const states = currentMode === "live" ? latestStates : getReplayStatesAtCurrentIndex();
   const sparseStride = getSparseLabelStride(states.size || 1);
@@ -1490,8 +1948,38 @@ function updateInspectorFromState(objectId, state) {
     }
   }
 
+  const groundViewDisabled = !state?.position || !isStreetSceneConfigured();
+  const groundViewHint = !state?.position
+    ? "Select a positioned object"
+    : !isStreetSceneConfigured()
+      ? "Set STREET_SCENE_PROVIDER to enable"
+      : visualState.streetSceneStatus === "error"
+        ? "Scene layer failed to load"
+        : visualState.streetSceneReady
+          ? "Street scene ready"
+          : "Load close-range scene";
+
+  html += `
+    <div class="inspector-ground-view">
+      <div class="inspector-ground-view-meta">
+        <span class="inspector-label">Ground View</span>
+        <span class="inspector-ground-view-status">${getStreetSceneStatusLabel()}</span>
+      </div>
+      <button
+        type="button"
+        id="inspector-ground-view"
+        class="inspector-ground-view-button"
+        ${groundViewDisabled ? "disabled" : ""}
+      >
+        ENTER GROUND VIEW
+      </button>
+      <div class="inspector-ground-view-hint">${groundViewHint}</div>
+    </div>
+  `;
+
   html += renderSwanInsights("object", objectId);
   dom.inspectorContent.innerHTML = html;
+  bindInspectorActions(state);
 }
 
 // ===== CCTV / SOURCE PANEL SECTION =====
@@ -1871,7 +2359,19 @@ function connectToLiveEvents() {
   disconnectFromLiveEvents();
   updateConnectionStatus("connecting");
 
-  const url = `${apiBaseUrl}/live/events${lastSequence > 0 ? `?since_sequence=${lastSequence}` : ""}`;
+  const params = new URLSearchParams();
+  if (lastSequence > 0) {
+    params.set("since_sequence", String(lastSequence));
+  }
+  const boundsQuery = getExternalLayerBoundsQuery();
+  if (boundsQuery) {
+    const boundsParams = new URLSearchParams(boundsQuery.slice(1));
+    for (const [key, value] of boundsParams.entries()) {
+      params.set(key, value);
+    }
+  }
+  liveEventsBoundsSignature = boundsQuery;
+  const url = `${apiBaseUrl}/live/events${params.toString() ? `?${params.toString()}` : ""}`;
   eventSource = new EventSource(url);
 
   eventSource.onmessage = (event) => {
@@ -1903,6 +2403,28 @@ function connectToLiveEvents() {
         if (currentMode === "live") {
           handleLiveStateUpdate(data.payload);
         }
+      } else if (data.type === "external_layer_update") {
+        if (data.sequence) {
+          lastSequence = data.sequence;
+        }
+        handleExternalLayerUpdate(data.payload);
+      } else if (data.type === "external_layer_snapshot_update") {
+        if (data.sequence) {
+          lastSequence = data.sequence;
+        }
+        const layer = applyExternalLayerUpdate({
+          ...data.payload,
+          count: data.payload.count,
+          error_message: data.payload.error_message,
+        });
+        if (!layer) {
+          return;
+        }
+        if (!layer.enabled || layer.status === "unavailable") {
+          clearExternalLayerEntities(data.payload.layer_id);
+          return;
+        }
+        renderExternalLayerData(data.payload.layer_id, data.payload);
       } else if (data.type === "swan_projection_update") {
         if (
           swanState.enabled &&
@@ -1974,8 +2496,46 @@ function disconnectFromLiveEvents() {
     eventSource.close();
     eventSource = null;
   }
+  liveEventsBoundsSignature = "";
   reconnectAttempts = 0;
   updateConnectionStatus("disconnected");
+}
+
+function applyExternalLayerUpdate(update) {
+  if (!update?.layer_id) {
+    return null;
+  }
+
+  const existing = externalLayerState.layers.get(update.layer_id);
+  if (!existing) {
+    return null;
+  }
+
+  const nextLayer = {
+    ...existing,
+    status: update.status ?? existing.status,
+    count: typeof update.count === "number" ? update.count : existing.count,
+    lastUpdate: update.last_update ?? existing.lastUpdate,
+    errorMessage: update.error_message ?? existing.errorMessage ?? null,
+  };
+
+  externalLayerState.layers.set(update.layer_id, nextLayer);
+  updateLayerRailUI();
+  return nextLayer;
+}
+
+function handleExternalLayerUpdate(update) {
+  const layer = applyExternalLayerUpdate(update);
+  if (!layer) {
+    return;
+  }
+
+  if (!layer.enabled || layer.status === "unavailable") {
+    clearExternalLayerEntities(update.layer_id);
+    return;
+  }
+
+  void queueExternalLayerReload(update.layer_id);
 }
 
 function clearSwanOverlayEntities() {
@@ -2076,7 +2636,15 @@ function handleLiveStateUpdate(state) {
     updateCCTVSection(state.object_id, state);
   }
 
-  renderMapMarkers();
+  if (viewer && typeof Cesium !== "undefined" && layerState.flights && state.position) {
+    const sparseStride = getSparseLabelStride(latestStates.size || 1);
+    const orderedIds = Array.from(latestStates.keys());
+    const stateIndex = Math.max(0, orderedIds.indexOf(state.object_id));
+    const showLabel = selectedObjectId === state.object_id || stateIndex % sparseStride === 0;
+    upsertLiveFlightEntity(state.object_id, state, showLabel);
+  } else {
+    renderMapMarkers();
+  }
   renderTrack();
 }
 
@@ -2099,6 +2667,30 @@ async function queueLiveSnapshotReload() {
   });
 
   return liveSnapshotRequest;
+}
+
+async function queueExternalLayerReload(layerId) {
+  const layer = externalLayerState.layers.get(layerId);
+  if (!layer?.enabled) {
+    return;
+  }
+
+  const existingRequest = externalLayerRequests.get(layerId);
+  if (existingRequest) {
+    pendingExternalLayerReloads.add(layerId);
+    return existingRequest;
+  }
+
+  const request = loadExternalLayerData(layerId).finally(async () => {
+    externalLayerRequests.delete(layerId);
+    if (pendingExternalLayerReloads.has(layerId)) {
+      pendingExternalLayerReloads.delete(layerId);
+      await queueExternalLayerReload(layerId);
+    }
+  });
+
+  externalLayerRequests.set(layerId, request);
+  return request;
 }
 
 async function loadLatestState() {
@@ -3800,6 +4392,12 @@ function initEventListeners() {
     });
   });
 
+  dom.surfaceButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setMapSurface(btn.dataset.surface);
+    });
+  });
+
   // Visual sliders
   [
     dom.bloomSlider,
@@ -3922,47 +4520,54 @@ async function loadExternalLayerData(layerId) {
   if (!externalLayerState.layers.get(layerId)?.enabled) return;
 
   try {
-    const response = await fetch(`${apiBaseUrl}/layers/${layerId}/data`);
+    const response = await fetch(`${apiBaseUrl}/layers/${layerId}/data${getExternalLayerBoundsQuery()}`);
     if (!response.ok) {
       console.warn(`Failed to load ${layerId} data:`, response.status);
       return;
     }
 
     const data = await response.json();
-
-    // Clear existing entities for this layer
-    clearExternalLayerEntities(layerId);
-
-    // Render based on layer type
-    switch (layerId) {
-      case "earthquakes":
-        renderEarthquakes(data.events);
-        break;
-      case "satellites":
-        renderSatellites(data.events);
-        break;
-      case "weather":
-        renderWeather(data.events);
-        break;
-      case "bikeshare":
-        renderBikeshare(data.events);
-        break;
-      case "traffic":
-        renderTraffic(data.events);
-        break;
-      default:
-        console.warn(`Unknown layer type: ${layerId}`);
-    }
-
-    // Update count in UI
-    const layer = externalLayerState.layers.get(layerId);
-    if (layer) {
-      layer.count = data.count;
-      layer.lastUpdate = data.last_update;
-      updateLayerRailUI();
-    }
+    renderExternalLayerData(layerId, data);
   } catch (error) {
     console.error(`Failed to load ${layerId} data:`, error);
+  }
+}
+
+function renderExternalLayerData(layerId, data) {
+  if (layerId !== "satellites") {
+    clearExternalLayerEntities(layerId);
+  }
+
+  switch (layerId) {
+    case "earthquakes":
+      renderEarthquakes(data.events || []);
+      break;
+    case "satellites":
+      renderSatellites(data.events || []);
+      break;
+    case "weather":
+      renderWeather(data.events || []);
+      break;
+    case "bikeshare":
+      renderBikeshare(data.events || []);
+      break;
+    case "traffic":
+      renderTraffic(data.events || []);
+      break;
+    default:
+      console.warn(`Unknown layer type: ${layerId}`);
+  }
+
+  const layer = externalLayerState.layers.get(layerId);
+  if (layer) {
+    layer.count = typeof data.count === "number" ? data.count : layer.count;
+    layer.lastUpdate = data.last_update ?? layer.lastUpdate;
+    layer.status = data.status ?? layer.status;
+    layer.errorMessage = data.error_message ?? null;
+    if (typeof data.total_count === "number") {
+      layer.totalCount = data.total_count;
+    }
+    updateLayerRailUI();
   }
 }
 
@@ -4032,6 +4637,7 @@ function getEarthquakeSize(magnitude) {
 function renderSatellites(events) {
   const entities = externalLayerState.entities.get("satellites") || new Map();
   const sparseStride = visualState.detect ? 1 : Math.max(4, Math.ceil(events.length / 120));
+  const nextKeys = new Set();
   let index = 0;
 
   for (const event of events) {
@@ -4041,7 +4647,8 @@ function renderSatellites(events) {
     const isSelected = selectedSatelliteId === (event.external_id || event.payload?.noradId);
     const showLabel = isSelected || index % sparseStride === 0;
 
-    const entity = viewer.entities.add({
+    const entityKey = String(event.external_id || event.payload?.noradId || event.event_id);
+    const spec = {
       position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, altitudeM),
       point: {
         pixelSize: isSelected ? style.pixelSize + 3 : style.pixelSize,
@@ -4068,10 +4675,27 @@ function renderSatellites(events) {
         type: "satellite",
         event: event,
       },
-    });
+    };
 
-    entities.set(event.event_id, entity);
+    const existing = entities.get(entityKey);
+    if (existing) {
+      existing.position = spec.position;
+      existing.point = spec.point;
+      existing.label = spec.label;
+      existing.properties = spec.properties;
+    } else {
+      entities.set(entityKey, viewer.entities.add(spec));
+    }
+    nextKeys.add(entityKey);
     index += 1;
+  }
+
+  for (const [entityKey, entity] of entities) {
+    if (nextKeys.has(entityKey)) {
+      continue;
+    }
+    viewer.entities.remove(entity);
+    entities.delete(entityKey);
   }
 
   externalLayerState.entities.set("satellites", entities);
@@ -4254,6 +4878,7 @@ function updateLayerRailUI() {
     const statusEl = document.getElementById(`layer-status-${layerId}`);
     const countEl = document.getElementById(`layer-count-${layerId}`);
     const providerEl = document.getElementById(`layer-provider-${layerId}`);
+    const updateEl = document.getElementById(`layer-update-${layerId}`);
 
     if (statusEl) {
       const statusColors = {
@@ -4263,6 +4888,10 @@ function updateLayerRailUI() {
       };
       statusEl.style.color = statusColors[layer.status] || "#6b7280";
       statusEl.textContent = layer.status.toUpperCase();
+      statusEl.classList.remove("real", "degraded", "unavailable");
+      if (layer.status) {
+        statusEl.classList.add(layer.status);
+      }
     }
 
     if (countEl) {
@@ -4271,6 +4900,10 @@ function updateLayerRailUI() {
 
     if (providerEl) {
       providerEl.textContent = layer.provider || "--";
+    }
+
+    if (updateEl) {
+      updateEl.textContent = formatRelativeAge(layer.lastUpdate);
     }
   }
 }
@@ -4568,6 +5201,7 @@ async function init() {
   updateTime();
 
   // Start data refresh
+  setInterval(refreshFreshnessDisplays, 15000);
   setInterval(loadSourceHealth, 30000);
   setInterval(loadAlerts, 15000);
 

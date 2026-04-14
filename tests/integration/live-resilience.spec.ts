@@ -25,6 +25,7 @@ describe("live event bus resilience", () => {
     await environment.database.pool.query("DELETE FROM latest_object_states");
     await environment.database.pool.query("DELETE FROM tracked_objects");
     await environment.database.pool.query("DELETE FROM sources");
+    await environment.database.pool.query("DELETE FROM external_data_events");
   });
 
   it("tracks sequence numbers for events", () => {
@@ -89,6 +90,26 @@ describe("live event bus resilience", () => {
 
     const endSeq = liveEventBus.getSequence();
     expect(endSeq).toBe(startSeq + 5);
+  });
+
+  it("stores external layer updates for backfill", () => {
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "satellites",
+        status: "real",
+        count: 100,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    const seq = liveEventBus.getSequence();
+    const recent = liveEventBus.getRecentEvents(seq - 1);
+
+    expect(recent).toHaveLength(1);
+    expect(recent[0]?.type).toBe("external_layer_update");
   });
 
   it("returns empty array when no events since sequence", () => {
@@ -176,5 +197,76 @@ describe("live reconnect behavior", () => {
 
     controller.abort();
     expect(response.status).toBe(200);
+  });
+
+  it("streams viewport-scoped external layer snapshots", async () => {
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_stream_sf",
+        external_id: "eq_stream_sf",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.7749,
+        lon: -122.4194,
+        payload: { magnitude: 4.2, place: "San Francisco" },
+      },
+      {
+        event_id: "eq_stream_ny",
+        external_id: "eq_stream_ny",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 40.7128,
+        lon: -74.006,
+        payload: { magnitude: 3.1, place: "New York" },
+      },
+    ]);
+
+    const beforeSeq = liveEventBus.getSequence();
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 2,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    const controller = new AbortController();
+    const response = await fetch(
+      `http://127.0.0.1:${api.port}/live/events?since_sequence=${beforeSeq}&west=-123&south=37&east=-122&north=38`,
+      { signal: controller.signal },
+    );
+
+    expect(response.status).toBe(200);
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      controller.abort();
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let done = false;
+    let snapshotPayload = "";
+
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+
+      if (value) {
+        snapshotPayload += decoder.decode(value);
+        if (snapshotPayload.includes("external_layer_snapshot_update")) {
+          break;
+        }
+      }
+    }
+
+    controller.abort();
+    expect(snapshotPayload).toContain("external_layer_snapshot_update");
+    expect(snapshotPayload).toContain("eq_stream_sf");
+    expect(snapshotPayload).not.toContain("eq_stream_ny");
   });
 });

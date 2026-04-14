@@ -8,6 +8,25 @@ interface RunningWebServer {
   close(): Promise<void>;
 }
 
+interface MapImageryConfig {
+  provider: string;
+  url: string | null;
+  credit: string | null;
+  maxLevel: number | null;
+}
+
+interface StreetSceneConfig {
+  provider: string;
+  ionToken: string | null;
+  googleApiKey: string | null;
+}
+
+interface WebAppConfig {
+  apiBaseUrl: string;
+  mapImagery: MapImageryConfig;
+  streetScene: StreetSceneConfig;
+}
+
 async function serveStaticFile(
   response: ServerResponse,
   fileUrl: URL,
@@ -49,7 +68,31 @@ function getContentType(pathname: string): string {
   }
 }
 
-export function createWebServer(options: { api_base_url: string }): RunningWebServer {
+function normalizeMapImageryConfig(
+  mapImagery?: Partial<MapImageryConfig>,
+): MapImageryConfig {
+  return {
+    provider: mapImagery?.provider?.trim() || "arcgis-world-imagery",
+    url: mapImagery?.url?.trim() || null,
+    credit: mapImagery?.credit?.trim() || null,
+    maxLevel:
+      typeof mapImagery?.maxLevel === "number" && Number.isFinite(mapImagery.maxLevel)
+        ? mapImagery.maxLevel
+        : null,
+  };
+}
+
+function normalizeStreetSceneConfig(
+  streetScene?: Partial<StreetSceneConfig>,
+): StreetSceneConfig {
+  return {
+    provider: streetScene?.provider?.trim() || "none",
+    ionToken: streetScene?.ionToken?.trim() || null,
+    googleApiKey: streetScene?.googleApiKey?.trim() || null,
+  };
+}
+
+export function createWebServer(options: { app_config: WebAppConfig }): RunningWebServer {
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const isProduction = process.env.NODE_ENV === "production";
@@ -61,7 +104,10 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
     try {
       if (url.pathname === "/" || url.pathname === "/index.html") {
         const template = await readFile(new URL("index.html", publicRoot), "utf8");
-        const html = template.replaceAll("__API_BASE_URL__", options.api_base_url);
+        const html = template.replaceAll(
+          "__APP_CONFIG_JSON__",
+          JSON.stringify(options.app_config),
+        );
         response.statusCode = 200;
         response.setHeader("Content-Type", "text/html; charset=utf-8");
         response.setHeader("Cache-Control", "no-store");
@@ -147,8 +193,16 @@ export function createWebServer(options: { api_base_url: string }): RunningWebSe
 export async function startWebServer(options: {
   api_base_url: string;
   port?: number;
+  map_imagery?: Partial<MapImageryConfig>;
+  street_scene?: Partial<StreetSceneConfig>;
 }): Promise<RunningWebServer & { port: number }> {
-  const runningServer = createWebServer(options);
+  const runningServer = createWebServer({
+    app_config: {
+      apiBaseUrl: options.api_base_url,
+      mapImagery: normalizeMapImageryConfig(options.map_imagery),
+      streetScene: normalizeStreetSceneConfig(options.street_scene),
+    },
+  });
 
   await new Promise<void>((resolve, reject) => {
     runningServer.server.once("error", reject);
@@ -170,13 +224,30 @@ export async function startWebServer(options: {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const apiPort = process.env.API_PORT ? Number.parseInt(process.env.API_PORT, 10) : 3000;
   const apiBaseUrl = process.env.API_BASE_URL ?? `http://127.0.0.1:${apiPort}`;
+  const mapImageryMaxLevel = process.env.MAP_IMAGERY_MAX_LEVEL
+    ? Number.parseInt(process.env.MAP_IMAGERY_MAX_LEVEL, 10)
+    : undefined;
   const port = process.env.WEB_PORT
     ? Number.parseInt(process.env.WEB_PORT, 10)
     : process.env.PORT
       ? Number.parseInt(process.env.PORT, 10)
       : 3001;
 
-  startWebServer({ api_base_url: apiBaseUrl, port }).then(({ port: boundPort }) => {
+  startWebServer({
+    api_base_url: apiBaseUrl,
+    port,
+    map_imagery: {
+      provider: process.env.MAP_IMAGERY_PROVIDER,
+      url: process.env.MAP_IMAGERY_URL,
+      credit: process.env.MAP_IMAGERY_CREDIT,
+      maxLevel: Number.isFinite(mapImageryMaxLevel) ? mapImageryMaxLevel : undefined,
+    },
+    street_scene: {
+      provider: process.env.STREET_SCENE_PROVIDER,
+      ionToken: process.env.CESIUM_ION_TOKEN,
+      googleApiKey: process.env.GOOGLE_MAPS_API_KEY,
+    },
+  }).then(({ port: boundPort }) => {
     console.log(`Web server listening on http://0.0.0.0:${boundPort}`);
   });
 }
