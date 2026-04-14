@@ -73,6 +73,14 @@ DATABASE_URL="$DATABASE_URL" \
 npm run worker:fixture
 ```
 
+### Running With Docker Compose
+
+```bash
+docker compose -f infra/compose/docker-compose.yml up -d
+```
+
+Supporting container assets now live under `infra/compose/` and `infra/docker/`.
+
 ## Demo Credentials
 
 | Role | Username | Password |
@@ -81,33 +89,45 @@ npm run worker:fixture
 | Operator | `operator` | `operator123` |
 | Admin | `admin` | `admin123` |
 
-## Architecture
+## Repository Layout
 
 ```text
 apps/
-├── api/          # Node HTTP API server with SSE live events
-├── web/          # Static server for the tactical Cesium UI
-└── worker/       # Fixture-oriented ingestion worker
+  api/             Node HTTP API server with SSE live events
+  web/             Static server for the tactical Cesium UI
+  worker/          Fixture-oriented ingestion worker
 
 packages/
-├── adapters/      # Ingestion adapters
-├── alerts/        # Alert rules engine
-├── analytics/     # Analytical helpers
-├── auth/          # Authentication service
-├── config/        # Configuration management
-├── contracts/     # Shared schemas and models
-├── domain/        # Deterministic state projection
-├── external-data/ # External layer adapters and cache helpers
-├── ingestion/     # Ingestion orchestration
-├── live-world/    # Live snapshot cache
-├── logging/       # Structured logging
-├── persistence/   # PostgreSQL/PostGIS gateway
-├── replay/        # Replay query logic
-├── swan/          # Advisory intelligence workflow
-└── test-fixtures/ # Golden fixtures
+  adapters/        Ingestion adapters
+  alerts/          Alert rules engine
+  analytics/       Analytical helpers
+  auth/            Authentication service
+  config/          Configuration management
+  contracts/       Shared schemas and models
+  domain/          Deterministic state projection
+  external-data/   External layer adapters and cache helpers
+  ingestion/       Ingestion orchestration
+  live-world/      Live snapshot cache
+  logging/         Structured logging
+  persistence/     PostgreSQL/PostGIS gateway
+  replay/          Replay query logic
+  swan/            Advisory intelligence workflow
+  test-fixtures/   Golden fixtures
+
+infra/
+  compose/         Docker Compose stack, env example, and worker sample input
+  docker/          Container build definitions
+  migrations/      Ordered Postgres/PostGIS schema migrations
+
+docs/
+  architecture/    Current runtime and subsystem docs
+  runbooks/        Ops and workflow guides
+  tests/           Validation and testing process docs
+  plans/           Roadmap and progress material
+  adr/             Architecture decisions
 ```
 
-See [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) for the current runtime topology and data flows.
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the current runtime topology and data flows, and [docs/INDEX.md](docs/INDEX.md) for the documentation map.
 
 ## Key API Areas
 

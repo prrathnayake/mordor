@@ -1,14 +1,17 @@
-# Digital Twin Project Docs Pack
+# Chrona Twin Docs
 
-This folder contains a starter markdown documentation set for a live real-world simulation / digital twin platform.
+The docs tree is organized by purpose so current operational material is easier to find:
+
+- `architecture/` for current runtime shape, subsystem behavior, and storage details
+- `runbooks/` for local run, recovery, demo, and workflow guides
+- `tests/` for validation and testing process docs
+- `plans/` for progress logs and implementation sequencing
+- `adr/` for durable architectural decisions
+
+Legacy numbered docs remain in the root of `docs/` because some repo gates still require them, but they are planning-era scaffolding rather than the best starting point for current implementation details.
 
 Recommended first read:
-1. `00_INDEX.md`
-2. `01_PRODUCT_VISION.md`
-3. `02_SYSTEM_ARCHITECTURE.md`
-4. `03_DOMAIN_MODEL.md`
-5. `10_IMPLEMENTATION_PLAN.md`
-6. `11_TEST_STRATEGY.md`
-7. `12_HARD_GATES_AND_COMPLIANCE.md`
-
-Use these docs as the initial `docs/` source of truth for the repo.
+1. `INDEX.md`
+2. `architecture/overview.md`
+3. `runbooks/local-run.md`
+4. `architecture/database-schema.md`

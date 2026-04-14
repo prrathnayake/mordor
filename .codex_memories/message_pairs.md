@@ -86,3 +86,9 @@ Mapped the project goal and current modular-monolith architecture from the repo,
 review code and identify bugs and issues and fix all of them and test full sysytem. find as much as you can analyse codelogic and find missing featues that need to improve current UI details. go each code file and start review
 ### Assistant Final Response Summary
 Ran a deep review/fix loop across backend, SWAN, external-data adapters, UI behavior, and automated tests; fixed multiple runtime and UI issues, stabilized the shared Postgres test harness, removed the external-data retry/rate-limit defect, hardened API shutdown to avoid pool-after-end teardown races, updated stale unit/integration/e2e specs, and finished with a full green `npm run validate`.
+
+## 2026-04-14 12:12:55 +10:00
+### User Message
+review this codebase, not for find code issues but to organize this repo files and folders into more structured and organized way to increase redability and maintainability. so understand the current files and folder structure and re organized in to clean structure
+### Assistant Final Response Summary
+Reorganized the repo for readability and maintainability by moving Docker and Compose support files out of the root into `infra/compose` and `infra/docker`, relocating current-state documentation into topical `docs/architecture`, `docs/runbooks`, and `docs/tests` folders, refreshing the root and docs indexes to explain the new layout, updating the compose config to use the new paths, and confirming `npm run gate:docs` still passes while noting that `npm run lint` is currently blocked by pre-existing formatting drift elsewhere in the repo.
