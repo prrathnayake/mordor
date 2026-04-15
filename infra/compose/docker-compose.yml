@@ -100,5 +100,43 @@ services:
         condition: service_healthy
     command: npx tsx apps/worker/src/index.ts
 
+  agent-collector:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      target: runner
+    container_name: mordor-agent-collector
+    environment:
+      NODE_ENV: production
+      AGENT_MODE: collector
+      AGENT_ID: collector-01
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npx tsx apps/agents/src/index.ts
+
+  agent-detector:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      target: runner
+    container_name: mordor-agent-detector
+    environment:
+      NODE_ENV: production
+      AGENT_MODE: detector
+      AGENT_ID: detector-01
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npx tsx apps/agents/src/index.ts
+
 volumes:
   postgres_data:
