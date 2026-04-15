@@ -99,6 +99,27 @@ interface ExternalLayerSnapshotUpdate extends LiveEvent {
 }
 ```
 
+### External Layer Delta Update
+
+After a subscriber has received its first scoped snapshot for a layer, subsequent refreshes may
+be emitted as deltas so the client only receives changed and removed events:
+
+```typescript
+interface ExternalLayerDeltaUpdate extends LiveEvent {
+  type: "external_layer_delta_update";
+  payload: {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;       // events in this subscriber's viewport after applying the delta
+    total_count: number; // full layer count from the refresh pass
+    last_update: string;
+    error_message: string | null;
+    upserts: ExternalLayerEvent[];
+    removed_external_ids: string[];
+  };
+}
+```
+
 ## API Reference
 
 ### `subscribe(listener: LiveEventListener): () => void`
@@ -164,8 +185,9 @@ const bounded = new EventSource(
 ```
 
 The live event bus still stores canonical `external_layer_update` events. The API server
-materializes them into `external_layer_snapshot_update` per subscriber so each connection can
-receive only the events relevant to its current viewport.
+materializes them into `external_layer_snapshot_update` for the first scoped delivery per layer
+and then `external_layer_delta_update` for later refreshes on the same connection, so each
+subscriber can receive only relevant changes for its current viewport.
 
 ## Event Flow
 

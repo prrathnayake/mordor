@@ -32,6 +32,10 @@ describe("config validation", () => {
       delete process.env.LIVE_FLIGHT_HISTORY_POINTS;
       delete process.env.LIVE_FLIGHT_LIMIT;
       delete process.env.AUTO_REFRESH_EXTERNAL_LAYERS;
+      delete process.env.AUTO_REFRESH_INCIDENT_INTELLIGENCE;
+      delete process.env.INCIDENT_INTELLIGENCE_REFRESH_MS;
+      delete process.env.INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP;
+      delete process.env.YOUTUBE_API_KEY;
       delete process.env.SWAN_ARTIFACT_ROOT;
       delete process.env.SWAN_MAX_THREADS_PER_SESSION;
       delete process.env.SWAN_MAX_GLOBAL_THREADS;
@@ -55,6 +59,10 @@ describe("config validation", () => {
       expect(config.liveFlightHistoryPoints).toBe(18);
       expect(config.liveFlightLimit).toBe(7000);
       expect(config.autoRefreshExternalLayers).toBe(true);
+      expect(config.autoRefreshIncidentIntelligence).toBe(false);
+      expect(config.incidentIntelligenceRefreshMs).toBe(300000);
+      expect(config.incidentIntelligenceMaxIncidentsPerSweep).toBe(10);
+      expect(config.youtubeApiKey).toBe(null);
       expect(config.swanArtifactRoot).toBe("./runtime/swan");
       expect(config.swanMaxThreadsPerSession).toBe(5);
       expect(config.swanMaxGlobalThreads).toBe(20);
@@ -102,6 +110,10 @@ describe("config validation", () => {
       process.env.LIVE_FLIGHT_HISTORY_POINTS = "24";
       process.env.LIVE_FLIGHT_LIMIT = "5000";
       process.env.AUTO_REFRESH_EXTERNAL_LAYERS = "false";
+      process.env.AUTO_REFRESH_INCIDENT_INTELLIGENCE = "true";
+      process.env.INCIDENT_INTELLIGENCE_REFRESH_MS = "180000";
+      process.env.INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP = "4";
+      process.env.YOUTUBE_API_KEY = "youtube-test-key";
 
       const config = getConfigFromEnv();
 
@@ -113,6 +125,10 @@ describe("config validation", () => {
       expect(config.liveFlightHistoryPoints).toBe(24);
       expect(config.liveFlightLimit).toBe(5000);
       expect(config.autoRefreshExternalLayers).toBe(false);
+      expect(config.autoRefreshIncidentIntelligence).toBe(true);
+      expect(config.incidentIntelligenceRefreshMs).toBe(180000);
+      expect(config.incidentIntelligenceMaxIncidentsPerSweep).toBe(4);
+      expect(config.youtubeApiKey).toBe("youtube-test-key");
     });
 
     it("parses swan configuration from environment", () => {
@@ -150,6 +166,10 @@ describe("config validation", () => {
         liveFlightHistoryPoints: 18,
         liveFlightLimit: 7000,
         autoRefreshExternalLayers: true,
+        autoRefreshIncidentIntelligence: false,
+        incidentIntelligenceRefreshMs: 300000,
+        incidentIntelligenceMaxIncidentsPerSweep: 10,
+        youtubeApiKey: null,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -179,6 +199,10 @@ describe("config validation", () => {
         liveFlightHistoryPoints: 18,
         liveFlightLimit: 7000,
         autoRefreshExternalLayers: true,
+        autoRefreshIncidentIntelligence: false,
+        incidentIntelligenceRefreshMs: 300000,
+        incidentIntelligenceMaxIncidentsPerSweep: 10,
+        youtubeApiKey: null,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -208,6 +232,10 @@ describe("config validation", () => {
         liveFlightHistoryPoints: 18,
         liveFlightLimit: 7000,
         autoRefreshExternalLayers: true,
+        autoRefreshIncidentIntelligence: false,
+        incidentIntelligenceRefreshMs: 300000,
+        incidentIntelligenceMaxIncidentsPerSweep: 10,
+        youtubeApiKey: null,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -237,6 +265,10 @@ describe("config validation", () => {
         liveFlightHistoryPoints: 18,
         liveFlightLimit: 7000,
         autoRefreshExternalLayers: true,
+        autoRefreshIncidentIntelligence: false,
+        incidentIntelligenceRefreshMs: 300000,
+        incidentIntelligenceMaxIncidentsPerSweep: 10,
+        youtubeApiKey: null,
         swanArtifactRoot: "./runtime/swan",
         swanMaxThreadsPerSession: 5,
         swanMaxGlobalThreads: 20,
@@ -266,6 +298,10 @@ describe("config validation", () => {
         liveFlightHistoryPoints: 0,
         liveFlightLimit: 0,
         autoRefreshExternalLayers: true,
+        autoRefreshIncidentIntelligence: false,
+        incidentIntelligenceRefreshMs: 0,
+        incidentIntelligenceMaxIncidentsPerSweep: 0,
+        youtubeApiKey: null,
         swanArtifactRoot: "",
         swanMaxThreadsPerSession: 0,
         swanMaxGlobalThreads: 0,

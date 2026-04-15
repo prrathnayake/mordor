@@ -1,4 +1,5 @@
 export * from "./capture-models.js";
+export * from "./incident-intelligence.js";
 export * from "./incident-models.js";
 export * from "./inference-models.js";
 export * from "./models.js";

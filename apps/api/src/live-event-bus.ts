@@ -13,6 +13,8 @@ export interface LiveEvent {
     | "live_snapshot_update"
     | "external_layer_update"
     | "external_layer_snapshot_update"
+    | "external_layer_delta_update"
+    | "incident_intelligence_update"
     | "swan_session_update"
     | "swan_thread_update"
     | "swan_projection_update"
@@ -95,6 +97,40 @@ export interface ExternalLayerSnapshotUpdate extends LiveEvent {
       altitude_m: number | null;
       payload: Record<string, unknown>;
     }>;
+  };
+}
+
+export interface ExternalLayerDeltaUpdate extends LiveEvent {
+  type: "external_layer_delta_update";
+  payload: {
+    layer_id: string;
+    status: "real" | "degraded" | "unavailable";
+    count: number;
+    total_count: number;
+    last_update: string;
+    error_message: string | null;
+    upserts: Array<{
+      event_id: string;
+      external_id: string;
+      event_type: string;
+      observed_at: string;
+      lat: number;
+      lon: number;
+      altitude_m: number | null;
+      payload: Record<string, unknown>;
+    }>;
+    removed_external_ids: string[];
+  };
+}
+
+export interface IncidentIntelligenceUpdate extends LiveEvent {
+  type: "incident_intelligence_update";
+  payload: {
+    incident_id: string;
+    artifact_count: number;
+    widget_count: number;
+    run_count: number;
+    updated_at: string;
   };
 }
 

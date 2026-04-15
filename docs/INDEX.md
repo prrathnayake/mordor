@@ -18,6 +18,7 @@ Use this index for the current runtime shape of the repo. Some numbered planning
 | [architecture/live-event-bus.md](architecture/live-event-bus.md) | SSE event stream contract and live event fanout |
 | [architecture/capture-service.md](architecture/capture-service.md) | Capture-job and evidence-freeze workflow |
 | [architecture/inference-service.md](architecture/inference-service.md) | Inferred-intelligence generation path |
+| [architecture/incident-intelligence.md](architecture/incident-intelligence.md) | Public-source incident enrichment, widget manifests, and refresh flow |
 
 ## Persistence and Domain
 

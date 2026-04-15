@@ -9,6 +9,7 @@ The API Server is built on Node.js's native HTTP module without additional frame
 - Server-Sent Events (SSE) for real-time live event streaming
 - Authentication and authorization middleware
 - External data layer management
+- incident intelligence refresh and read APIs
 
 ## Core Components
 
@@ -33,6 +34,7 @@ Creates and configures the HTTP server with database connection and optional clo
 interface ApiServerOptions {
   connection_string: string;  // PostgreSQL connection string
   clock?: Clock;              // Optional clock for time-based operations
+  incidentIntelligenceCollectors?: IncidentIntelligenceCollector[];
 }
 ```
 
@@ -72,6 +74,7 @@ data: {"type": "object_state_update", "timestamp": "...", "payload": {...}}
 - Maintains event history buffer (1000 events)
 - Publishes: object state updates, source health updates, connection info, and external layer
   refresh notifications
+- Also publishes `incident_intelligence_update` when incident enrichment refreshes complete
 
 ### Ingestion Pipeline
 
@@ -102,6 +105,8 @@ The API provides comprehensive incident CRUD operations:
 | `/incidents/:id/links` | GET/POST | Link evidence to incident |
 | `/incidents/:id/capture-jobs` | GET/POST | Manage capture jobs |
 | `/incidents/:id/evidence` | GET | List frozen evidence |
+| `/incidents/:id/intelligence` | GET | Read incident intelligence bundle |
+| `/incidents/:id/intelligence/refresh` | POST | Run public-source intelligence refresh |
 
 ### Capture Jobs
 

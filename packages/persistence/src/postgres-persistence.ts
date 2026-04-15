@@ -2,8 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import {
   type CanonicalEvent,
+  type CreateIncidentIntelligenceRunInput,
+  type IncidentIntelligenceArtifact,
+  type IncidentIntelligenceBundle,
+  type IncidentIntelligenceRun,
+  type IncidentWidgetManifest,
   OBJECT_STATE_SCHEMA_VERSION,
   type Source,
+  type UpsertIncidentIntelligenceArtifactInput,
+  type UpsertIncidentWidgetManifestInput,
 } from "../../contracts/src/index.js";
 import type { Geometry, ObjectState } from "../../contracts/src/models.js";
 import { applyCanonicalEventToObjectState } from "../../domain/src/index.js";
@@ -61,6 +68,58 @@ interface ObjectStateRow {
   status: string | null;
   attributes: Record<string, unknown>;
   last_event_id: string;
+}
+
+interface IncidentIntelligenceArtifactRow {
+  artifact_id: string;
+  incident_id: string;
+  dedupe_key: string;
+  artifact_type: IncidentIntelligenceArtifact["artifact_type"];
+  provider: string;
+  title: string;
+  summary: string;
+  url: string;
+  thumbnail_url: string | null;
+  author: string | null;
+  published_at: Date | string | null;
+  captured_at: Date | string;
+  lat: number | null;
+  lon: number | null;
+  verification_status: IncidentIntelligenceArtifact["verification_status"];
+  confidence: number;
+  source_urls: string[];
+  metadata: Record<string, unknown>;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface IncidentWidgetManifestRow {
+  widget_id: string;
+  incident_id: string;
+  widget_key: string;
+  widget_type: IncidentWidgetManifest["widget_type"];
+  title: string;
+  layout: IncidentWidgetManifest["layout"];
+  priority: number;
+  status: IncidentWidgetManifest["status"];
+  generated_by: string;
+  spec: Record<string, unknown>;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface IncidentIntelligenceRunRow {
+  run_id: string;
+  incident_id: string;
+  provider: string;
+  run_type: IncidentIntelligenceRun["run_type"];
+  status: IncidentIntelligenceRun["status"];
+  started_at: Date | string;
+  completed_at: Date | string | null;
+  error_message: string | null;
+  stats: Record<string, unknown>;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 function mapGeometry(value: string | null): Geometry | undefined {
@@ -121,6 +180,40 @@ function mapObjectStateRow(row: ObjectStateRow): ObjectState {
     status: row.status,
     attributes: row.attributes,
     last_event_id: row.last_event_id,
+  };
+}
+
+function mapIncidentIntelligenceArtifactRow(
+  row: IncidentIntelligenceArtifactRow,
+): IncidentIntelligenceArtifact {
+  return {
+    ...row,
+    published_at: row.published_at ? coerceIsoTimestamp(row.published_at) : null,
+    captured_at: coerceIsoTimestamp(row.captured_at),
+    created_at: coerceIsoTimestamp(row.created_at),
+    updated_at: coerceIsoTimestamp(row.updated_at),
+    source_urls: row.source_urls ?? [],
+    metadata: row.metadata ?? {},
+  };
+}
+
+function mapIncidentWidgetManifestRow(row: IncidentWidgetManifestRow): IncidentWidgetManifest {
+  return {
+    ...row,
+    spec: row.spec ?? {},
+    created_at: coerceIsoTimestamp(row.created_at),
+    updated_at: coerceIsoTimestamp(row.updated_at),
+  };
+}
+
+function mapIncidentIntelligenceRunRow(row: IncidentIntelligenceRunRow): IncidentIntelligenceRun {
+  return {
+    ...row,
+    started_at: coerceIsoTimestamp(row.started_at),
+    completed_at: row.completed_at ? coerceIsoTimestamp(row.completed_at) : null,
+    created_at: coerceIsoTimestamp(row.created_at),
+    updated_at: coerceIsoTimestamp(row.updated_at),
+    stats: row.stats ?? {},
   };
 }
 
@@ -2152,6 +2245,261 @@ export class PostgresPersistenceGateway
       has_frozen_evidence: row.has_frozen_evidence ?? false,
       sources_captured: row.sources_captured ?? [],
       sources_frozen: row.sources_frozen ?? [],
+    };
+  }
+
+  async upsertIncidentIntelligenceArtifact(
+    input: UpsertIncidentIntelligenceArtifactInput,
+  ): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO incident_intelligence_artifacts (
+          artifact_id,
+          incident_id,
+          dedupe_key,
+          artifact_type,
+          provider,
+          title,
+          summary,
+          url,
+          thumbnail_url,
+          author,
+          published_at,
+          captured_at,
+          location,
+          verification_status,
+          confidence,
+          source_urls,
+          metadata
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+          $11, $12,
+          CASE
+            WHEN $13::double precision IS NULL OR $14::double precision IS NULL THEN NULL
+            ELSE ST_SetSRID(ST_MakePoint($14, $13), 4326)
+          END,
+          $15, $16, $17, $18::jsonb
+        )
+        ON CONFLICT (incident_id, dedupe_key)
+        DO UPDATE SET
+          artifact_type = EXCLUDED.artifact_type,
+          provider = EXCLUDED.provider,
+          title = EXCLUDED.title,
+          summary = EXCLUDED.summary,
+          url = EXCLUDED.url,
+          thumbnail_url = EXCLUDED.thumbnail_url,
+          author = EXCLUDED.author,
+          published_at = EXCLUDED.published_at,
+          captured_at = EXCLUDED.captured_at,
+          location = EXCLUDED.location,
+          verification_status = EXCLUDED.verification_status,
+          confidence = EXCLUDED.confidence,
+          source_urls = EXCLUDED.source_urls,
+          metadata = EXCLUDED.metadata
+      `,
+      [
+        randomUUID(),
+        input.incident_id,
+        input.dedupe_key,
+        input.artifact_type,
+        input.provider,
+        input.title,
+        input.summary ?? "",
+        input.url,
+        input.thumbnail_url ?? null,
+        input.author ?? null,
+        input.published_at ?? null,
+        input.captured_at ?? new Date().toISOString(),
+        input.lat ?? null,
+        input.lon ?? null,
+        input.verification_status,
+        input.confidence,
+        input.source_urls ?? [],
+        JSON.stringify(input.metadata ?? {}),
+      ],
+    );
+  }
+
+  async listIncidentIntelligenceArtifacts(
+    incidentId: string,
+  ): Promise<IncidentIntelligenceArtifact[]> {
+    const result = await this.database.pool.query<IncidentIntelligenceArtifactRow>(
+      `
+        SELECT
+          artifact_id,
+          incident_id,
+          dedupe_key,
+          artifact_type,
+          provider,
+          title,
+          summary,
+          url,
+          thumbnail_url,
+          author,
+          published_at,
+          captured_at,
+          CASE WHEN location IS NOT NULL THEN ST_Y(location) ELSE NULL END AS lat,
+          CASE WHEN location IS NOT NULL THEN ST_X(location) ELSE NULL END AS lon,
+          verification_status,
+          confidence,
+          source_urls,
+          metadata,
+          created_at,
+          updated_at
+        FROM incident_intelligence_artifacts
+        WHERE incident_id = $1
+        ORDER BY COALESCE(published_at, captured_at) DESC, created_at DESC
+      `,
+      [incidentId],
+    );
+
+    return result.rows.map(mapIncidentIntelligenceArtifactRow);
+  }
+
+  async upsertIncidentWidgetManifest(input: UpsertIncidentWidgetManifestInput): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO incident_widget_manifests (
+          widget_id,
+          incident_id,
+          widget_key,
+          widget_type,
+          title,
+          layout,
+          priority,
+          status,
+          generated_by,
+          spec
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+        ON CONFLICT (incident_id, widget_key)
+        DO UPDATE SET
+          widget_type = EXCLUDED.widget_type,
+          title = EXCLUDED.title,
+          layout = EXCLUDED.layout,
+          priority = EXCLUDED.priority,
+          status = EXCLUDED.status,
+          generated_by = EXCLUDED.generated_by,
+          spec = EXCLUDED.spec
+      `,
+      [
+        randomUUID(),
+        input.incident_id,
+        input.widget_key,
+        input.widget_type,
+        input.title,
+        input.layout,
+        input.priority ?? 100,
+        input.status ?? "active",
+        input.generated_by,
+        JSON.stringify(input.spec),
+      ],
+    );
+  }
+
+  async listIncidentWidgetManifests(incidentId: string): Promise<IncidentWidgetManifest[]> {
+    const result = await this.database.pool.query<IncidentWidgetManifestRow>(
+      `
+        SELECT
+          widget_id,
+          incident_id,
+          widget_key,
+          widget_type,
+          title,
+          layout,
+          priority,
+          status,
+          generated_by,
+          spec,
+          created_at,
+          updated_at
+        FROM incident_widget_manifests
+        WHERE incident_id = $1
+        ORDER BY priority ASC, updated_at DESC
+      `,
+      [incidentId],
+    );
+
+    return result.rows.map(mapIncidentWidgetManifestRow);
+  }
+
+  async createIncidentIntelligenceRun(input: CreateIncidentIntelligenceRunInput): Promise<void> {
+    await this.database.pool.query(
+      `
+        INSERT INTO incident_intelligence_runs (
+          run_id,
+          incident_id,
+          provider,
+          run_type,
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          stats
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+        ON CONFLICT (run_id)
+        DO UPDATE SET
+          provider = EXCLUDED.provider,
+          run_type = EXCLUDED.run_type,
+          status = EXCLUDED.status,
+          started_at = EXCLUDED.started_at,
+          completed_at = EXCLUDED.completed_at,
+          error_message = EXCLUDED.error_message,
+          stats = EXCLUDED.stats
+      `,
+      [
+        input.run_id,
+        input.incident_id,
+        input.provider,
+        input.run_type,
+        input.status,
+        input.started_at,
+        input.completed_at ?? null,
+        input.error_message ?? null,
+        JSON.stringify(input.stats ?? {}),
+      ],
+    );
+  }
+
+  async listIncidentIntelligenceRuns(incidentId: string): Promise<IncidentIntelligenceRun[]> {
+    const result = await this.database.pool.query<IncidentIntelligenceRunRow>(
+      `
+        SELECT
+          run_id,
+          incident_id,
+          provider,
+          run_type,
+          status,
+          started_at,
+          completed_at,
+          error_message,
+          stats,
+          created_at,
+          updated_at
+        FROM incident_intelligence_runs
+        WHERE incident_id = $1
+        ORDER BY started_at DESC
+      `,
+      [incidentId],
+    );
+
+    return result.rows.map(mapIncidentIntelligenceRunRow);
+  }
+
+  async getIncidentIntelligenceBundle(incidentId: string): Promise<IncidentIntelligenceBundle> {
+    const [artifacts, widgets, runs] = await Promise.all([
+      this.listIncidentIntelligenceArtifacts(incidentId),
+      this.listIncidentWidgetManifests(incidentId),
+      this.listIncidentIntelligenceRuns(incidentId),
+    ]);
+
+    return {
+      incident_id: incidentId,
+      artifacts,
+      widgets,
+      runs,
     };
   }
 

@@ -12,6 +12,11 @@ import {
   validateCameraObservationIngestionInput,
   validateFixtureTelemetryIngestionInput,
 } from "../../../packages/ingestion/src/index.js";
+import {
+  type IncidentIntelligenceCollector,
+  refreshIncidentIntelligence,
+  refreshOpenIncidentIntelligence,
+} from "../../../packages/intelligence/src/index.js";
 import type { Logger } from "../../../packages/logging/src/index.js";
 import { createLogger } from "../../../packages/logging/src/index.js";
 import {
@@ -65,6 +70,7 @@ interface ApiServerOptions {
   connection_string: string;
   clock?: Clock;
   disableLiveWorldService?: boolean;
+  incidentIntelligenceCollectors?: IncidentIntelligenceCollector[];
 }
 
 class InvalidJsonBodyError extends Error {
@@ -162,9 +168,9 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function parseBoundsFromSearchParams(url: URL):
-  | { west: number; south: number; east: number; north: number }
-  | null {
+function parseBoundsFromSearchParams(
+  url: URL,
+): { west: number; south: number; east: number; north: number } | null {
   const west = url.searchParams.get("west");
   const south = url.searchParams.get("south");
   const east = url.searchParams.get("east");
@@ -192,6 +198,7 @@ async function materializeLiveEventForStream(
   event: LiveEvent,
   persistence: PostgresPersistenceGateway,
   bounds?: { west: number; south: number; east: number; north: number } | null,
+  previousLayerSnapshots?: Map<string, Map<string, string>>,
 ): Promise<LiveEvent> {
   if (event.type !== "external_layer_update") {
     return event;
@@ -206,6 +213,42 @@ async function materializeLiveEventForStream(
   };
 
   const events = await persistence.fetchExternalDataEvents(payload.layer_id, bounds ?? undefined);
+  const currentSnapshot = new Map<string, string>();
+  for (const item of events) {
+    const key = String(item.external_id || item.event_id);
+    currentSnapshot.set(key, JSON.stringify(item));
+  }
+
+  const previousSnapshot = previousLayerSnapshots?.get(payload.layer_id);
+  if (previousSnapshot) {
+    const upserts = events.filter((item) => {
+      const key = String(item.external_id || item.event_id);
+      return previousSnapshot.get(key) !== currentSnapshot.get(key);
+    });
+    const removedExternalIds = Array.from(previousSnapshot.keys()).filter(
+      (key) => !currentSnapshot.has(key),
+    );
+
+    previousLayerSnapshots?.set(payload.layer_id, currentSnapshot);
+
+    return {
+      type: "external_layer_delta_update",
+      timestamp: event.timestamp,
+      sequence: event.sequence,
+      payload: {
+        layer_id: payload.layer_id,
+        status: payload.status,
+        count: events.length,
+        total_count: payload.count,
+        last_update: payload.last_update,
+        error_message: payload.error_message,
+        upserts,
+        removed_external_ids: removedExternalIds,
+      },
+    };
+  }
+
+  previousLayerSnapshots?.set(payload.layer_id, currentSnapshot);
 
   return {
     type: "external_layer_snapshot_update",
@@ -300,6 +343,7 @@ function writeSwanUnavailable(response: ServerResponse, missingTables?: string[]
 
 export async function createApiServer(options: ApiServerOptions): Promise<RunningApiServer> {
   const logger = createLogger("api-server");
+  const incidentIntelligenceLogger = createLogger("incident-intelligence");
   const persistence = PostgresPersistenceGateway.fromConnectionString(options.connection_string);
   const clock = options.clock ?? systemClock;
   const config = getConfigFromEnv();
@@ -381,6 +425,48 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         autoRefreshExternalLayers: config.autoRefreshExternalLayers,
       });
   await liveWorldService.start();
+  let incidentIntelligenceInterval: NodeJS.Timeout | null = null;
+
+  async function publishIncidentIntelligenceUpdate(input: {
+    incident_id: string;
+    artifact_count: number;
+    widget_count: number;
+    run_count: number;
+    updated_at: string;
+  }): Promise<void> {
+    liveEventBus.publish({
+      type: "incident_intelligence_update",
+      timestamp: input.updated_at,
+      payload: input,
+    });
+  }
+
+  if (config.autoRefreshIncidentIntelligence) {
+    const runIncidentSweep = async () => {
+      try {
+        const sweep = await refreshOpenIncidentIntelligence({
+          persistence,
+          logger: incidentIntelligenceLogger,
+          collectors: options.incidentIntelligenceCollectors,
+          youtubeApiKey: config.youtubeApiKey,
+          limit: config.incidentIntelligenceMaxIncidentsPerSweep,
+        });
+
+        for (const result of sweep.refreshed) {
+          await publishIncidentIntelligenceUpdate(result);
+        }
+      } catch (error) {
+        incidentIntelligenceLogger.warn("Incident intelligence sweep failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+
+    incidentIntelligenceInterval = setInterval(
+      runIncidentSweep,
+      config.incidentIntelligenceRefreshMs,
+    );
+  }
 
   async function waitForActiveRequestsToDrain(timeoutMs = 30000): Promise<void> {
     if (activeRequestCount === 0) {
@@ -995,12 +1081,18 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           const sinceSequence = Number.parseInt(url.searchParams.get("since_sequence") ?? "0", 10);
           const bounds = parseBoundsFromSearchParams(url);
           let closed = false;
+          const previousLayerSnapshots = new Map<string, Map<string, string>>();
 
           const writeEvent = async (event: LiveEvent) => {
             if (closed) {
               return;
             }
-            const outgoing = await materializeLiveEventForStream(event, persistence, bounds);
+            const outgoing = await materializeLiveEventForStream(
+              event,
+              persistence,
+              bounds,
+              previousLayerSnapshots,
+            );
             if (!closed) {
               response.write(`data: ${JSON.stringify(outgoing)}\n\n`);
             }
@@ -1329,11 +1421,8 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
               return;
             }
 
-            const result = await refreshExternalDataLayer(
-              layerId,
-              persistence,
-              logger,
-              (event) => liveEventBus.publish(event),
+            const result = await refreshExternalDataLayer(layerId, persistence, logger, (event) =>
+              liveEventBus.publish(event),
             );
             writeJson(response, result.success ? 200 : 503, result);
             return;
@@ -1413,6 +1502,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           !url.pathname.includes("/links") &&
           !url.pathname.includes("/capture-jobs") &&
           !url.pathname.includes("/evidence") &&
+          !url.pathname.includes("/intelligence") &&
           !url.pathname.includes("/capture-status")
         ) {
           const incidentId = url.pathname.replace("/incidents/", "");
@@ -1838,6 +1928,52 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           return;
         }
 
+        // GET /incidents/:id/intelligence
+        if (request.method === "GET" && url.pathname.match(/^\/incidents\/[^/]+\/intelligence$/)) {
+          const incidentId = url.pathname.split("/")[2];
+          const incident = await persistence.fetchIncident(incidentId);
+
+          if (!incident) {
+            writeJson(response, 404, { error: "incident not found" });
+            return;
+          }
+
+          const intelligence = await persistence.getIncidentIntelligenceBundle(incidentId);
+          writeJson(response, 200, intelligence);
+          return;
+        }
+
+        // POST /incidents/:id/intelligence/refresh
+        if (
+          request.method === "POST" &&
+          url.pathname.match(/^\/incidents\/[^/]+\/intelligence\/refresh$/)
+        ) {
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const incidentId = url.pathname.split("/")[2];
+          const incident = await persistence.fetchIncident(incidentId);
+
+          if (!incident) {
+            writeJson(response, 404, { error: "incident not found" });
+            return;
+          }
+
+          const result = await refreshIncidentIntelligence({
+            incident,
+            persistence,
+            logger: incidentIntelligenceLogger,
+            collectors: options.incidentIntelligenceCollectors,
+            youtubeApiKey: config.youtubeApiKey,
+          });
+
+          await publishIncidentIntelligenceUpdate(result);
+          writeJson(response, 200, result);
+          return;
+        }
+
         // GET /incidents/:id/capture-status
         if (
           request.method === "GET" &&
@@ -2163,6 +2299,10 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
     async close() {
       logger.info("Shutting down API server");
       closing = true;
+      if (incidentIntelligenceInterval) {
+        clearInterval(incidentIntelligenceInterval);
+        incidentIntelligenceInterval = null;
+      }
       await liveWorldService.close();
       await swanService?.close();
       await new Promise<void>((resolve, reject) => {
@@ -2188,6 +2328,7 @@ export async function startApiServer(options: {
   port?: number;
   clock?: Clock;
   skipConfigValidation?: boolean;
+  incidentIntelligenceCollectors?: IncidentIntelligenceCollector[];
 }): Promise<RunningApiServer & { port: number }> {
   if (!options.skipConfigValidation) {
     const config = getConfigFromEnv();

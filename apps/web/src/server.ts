@@ -68,9 +68,7 @@ function getContentType(pathname: string): string {
   }
 }
 
-function normalizeMapImageryConfig(
-  mapImagery?: Partial<MapImageryConfig>,
-): MapImageryConfig {
+function normalizeMapImageryConfig(mapImagery?: Partial<MapImageryConfig>): MapImageryConfig {
   return {
     provider: mapImagery?.provider?.trim() || "arcgis-world-imagery",
     url: mapImagery?.url?.trim() || null,
@@ -82,9 +80,7 @@ function normalizeMapImageryConfig(
   };
 }
 
-function normalizeStreetSceneConfig(
-  streetScene?: Partial<StreetSceneConfig>,
-): StreetSceneConfig {
+function normalizeStreetSceneConfig(streetScene?: Partial<StreetSceneConfig>): StreetSceneConfig {
   return {
     provider: streetScene?.provider?.trim() || "none",
     ionToken: streetScene?.ionToken?.trim() || null,
@@ -104,10 +100,7 @@ export function createWebServer(options: { app_config: WebAppConfig }): RunningW
     try {
       if (url.pathname === "/" || url.pathname === "/index.html") {
         const template = await readFile(new URL("index.html", publicRoot), "utf8");
-        const html = template.replaceAll(
-          "__APP_CONFIG_JSON__",
-          JSON.stringify(options.app_config),
-        );
+        const html = template.replaceAll("__APP_CONFIG_JSON__", JSON.stringify(options.app_config));
         response.statusCode = 200;
         response.setHeader("Content-Type", "text/html; charset=utf-8");
         response.setHeader("Cache-Control", "no-store");

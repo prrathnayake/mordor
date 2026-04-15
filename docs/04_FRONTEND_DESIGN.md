@@ -87,6 +87,8 @@ Contains:
 - show relative freshness at layer level so operators can see when each feed last refreshed
 - reconnect scoped live subscriptions when the operator changes viewport enough that overlay
   relevance changes materially
+- prefer differential overlay updates over full snapshot replacement once a viewport-scoped
+  subscription has been established
 
 ### Replay mode
 - render only from historical event stream
@@ -194,3 +196,17 @@ UI enrichment rules:
 - only `cross_checked` and `trusted_source` findings may surface as notifications or map overlays
 - replay mode may still receive Swan enrichment updates, but live object-state rendering remains scoped to live mode only
 - reload must rehydrate the current Swan projections from artifact endpoints before waiting for new stream events
+
+## Incident intelligence widgets
+Incident intelligence is rendered inside the existing incident panel rather than by injecting new
+free-form DOM roots. The current UI rules are:
+
+- the client reads widget manifests from `GET /incidents/:id/intelligence`
+- the incident panel renders only known widget types such as summary, map context, related
+  articles, media gallery, provenance, and pattern brief
+- live `incident_intelligence_update` events should refresh only the currently open incident
+- manual refresh is an explicit authenticated action through the incident panel
+- internet-derived titles, summaries, and links must be escaped or rendered from structured fields only
+- map-context widgets may place scoped incident-intelligence markers on the globe, but those
+  markers must come from structured widget specs and cleaned geometry helpers rather than raw
+  generated HTML

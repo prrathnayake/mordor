@@ -8,6 +8,7 @@ Chrona Twin is a browser-based geospatial digital twin for operational monitorin
 - serving live and replay views of object state over a tactical Cesium-based UI
 - generating alerts and linking them to evidence
 - supporting incident playback, capture jobs, external data overlays, and SWAN advisory intelligence
+- enriching incidents with public-source intelligence artifacts and declarative widget manifests
 
 ## Current Architecture
 
@@ -28,6 +29,7 @@ apps/api
 
 apps/worker
   -> fixture-oriented ingestion job wrapper
+  -> incident-intelligence sweep job
 
 packages/*
   -> adapters + contracts + domain projection
@@ -85,6 +87,7 @@ The worker is currently narrow and fixture-driven. It wraps fixture telemetry in
 - `packages/domain`: deterministic object-state projection
 - `packages/external-data`: adapters for flights, earthquakes, satellites, weather, bikeshare, and traffic
 - `packages/ingestion`: validation, dedupe, quarantine, and canonical write orchestration
+- `packages/intelligence`: public-source incident enrichment collectors and widget generation
 - `packages/live-world`: in-memory or Redis-backed live snapshot cache
 - `packages/logging`: structured logger
 - `packages/persistence`: Postgres/PostGIS gateway and migrations runner
@@ -123,6 +126,14 @@ The worker is currently narrow and fixture-driven. It wraps fixture telemetry in
 3. SWAN projections are stored separately from canonical truth and published through shared live channels.
 4. The UI renders SWAN context as advisory overlays and notifications.
 
+### Incident Intelligence
+
+1. An operator or background refresh loop requests incident intelligence for an open incident.
+2. `packages/intelligence` queries public-source collectors for articles, images, and optional videos.
+3. Normalized artifacts, run records, and declarative widget manifests are written through `packages/persistence`.
+4. The API emits `incident_intelligence_update` on the shared live event bus.
+5. The incident panel reloads its intelligence bundle and renders the known widget types.
+
 ## Storage Model
 
 Important persisted areas include:
@@ -133,6 +144,8 @@ Important persisted areas include:
 - alert workflow: `alerts`
 - incident investigation: `incidents`, `incident_chapters`, `incident_links`
 - evidence capture: `capture_jobs`, `capture_snapshots`, `evidence_freeze`
+- incident intelligence: `incident_intelligence_artifacts`, `incident_intelligence_runs`,
+  `incident_widget_manifests`
 - external overlays: `external_data_layers`, `external_data_events`
 - inferred intelligence: `inferred_events`, `degradation_zones`, related tables
 - SWAN advisory state: `swan_sessions`, `swan_activity_events`, `swan_threads`, `swan_findings`, `swan_artifacts`

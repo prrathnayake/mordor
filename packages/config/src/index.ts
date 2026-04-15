@@ -12,6 +12,10 @@ export interface AppConfig {
   liveFlightHistoryPoints: number;
   liveFlightLimit: number;
   autoRefreshExternalLayers: boolean;
+  autoRefreshIncidentIntelligence: boolean;
+  incidentIntelligenceRefreshMs: number;
+  incidentIntelligenceMaxIncidentsPerSweep: number;
+  youtubeApiKey: string | null;
   swanArtifactRoot: string;
   swanMaxThreadsPerSession: number;
   swanMaxGlobalThreads: number;
@@ -49,6 +53,15 @@ export function getConfigFromEnv(): AppConfig {
     ? Number.parseInt(process.env.LIVE_FLIGHT_LIMIT, 10)
     : 7000;
   const autoRefreshExternalLayers = process.env.AUTO_REFRESH_EXTERNAL_LAYERS !== "false";
+  const autoRefreshIncidentIntelligence = process.env.AUTO_REFRESH_INCIDENT_INTELLIGENCE === "true";
+  const incidentIntelligenceRefreshMs = process.env.INCIDENT_INTELLIGENCE_REFRESH_MS
+    ? Number.parseInt(process.env.INCIDENT_INTELLIGENCE_REFRESH_MS, 10)
+    : 300000;
+  const incidentIntelligenceMaxIncidentsPerSweep = process.env
+    .INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP
+    ? Number.parseInt(process.env.INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP, 10)
+    : 10;
+  const youtubeApiKey = process.env.YOUTUBE_API_KEY || null;
   const swanArtifactRoot = process.env.SWAN_ARTIFACT_ROOT || "./runtime/swan";
   const swanMaxThreadsPerSession = process.env.SWAN_MAX_THREADS_PER_SESSION
     ? Number.parseInt(process.env.SWAN_MAX_THREADS_PER_SESSION, 10)
@@ -83,6 +96,10 @@ export function getConfigFromEnv(): AppConfig {
     liveFlightHistoryPoints,
     liveFlightLimit,
     autoRefreshExternalLayers,
+    autoRefreshIncidentIntelligence,
+    incidentIntelligenceRefreshMs,
+    incidentIntelligenceMaxIncidentsPerSweep,
+    youtubeApiKey,
     swanArtifactRoot,
     swanMaxThreadsPerSession,
     swanMaxGlobalThreads,
@@ -125,6 +142,20 @@ export function validateConfig(config: AppConfig): ConfigValidationResult {
 
   if (!Number.isInteger(config.liveFlightLimit) || config.liveFlightLimit < 100) {
     errors.push("LIVE_FLIGHT_LIMIT must be at least 100");
+  }
+
+  if (
+    !Number.isInteger(config.incidentIntelligenceRefreshMs) ||
+    config.incidentIntelligenceRefreshMs < 60000
+  ) {
+    errors.push("INCIDENT_INTELLIGENCE_REFRESH_MS must be at least 60000");
+  }
+
+  if (
+    !Number.isInteger(config.incidentIntelligenceMaxIncidentsPerSweep) ||
+    config.incidentIntelligenceMaxIncidentsPerSweep < 1
+  ) {
+    errors.push("INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP must be at least 1");
   }
 
   if (!config.swanArtifactRoot) {

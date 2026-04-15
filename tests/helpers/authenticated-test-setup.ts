@@ -1,5 +1,6 @@
 import { startApiServer } from "../../apps/api/src/index.js";
 import { authenticate } from "../../packages/auth/src/index.js";
+import type { IncidentIntelligenceCollector } from "../../packages/intelligence/src/index.js";
 import { startPostgresTestEnvironment } from "./postgres-test-environment.js";
 
 export interface AuthenticatedTestSetup {
@@ -10,11 +11,14 @@ export interface AuthenticatedTestSetup {
   adminToken: string;
 }
 
-export async function setupAuthenticatedApi(): Promise<AuthenticatedTestSetup> {
+export async function setupAuthenticatedApi(input?: {
+  incidentIntelligenceCollectors?: IncidentIntelligenceCollector[];
+}): Promise<AuthenticatedTestSetup> {
   const environment = await startPostgresTestEnvironment();
   const api = await startApiServer({
     connection_string: environment.connection_string,
     skipConfigValidation: true,
+    incidentIntelligenceCollectors: input?.incidentIntelligenceCollectors,
   });
 
   const viewerAuth = authenticate("viewer", "viewer123");
