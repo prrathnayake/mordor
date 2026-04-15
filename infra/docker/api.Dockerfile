@@ -5,7 +5,7 @@ WORKDIR /app
 FROM base AS deps
 
 COPY package.json package-lock.json ./
-RUN npm ci --include=workspace
+RUN npm ci --include=workspace || npm ci --include=workspace || npm ci --include=workspace
 
 FROM base AS builder
   COPY --from=deps /app/node_modules ./node_modules

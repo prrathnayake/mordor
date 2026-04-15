@@ -5,7 +5,7 @@ WORKDIR /app
 FROM base AS builder
 
 COPY package.json package-lock.json ./
-RUN npm ci --include=workspace
+RUN npm ci --include=workspace || npm ci --include=workspace || npm ci --include=workspace
 
 COPY . .
 RUN npm run typecheck
