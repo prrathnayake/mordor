@@ -123,6 +123,12 @@ proceed
 ### Assistant Final Response Summary
 Added viewport-scoped live subscriptions for external overlays by having the API SSE endpoint transform `external_layer_update` events into subscriber-specific `external_layer_snapshot_update` payloads filtered to the connection’s bounds, reconnecting the browser EventSource when the viewport changes materially, updating the live-event/API/frontend docs to describe the new behavior, and verifying with `node --check apps/web/public/app.js`, `npm run typecheck`, and focused integration tests for both live SSE resilience and bounded external-event reads.
 
+## 2026-04-14 12:50:28 +10:00
+### User Message
+proceed
+### Assistant Final Response Summary
+Reduced ongoing live overlay payload size by adding an `external_layer_delta_update` SSE message after the first viewport-scoped snapshot, computing per-connection overlay deltas in the API, storing a small per-layer event cache in the browser so it can apply upserts and removals safely, updating the live-event/frontend docs for differential subscriptions, and verifying the flow with `node --check apps/web/public/app.js`, `npm run typecheck`, and focused integration tests.
+
 ## 2026-04-14 12:24:28 +10:00
 ### User Message
 this this project we have diffent sources to fetch live informations for analyse and show on UI. check current sources. do a research to find other inportant source that can collect real information to make this application on place to analyse golbal informations to identify pattens in future.
@@ -164,3 +170,15 @@ Reviewed the current web client architecture and identified the safe extension s
 for now im mailnly targeting collect multiple informations from multiple sources to to create world simulation. as an example currently usa and iran having war. so through this platform i should be able to monitor something like , what happening iran where bombing happens, when i select that incident i should able to view location on the map and show other related informations and videos an d imagescollected from internet. spwan multi agent harness responsible for collecting and storing information live 24/7. so find ways to fetch videos, news, images and other informations. agents should have tools to create components in UI when need to show informations. so basically agent collect analyse and find pattens while updating UI dashboard, self creating UI components to expand UI itself when informations are collelected.
 ### Assistant Final Response Summary
 Verified the geopolitical example cautiously, used parallel repo explorers to map the ingestion and UI seams, and designed a repo-aligned 24/7 public-source intelligence harness with authoritative event collectors, media/news/image enrichment agents, provenance-aware incident and evidence storage, live SSE/SWAN-driven dashboard updates, and schema-backed agent-generated UI manifests instead of unsafe arbitrary self-modifying frontend code.
+
+## 2026-04-14 12:58:59 +10:00
+### User Message
+proceed and cteate test senarios for complex testing
+### Assistant Final Response Summary
+Added richer live-stream integration coverage in `tests/integration/live-resilience.spec.ts`, including reconnect backfill ordering against current persisted overlay state, per-layer snapshot isolation on one SSE connection, and viewport-scoped delta/removal behavior so the live external-layer pipeline is exercised under more realistic race and sequencing conditions; verified with `npm run typecheck` and `npx vitest run tests/integration/live-resilience.spec.ts tests/integration/external-data-api.spec.ts`.
+
+## 2026-04-15 13:59:58 +10:00
+### User Message
+continue
+### Assistant Final Response Summary
+Continued the incident-intelligence implementation by adding spatial `map_context` fusion and tactical globe rendering for incident AOIs plus geolocated intelligence artifacts, updated the related docs, and verified the new stage with `node --check apps/web/public/app.js`, `npm run typecheck`, and a new focused unit test while noting the existing integration specs are blocked locally by missing Testcontainers runtime support.
