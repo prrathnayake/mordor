@@ -21,6 +21,7 @@
     "worker:fixture": "tsx apps/worker/src/index.ts",
     "agent:collector": "AGENT_MODE=collector tsx --env-file=.env apps/agents/src/index.ts",
     "agent:detector": "AGENT_MODE=detector tsx --env-file=.env apps/agents/src/index.ts",
+    "agent:publisher": "AGENT_MODE=publisher tsx --env-file=.env apps/agents/src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check . --no-errors-on-unmatched",
     "format": "biome format --write .",

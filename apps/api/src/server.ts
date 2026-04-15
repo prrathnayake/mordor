@@ -1809,15 +1809,57 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           }
 
           await persistence.startCaptureJob(captureJobId);
-          const result = await runCaptureJob(persistence, captureJobId, logger);
+          await runCaptureJob(persistence, captureJobId, logger);
           const updatedJob = await persistence.getCaptureJob(captureJobId);
 
           writeJson(response, 200, {
             capture_job: updatedJob,
-            capture_result: result,
           });
           return;
         }
+
+        // GET /insights - list recent insights
+        if (request.method === "GET" && url.pathname === "/insights") {
+          const urlParams = url.searchParams;
+          const limit = Math.min(parseInt(urlParams.get("limit") || "50", 10), 200);
+          const severity = urlParams.get("severity")?.split(",").filter(Boolean);
+          const publishedOnly = urlParams.get("published") !== "false";
+
+          const insights = await persistence.listAgentInsights({
+            limit,
+            severity: severity as string[] | undefined,
+            publishedOnly,
+          });
+
+          writeJson(response, 200, { insights });
+          return;
+        }
+
+        // GET /insights/stream - SSE stream for live insights
+        if (request.method === "GET" && url.pathname === "/insights/stream") {
+          response.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          });
+
+          const heartbeat = setInterval(() => {
+            response.write(`: heartbeat\n\n`);
+          }, 30000);
+
+          const unsubscribe = liveEventBus.subscribe((event) => {
+            response.write(`data: ${JSON.stringify(event)}\n\n`);
+          });
+
+          request.on("close", () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+          });
+
+          return;
+        }
+
+        // POST /insights - manually trigger insight generation
 
         // POST /capture-jobs/:id/complete
         if (request.method === "POST" && url.pathname.match(/^\/capture-jobs\/[^/]+\/complete$/)) {

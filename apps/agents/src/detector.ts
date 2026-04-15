@@ -92,6 +92,8 @@ export class DetectorAgent extends BaseAgentWorker {
         eventStatus: "candidate",
         runId: "",
         hypothesisId: null,
+        freshnessMs: 60000,
+        expiresAt: null,
       };
     }
 

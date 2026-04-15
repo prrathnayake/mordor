@@ -3298,4 +3298,30 @@ export class PostgresPersistenceGateway
       distance_m: Number(row.distance_m),
     };
   }
+
+  async listAgentInsights(input: {
+    limit: number;
+    severity?: string[];
+    publishedOnly?: boolean;
+  }): Promise<Array<Record<string, unknown>>> {
+    let query = `SELECT * FROM agent_insights WHERE 1=1`;
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (input.severity && input.severity.length > 0) {
+      query += ` AND severity = ANY($${paramIndex}::text[])`;
+      params.push(input.severity);
+      paramIndex++;
+    }
+
+    if (input.publishedOnly) {
+      query += ` AND published = true`;
+    }
+
+    query += ` ORDER BY timestamp DESC LIMIT $${paramIndex}`;
+    params.push(input.limit);
+
+    const result = await this.database.pool.query(query, params);
+    return result.rows;
+  }
 }

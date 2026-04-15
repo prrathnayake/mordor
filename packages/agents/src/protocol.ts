@@ -196,3 +196,79 @@ export interface AgentTaskInput {
   payload: Record<string, unknown>;
   parentTaskId?: TaskId | null;
 }
+
+/** Structured hypothesis type from detector */
+export type HypothesisType =
+  | "traffic_spike"
+  | "holding_pattern"
+  | "absence_signal"
+  | "route_deviation"
+  | "velocity_anomaly"
+  | "spatial_cluster"
+  | "geofence_breach";
+
+/** Typed hypothesis from detectors - more structured than generic anomaly */
+export interface TypedHypothesis {
+  id: string;
+  hypothesisType: HypothesisType;
+  type: "anomaly" | "correlation" | "incident" | "trend";
+  title: string;
+  description: string;
+  severity: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  score: number;
+  location: { lat: number; lon: number } | null;
+  entityIds: EntityId[];
+  evidenceRefs: string[];
+  relatedEventIds: string[];
+  sourceRefs: string[];
+  createdAt: string;
+  status: EventStatus;
+  runId: RunId;
+  regionKey: string | null;
+}
+
+/** Enhanced insight with freshness and lifecycle */
+export interface AgentInsight {
+  id: string;
+  type: "anomaly" | "correlation" | "prediction" | "absence" | "trend_shift";
+  severity: "low" | "medium" | "high" | "critical";
+  title: string;
+  description: string;
+  location: { lat: number; lon: number } | null;
+  entities: EntityId[];
+  confidence: number;
+  timestamp: string;
+  published: boolean;
+  eventStatus: EventStatus;
+  runId: RunId;
+  hypothesisId: string | null;
+  freshnessMs: number;
+  expiresAt: string | null;
+}
+
+/** UI event type for frontend */
+export type UIEventType = "map_popup" | "event_log" | "inspector_update" | "alert_badge";
+
+/** Action available to user on insight */
+export interface UIInsightAction {
+  id: string;
+  label: string;
+  actionType: "inspect" | "track" | "dismiss" | "open_timeline";
+}
+
+/** UI-ready insight event payload */
+export interface UIInsightEvent {
+  id: string;
+  type: UIEventType;
+  insightId: string;
+  severity: "low" | "medium" | "high" | "critical";
+  title: string;
+  message: string;
+  location: { lat: number; lng: number } | null;
+  entityIds: string[];
+  confidence: number;
+  timestamp: string;
+  ttlMs: number | null;
+  actions: UIInsightAction[];
+}

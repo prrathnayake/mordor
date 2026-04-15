@@ -138,5 +138,24 @@ services:
         condition: service_healthy
     command: npx tsx apps/agents/src/index.ts
 
+  agent-publisher:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      target: runner
+    container_name: mordor-agent-publisher
+    environment:
+      NODE_ENV: production
+      AGENT_MODE: publisher
+      AGENT_ID: publisher-01
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npx tsx apps/agents/src/index.ts
+
 volumes:
   postgres_data:

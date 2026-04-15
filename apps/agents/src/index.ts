@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { CollectorAgent, createCollectorAgent } from "./collector.js";
 import { createDetectorAgent, DetectorAgent } from "./detector.js";
+import { createPublisherAgent, PublisherAgent } from "./publisher.js";
 import type { BaseAgentWorker } from "./worker.js";
 
 const AGENT_MODE = process.env.AGENT_MODE || "collector";
@@ -37,6 +38,15 @@ async function main() {
         redisUrl: REDIS_URL,
       });
       worker = new DetectorAgent(config);
+      break;
+    }
+    case "publisher": {
+      const config = createPublisherAgent({
+        agentId: AGENT_ID,
+        databaseUrl: DATABASE_URL,
+        redisUrl: REDIS_URL,
+      });
+      worker = new PublisherAgent(config);
       break;
     }
     default:
