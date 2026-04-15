@@ -1859,7 +1859,71 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           return;
         }
 
-        // POST /insights - manually trigger insight generation
+        // POST /insights/:id/acknowledge
+        if (request.method === "POST" && url.pathname.match(/^\/insights\/[^/]+\/acknowledge$/)) {
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const insightId = url.pathname.split("/")[2];
+          await persistence.acknowledgeInsight(insightId, authContext.user.user_id);
+          writeJson(response, 200, { success: true, insightId });
+          return;
+        }
+
+        // POST /insights/:id/dismiss
+        if (request.method === "POST" && url.pathname.match(/^\/insights\/[^/]+\/dismiss$/)) {
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const insightId = url.pathname.split("/")[2];
+          await persistence.dismissInsight(insightId, authContext.user.user_id);
+          writeJson(response, 200, { success: true, insightId });
+          return;
+        }
+
+        // POST /insights/:id/resolve
+        if (request.method === "POST" && url.pathname.match(/^\/insights\/[^/]+\/resolve$/)) {
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const insightId = url.pathname.split("/")[2];
+          const body = (await readJsonBody(request)) as { resolution?: string };
+          await persistence.resolveInsight(insightId, authContext.user.user_id, body.resolution);
+          writeJson(response, 200, { success: true, insightId });
+          return;
+        }
+
+        // POST /insights/:id/snooze
+        if (request.method === "POST" && url.pathname.match(/^\/insights\/[^/]+\/snooze$/)) {
+          if (!authContext.isAuthenticated || !authContext.user) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const insightId = url.pathname.split("/")[2];
+          const body = (await readJsonBody(request)) as { durationMs?: number };
+          const durationMs = body.durationMs ?? 3600000;
+          await persistence.snoozeSimilarInsights(insightId, durationMs);
+          writeJson(response, 200, {
+            success: true,
+            insightId,
+            snoozedUntil: new Date(Date.now() + durationMs).toISOString(),
+          });
+          return;
+        }
+
+        // GET /metrics/agents - agent system metrics
+        if (request.method === "GET" && url.pathname === "/metrics/agents") {
+          const metrics = await persistence.getAgentMetrics();
+          writeJson(response, 200, metrics);
+          return;
+        }
 
         // POST /capture-jobs/:id/complete
         if (request.method === "POST" && url.pathname.match(/^\/capture-jobs\/[^/]+\/complete$/)) {

@@ -687,6 +687,125 @@ function showSwanToast(notification) {
   }, 5000);
 }
 
+const insightState = {
+  events: [],
+  unreadCount: 0,
+};
+
+function handleInsightEvent(data) {
+  const insight = data.payload || data;
+  insightState.events.unshift(insight);
+  if (insightState.events.length > 100) {
+    insightState.events.pop();
+  }
+
+  switch (insight.type) {
+    case "map_popup":
+      insightState.unreadCount++;
+      showInsightPopup(insight);
+      break;
+    case "alert_badge":
+      insightState.unreadCount++;
+      updateInsightBadge(insightState.unreadCount);
+      break;
+    case "event_log":
+      addInsightToLog(insight);
+      break;
+    case "inspector_update":
+      updateInspectorWithInsight(insight);
+      break;
+  }
+
+  if (insight.location && (insight.type === "map_popup" || insight.type === "alert_badge")) {
+    addInsightMarkerToMap(insight);
+  }
+}
+
+function showInsightPopup(insight) {
+  const popup = document.createElement("div");
+  popup.className = `insight-popup insight-popup-${insight.severity}`;
+  popup.innerHTML = `
+    <div class="insight-popup-header">
+      <span class="insight-severity-badge">${insight.severity.toUpperCase()}</span>
+      <button class="insight-popup-close">&times;</button>
+    </div>
+    <div class="insight-popup-title">${insight.title}</div>
+    <div class="insight-popup-message">${insight.message}</div>
+    <div class="insight-popup-actions">
+      ${insight.actions.map((action) => `<button class="insight-action" data-action="${action.actionType}" data-insight="${insight.insightId}">${action.label}</button>`).join("")}
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+
+  popup.querySelector(".insight-popup-close")?.addEventListener("click", () => popup.remove());
+  popup.querySelectorAll(".insight-action").forEach((btn) => {
+    btn.addEventListener("click", (e) =>
+      handleInsightAction(e.target.dataset.action, e.target.dataset.insight),
+    );
+  });
+
+  if (insight.severity === "critical") {
+    setTimeout(() => popup.remove(), 10000);
+  }
+}
+
+function updateInsightBadge(count) {
+  const badge = document.getElementById("insight-badge");
+  if (badge) {
+    badge.textContent = count;
+    badge.style.display = count > 0 ? "flex" : "none";
+  }
+}
+
+function addInsightToLog(insight) {
+  const logContainer = document.getElementById("insight-log");
+  if (!logContainer) return;
+
+  const entry = document.createElement("div");
+  entry.className = `insight-log-entry insight-log-${insight.severity}`;
+  entry.innerHTML = `
+    <span class="insight-log-time">${new Date(insight.timestamp).toLocaleTimeString()}</span>
+    <span class="insight-log-severity">[${insight.severity.toUpperCase()}]</span>
+    <span class="insight-log-title">${insight.title}</span>
+  `;
+  logContainer.insertBefore(entry, logContainer.firstChild);
+
+  while (logContainer.children.length > 50) {
+    logContainer.removeChild(logContainer.lastChild);
+  }
+}
+
+function updateInspectorWithInsight(insight) {
+  if (selectedObjectId && insight.entityIds?.includes(selectedObjectId)) {
+    const inspector = document.getElementById("inspector-insights");
+    if (inspector) {
+      inspector.innerHTML += `<div class="inspector-insight">${insight.title}</div>`;
+    }
+  }
+}
+
+function addInsightMarkerToMap(insight) {
+  if (!insight.location || !viewer) return;
+  // Add Cesium entity marker for insight location
+}
+
+async function handleInsightAction(actionType, insightId) {
+  const endpoint = `/insights/${insightId}/${actionType}`;
+  try {
+    const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+      method: "POST",
+      headers: sessionState.token ? { Authorization: `Bearer ${sessionState.token}` } : {},
+    });
+    if (response.ok) {
+      insightState.unreadCount = Math.max(0, insightState.unreadCount - 1);
+      updateInsightBadge(insightState.unreadCount);
+    }
+  } catch (error) {
+    console.error("Insight action failed:", error);
+  }
+}
+
 function showAuthModal() {
   dom.loginModal?.classList.remove("hidden");
   dom.usernameInput?.focus();
@@ -2550,6 +2669,8 @@ function connectToLiveEvents() {
             .then((artifact) => handleSwanProjectionData("notifications", artifact))
             .catch(() => {});
         }
+      } else if (data.type === "insight_published" || data.payload?.insightId) {
+        handleInsightEvent(data);
       }
     } catch {
       // Ignore parse errors

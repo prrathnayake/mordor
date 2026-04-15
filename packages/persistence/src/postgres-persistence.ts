@@ -3324,4 +3324,131 @@ export class PostgresPersistenceGateway
     const result = await this.database.pool.query(query, params);
     return result.rows;
   }
+
+  async updateInsightStatus(insightId: string, status: string): Promise<void> {
+    await this.database.pool.query(
+      `UPDATE agent_insights SET event_status = $1, updated_at = NOW() WHERE insight_id = $2`,
+      [status, insightId],
+    );
+  }
+
+  async acknowledgeInsight(insightId: string, userId: string): Promise<void> {
+    await this.database.pool.query(
+      `UPDATE agent_insights SET event_status = 'acknowledged', updated_at = NOW() WHERE insight_id = $1`,
+      [insightId],
+    );
+    await this.database.pool.query(
+      `INSERT INTO agent_events (event_id, run_id, event_type, source_agent, payload)
+       VALUES ($1, $2, 'insight.acknowledged', $3, $4)`,
+      [
+        `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        insightId,
+        userId,
+        JSON.stringify({ insightId, userId }),
+      ],
+    );
+  }
+
+  async dismissInsight(insightId: string, userId: string): Promise<void> {
+    await this.database.pool.query(
+      `UPDATE agent_insights SET event_status = 'suppressed', published = false, updated_at = NOW() WHERE insight_id = $1`,
+      [insightId],
+    );
+    await this.database.pool.query(
+      `INSERT INTO agent_events (event_id, run_id, event_type, source_agent, payload)
+       VALUES ($1, $2, 'insight.dismissed', $3, $4)`,
+      [
+        `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        insightId,
+        userId,
+        JSON.stringify({ insightId, userId }),
+      ],
+    );
+  }
+
+  async resolveInsight(insightId: string, userId: string, resolution?: string): Promise<void> {
+    await this.database.pool.query(
+      `UPDATE agent_insights SET event_status = 'resolved', updated_at = NOW() WHERE insight_id = $1`,
+      [insightId],
+    );
+    await this.database.pool.query(
+      `INSERT INTO agent_events (event_id, run_id, event_type, source_agent, payload)
+       VALUES ($1, $2, 'insight.resolved', $3, $4)`,
+      [
+        `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        insightId,
+        userId,
+        JSON.stringify({ insightId, userId, resolution }),
+      ],
+    );
+  }
+
+  async snoozeSimilarInsights(insightId: string, durationMs: number): Promise<void> {
+    const insight = await this.database.pool.query(
+      `SELECT type, entities FROM agent_insights WHERE insight_id = $1`,
+      [insightId],
+    );
+
+    if (insight.rows.length === 0) return;
+
+    const { type, entities } = insight.rows[0];
+    const snoozeUntil = new Date(Date.now() + durationMs);
+
+    await this.database.pool.query(
+      `INSERT INTO agent_snoozes (snooze_id, insight_type, entity_ids, snooze_until, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT DO NOTHING`,
+      [`snooze_${insightId}`, type, entities, snoozeUntil],
+    );
+  }
+
+  async getAgentMetrics(): Promise<Record<string, unknown>> {
+    const taskStats = await this.database.pool.query(`
+      SELECT
+        status,
+        COUNT(*) as count
+      FROM agent_tasks
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+      GROUP BY status
+    `);
+
+    const insightStats = await this.database.pool.query(`
+      SELECT
+        event_status,
+        COUNT(*) as count
+      FROM agent_insights
+      WHERE timestamp > NOW() - INTERVAL '24 hours'
+      GROUP BY event_status
+    `);
+
+    const lockStats = await this.database.pool.query(`
+      SELECT
+        COUNT(*) as active_locks,
+        COUNT(*) FILTER (WHERE expires_at < NOW()) as expired_locks
+      FROM agent_locks
+      WHERE status = 'active'
+    `);
+
+    const latencyStats = await this.database.pool.query(`
+      SELECT
+        AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000) as avg_latency_ms,
+        COUNT(*) as completed_count
+      FROM agent_tasks
+      WHERE status = 'completed'
+        AND completed_at > NOW() - INTERVAL '24 hours'
+    `);
+
+    return {
+      tasks: Object.fromEntries(taskStats.rows.map((r) => [r.status, Number(r.count)])),
+      insights: Object.fromEntries(insightStats.rows.map((r) => [r.event_status, Number(r.count)])),
+      locks: {
+        active: Number(lockStats.rows[0]?.active_locks ?? 0),
+        expired: Number(lockStats.rows[0]?.expired_locks ?? 0),
+      },
+      latency: {
+        avgMs: Number(latencyStats.rows[0]?.avg_latency_ms ?? 0),
+        completed24h: Number(latencyStats.rows[0]?.completed_count ?? 0),
+      },
+    };
+  }
 }

@@ -49,11 +49,14 @@ export type TaskStatus =
 /** Progression state of an insight/alert */
 export type EventStatus =
   | "candidate" // Initial detection
+  | "suppressed" // Below threshold or duplicate
   | "validated" // Confirmed by rules
   | "correlated" // Linked to other events
   | "approved" // Cleared for publication
   | "published" // Visible in UI
-  | "resolved"; // Addressed/closed
+  | "acknowledged" // Operator has seen it
+  | "resolved" // Addressed/closed
+  | "expired"; // Past TTL
 
 /** Priority levels for task scheduling */
 export type Priority = "low" | "medium" | "high" | "critical";
@@ -250,11 +253,21 @@ export interface AgentInsight {
 /** UI event type for frontend */
 export type UIEventType = "map_popup" | "event_log" | "inspector_update" | "alert_badge";
 
+/** Operator action types for insights */
+export type OperatorActionType =
+  | "acknowledge" // Mark as seen
+  | "dismiss" // Remove from view
+  | "resolve" // Mark as resolved
+  | "snooze" // Suppress similar for period
+  | "inspect" // Open details
+  | "track" // Track entity
+  | "open_timeline"; // Open timeline view
+
 /** Action available to user on insight */
 export interface UIInsightAction {
   id: string;
   label: string;
-  actionType: "inspect" | "track" | "dismiss" | "open_timeline";
+  actionType: OperatorActionType;
 }
 
 /** UI-ready insight event payload */
