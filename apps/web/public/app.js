@@ -81,6 +81,7 @@ const layerState = {
 const externalLayerState = {
   layers: new Map(), // layerId -> { status, count, lastUpdate, enabled, provider, errorMessage }
   entities: new Map(), // layerId -> Map of entityId -> Cesium entity
+  eventCache: new Map(), // layerId -> Map of externalId -> event
 };
 
 // Incident state
@@ -91,8 +92,16 @@ const incidentState = {
   links: [],
   markers: [],
   entities: new Map(),
+  contextEntities: new Map(),
+  intelligenceEntities: new Map(),
   captureJobs: [],
   evidence: [],
+  intelligence: {
+    artifacts: [],
+    widgets: [],
+    runs: [],
+    updatedAt: null,
+  },
   playback: {
     isPlaying: false,
     intervalId: null,
@@ -297,6 +306,9 @@ const dom = {
   captureJobList: document.getElementById("capture-job-list"),
   evidenceList: document.getElementById("evidence-list"),
   btnAddCapture: document.getElementById("btn-add-capture"),
+  incidentIntelligenceStatus: document.getElementById("incident-intelligence-status"),
+  incidentIntelligenceContent: document.getElementById("incident-intelligence-content"),
+  btnRefreshIncidentIntelligence: document.getElementById("btn-refresh-incident-intelligence"),
 
   // Inference Panel
   inferencePanel: document.getElementById("inference-panel"),
@@ -439,9 +451,9 @@ async function createBaseImageryProvider(surface = visualState.mapSurface) {
         maximumLevel: maxLevel,
       });
     case "arcgis-world-imagery":
-    default:
       return Cesium.ArcGisMapServerImageryProvider.fromUrl(
-        mapImagery.url || "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
+        mapImagery.url ||
+          "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer",
         {
           credit,
           enablePickFeatures: false,
@@ -1299,6 +1311,69 @@ function formatRelativeAge(timestamp) {
     return `${Math.round(ageSeconds / 60)}m ago`;
   }
   return `${Math.round(ageSeconds / 3600)}h ago`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function clearEntityMap(entityMap) {
+  if (!viewer) {
+    entityMap?.clear?.();
+    return;
+  }
+
+  for (const [, entity] of entityMap || []) {
+    viewer.entities.remove(entity);
+  }
+
+  entityMap?.clear?.();
+}
+
+function extractCoordinatePairs(value, pairs = []) {
+  if (!Array.isArray(value)) {
+    return pairs;
+  }
+
+  if (
+    value.length >= 2 &&
+    typeof value[0] === "number" &&
+    Number.isFinite(value[0]) &&
+    typeof value[1] === "number" &&
+    Number.isFinite(value[1])
+  ) {
+    pairs.push([value[0], value[1]]);
+    return pairs;
+  }
+
+  for (const entry of value) {
+    extractCoordinatePairs(entry, pairs);
+  }
+  return pairs;
+}
+
+function getAoiCoordinatePairs(aoi) {
+  return extractCoordinatePairs(aoi?.coordinates, []);
+}
+
+function focusMapOnLocation(lat, lon, height = 12000) {
+  if (!viewer || typeof Cesium === "undefined") {
+    return;
+  }
+
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+    duration: 1.3,
+  });
+}
+
+function getExternalLayerEventKey(event) {
+  return String(event?.external_id || event?.event_id || "");
 }
 
 function getExternalLayerBoundsQuery() {
@@ -2425,6 +2500,23 @@ function connectToLiveEvents() {
           return;
         }
         renderExternalLayerData(data.payload.layer_id, data.payload);
+      } else if (data.type === "external_layer_delta_update") {
+        if (data.sequence) {
+          lastSequence = data.sequence;
+        }
+        handleExternalLayerDeltaUpdate(data.payload);
+      } else if (data.type === "incident_intelligence_update") {
+        if (data.sequence) {
+          lastSequence = data.sequence;
+        }
+        if (
+          incidentState.currentIncident &&
+          data.payload.incident_id === incidentState.currentIncident.incident_id
+        ) {
+          loadIncidentIntelligence(data.payload.incident_id).catch((error) => {
+            console.error("Failed to refresh incident intelligence:", error);
+          });
+        }
       } else if (data.type === "swan_projection_update") {
         if (
           swanState.enabled &&
@@ -2536,6 +2628,37 @@ function handleExternalLayerUpdate(update) {
   }
 
   void queueExternalLayerReload(update.layer_id);
+}
+
+function handleExternalLayerDeltaUpdate(payload) {
+  const layer = applyExternalLayerUpdate({
+    ...payload,
+    count: payload.count,
+    error_message: payload.error_message,
+  });
+  if (!layer) {
+    return;
+  }
+
+  if (!layer.enabled || layer.status === "unavailable") {
+    clearExternalLayerEntities(payload.layer_id);
+    externalLayerState.eventCache.set(payload.layer_id, new Map());
+    return;
+  }
+
+  const cache = externalLayerState.eventCache.get(payload.layer_id) || new Map();
+  for (const event of payload.upserts || []) {
+    cache.set(getExternalLayerEventKey(event), event);
+  }
+  for (const removedId of payload.removed_external_ids || []) {
+    cache.delete(String(removedId));
+  }
+  externalLayerState.eventCache.set(payload.layer_id, cache);
+
+  renderExternalLayerData(payload.layer_id, {
+    ...payload,
+    events: Array.from(cache.values()),
+  });
 }
 
 function clearSwanOverlayEntities() {
@@ -3060,6 +3183,7 @@ async function openIncident(incidentId) {
 
     incidentState.chapters = await loadIncidentChapters(incidentId);
     incidentState.links = await loadIncidentLinks(incidentId);
+    await loadIncidentIntelligence(incidentId);
 
     incidentState.isActive = true;
     incidentState.playback.currentTime = new Date(incident.start_at);
@@ -3072,6 +3196,14 @@ async function openIncident(incidentId) {
 
     if (incident.aoi) {
       focusOnAOI(incident.aoi);
+    } else {
+      const mapContextWidget = incidentState.intelligence.widgets.find(
+        (widget) => widget.widget_type === "map_context",
+      );
+      const focus = mapContextWidget?.spec?.focus;
+      if (typeof focus?.lat === "number" && typeof focus?.lon === "number") {
+        focusMapOnLocation(focus.lat, focus.lon);
+      }
     }
 
     updateStatus(`INCIDENT: ${incident.title.toUpperCase()}`);
@@ -3098,8 +3230,116 @@ function hideIncidentPanel() {
   closeIncident();
 }
 
+function clearIncidentTimelineEntities() {
+  clearEntityMap(incidentState.entities);
+}
+
+function clearIncidentContextEntities() {
+  clearEntityMap(incidentState.contextEntities);
+}
+
+function clearIncidentIntelligenceEntities() {
+  clearEntityMap(incidentState.intelligenceEntities);
+}
+
+function renderIncidentContext() {
+  clearIncidentContextEntities();
+
+  const incident = incidentState.currentIncident;
+  if (!viewer || !incident?.aoi || typeof Cesium === "undefined") {
+    return;
+  }
+
+  const aoi = incident.aoi;
+  const labelText = incident.title || "Incident AOI";
+
+  if (
+    aoi.type === "Point" &&
+    Array.isArray(aoi.coordinates) &&
+    typeof aoi.coordinates[0] === "number" &&
+    typeof aoi.coordinates[1] === "number"
+  ) {
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(aoi.coordinates[0], aoi.coordinates[1], 0),
+      point: {
+        pixelSize: 16,
+        color: Cesium.Color.fromCssColorString("#ef4444").withAlpha(0.85),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      label: {
+        text: labelText,
+        font: "11px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -16),
+      },
+    });
+    incidentState.contextEntities.set(`incident-aoi-${incident.incident_id}`, entity);
+    return;
+  }
+
+  if (aoi.type === "Polygon" && Array.isArray(aoi.coordinates?.[0])) {
+    const positions = aoi.coordinates[0]
+      .filter(
+        (point) =>
+          Array.isArray(point) && typeof point[0] === "number" && typeof point[1] === "number",
+      )
+      .map((point) => Cesium.Cartesian3.fromDegrees(point[0], point[1], 0));
+
+    if (positions.length >= 3) {
+      const fillEntity = viewer.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(positions),
+          material: Cesium.Color.fromCssColorString("#ef4444").withAlpha(0.12),
+          outline: true,
+          outlineColor: Cesium.Color.fromCssColorString("#ef4444").withAlpha(0.85),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        },
+      });
+      incidentState.contextEntities.set(`incident-aoi-fill-${incident.incident_id}`, fillEntity);
+    }
+  }
+
+  const points = getAoiCoordinatePairs(aoi);
+  if (points.length === 0) {
+    return;
+  }
+
+  const center = points.reduce(
+    (accumulator, [lon, lat]) => ({
+      lon: accumulator.lon + lon,
+      lat: accumulator.lat + lat,
+    }),
+    { lon: 0, lat: 0 },
+  );
+  const centerLon = center.lon / points.length;
+  const centerLat = center.lat / points.length;
+  const labelEntity = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, 0),
+    label: {
+      text: labelText,
+      font: "11px monospace",
+      fillColor: Cesium.Color.WHITE,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 2,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      pixelOffset: new Cesium.Cartesian2(0, -12),
+    },
+  });
+  incidentState.contextEntities.set(`incident-aoi-label-${incident.incident_id}`, labelEntity);
+}
+
 function closeIncident() {
   stopIncidentPlayback();
+  clearIncidentTimelineEntities();
+  clearIncidentContextEntities();
+  clearIncidentIntelligenceEntities();
   incidentState.currentIncident = null;
   incidentState.timeline = null;
   incidentState.chapters = [];
@@ -3107,6 +3347,12 @@ function closeIncident() {
   incidentState.markers = [];
   incidentState.captureJobs = [];
   incidentState.evidence = [];
+  incidentState.intelligence = {
+    artifacts: [],
+    widgets: [],
+    runs: [],
+    updatedAt: null,
+  };
   incidentState.isActive = false;
   incidentState.playback.currentTime = null;
   incidentState.playback.section = "during";
@@ -3131,7 +3377,9 @@ function renderIncidentPanel() {
   updateSectionCounts();
   renderChapters();
   renderLinkedAlerts();
+  renderIncidentContext();
   renderCorrelationTimeline();
+  renderIncidentIntelligence();
   dom.incidentChapters.insertAdjacentHTML(
     "beforeend",
     renderSwanInsights("incident", incident.incident_id),
@@ -3259,6 +3507,80 @@ async function loadEvidence() {
   }
 }
 
+async function loadIncidentIntelligence(incidentId) {
+  try {
+    const response = await fetch(`${apiBaseUrl}/incidents/${incidentId}/intelligence`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const intelligence = await response.json();
+    incidentState.intelligence = {
+      artifacts: intelligence.artifacts || [],
+      widgets: intelligence.widgets || [],
+      runs: intelligence.runs || [],
+      updatedAt:
+        intelligence.runs?.[0]?.completed_at ||
+        intelligence.widgets?.[0]?.updated_at ||
+        intelligence.artifacts?.[0]?.published_at ||
+        intelligence.artifacts?.[0]?.captured_at ||
+        null,
+    };
+    renderIncidentIntelligence();
+  } catch (error) {
+    console.error("Error loading incident intelligence:", error);
+  }
+}
+
+async function refreshIncidentIntelligenceBundle() {
+  const incident = incidentState.currentIncident;
+  if (!incident) return;
+
+  if (!sessionState.isAuthenticated) {
+    showAuthModal();
+    return;
+  }
+
+  try {
+    if (dom.incidentIntelligenceStatus) {
+      dom.incidentIntelligenceStatus.textContent = "Refreshing incident intelligence...";
+    }
+
+    const response = await fetch(
+      `${getApiBaseUrl()}/incidents/${incident.incident_id}/intelligence/refresh`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      },
+    );
+
+    if (!response.ok) {
+      console.error("Failed to refresh incident intelligence:", response.statusText);
+      if (dom.incidentIntelligenceStatus) {
+        dom.incidentIntelligenceStatus.textContent = "Incident intelligence refresh failed";
+      }
+      return;
+    }
+
+    const refreshed = await response.json();
+    incidentState.intelligence = {
+      artifacts: refreshed.intelligence?.artifacts || [],
+      widgets: refreshed.intelligence?.widgets || [],
+      runs: refreshed.intelligence?.runs || [],
+      updatedAt: refreshed.updated_at || new Date().toISOString(),
+    };
+    renderIncidentIntelligence();
+  } catch (error) {
+    console.error("Error refreshing incident intelligence:", error);
+    if (dom.incidentIntelligenceStatus) {
+      dom.incidentIntelligenceStatus.textContent = "Incident intelligence refresh failed";
+    }
+  }
+}
+
 function renderCaptureJobs() {
   const jobs = incidentState.captureJobs || [];
 
@@ -3319,6 +3641,333 @@ function renderEvidenceList() {
     `,
     )
     .join("");
+}
+
+function getIncidentIntelligenceMarkerColor(artifactType) {
+  switch (artifactType) {
+    case "article":
+      return "#38bdf8";
+    case "image":
+      return "#f59e0b";
+    case "video":
+      return "#a855f7";
+    case "report":
+      return "#22c55e";
+    default:
+      return "#94a3b8";
+  }
+}
+
+function renderIncidentIntelligenceMapEntities() {
+  clearIncidentIntelligenceEntities();
+
+  if (!viewer || typeof Cesium === "undefined") {
+    return;
+  }
+
+  const mapContextWidget = incidentState.intelligence.widgets.find(
+    (widget) => widget.widget_type === "map_context",
+  );
+  const spec = mapContextWidget?.spec || {};
+  const items = Array.isArray(spec.items) ? spec.items : [];
+
+  items.forEach((item, index) => {
+    if (typeof item?.lat !== "number" || typeof item?.lon !== "number") {
+      return;
+    }
+
+    const color = getIncidentIntelligenceMarkerColor(item.artifact_type);
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(item.lon, item.lat, 0),
+      point: {
+        pixelSize: 11,
+        color: Cesium.Color.fromCssColorString(color).withAlpha(0.85),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      label: {
+        text: item.title || item.provider || "Intelligence",
+        font: "10px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -14),
+        show: index < 3,
+      },
+      properties: {
+        type: "incident_intelligence",
+        item: item,
+      },
+    });
+
+    incidentState.intelligenceEntities.set(
+      item.artifact_id || `${item.provider || "intel"}-${index}`,
+      entity,
+    );
+  });
+}
+
+function renderIncidentIntelligenceWidget(widget) {
+  const widgetType = escapeHtml(widget.widget_type.replaceAll("_", " "));
+  const title = escapeHtml(widget.title);
+  const spec = widget.spec || {};
+
+  if (widget.widget_type === "summary") {
+    const providers = spec.providers || {};
+    return `
+      <div class="incident-intel-widget">
+        <div class="incident-intel-widget-head">
+          <div class="incident-intel-widget-title">${title}</div>
+          <div class="incident-intel-widget-type">${widgetType}</div>
+        </div>
+        <div class="incident-intel-stat-grid">
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Articles</span>
+            <span class="incident-intel-stat-value">${escapeHtml(spec.article_count || 0)}</span>
+          </div>
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Media</span>
+            <span class="incident-intel-stat-value">${escapeHtml(spec.media_count || 0)}</span>
+          </div>
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Located</span>
+            <span class="incident-intel-stat-value">${escapeHtml(
+              spec.located_artifact_count || 0,
+            )}</span>
+          </div>
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Providers</span>
+            <span class="incident-intel-stat-value">${escapeHtml(Object.keys(providers).length)}</span>
+          </div>
+        </div>
+        <div class="incident-intel-link-meta">Updated ${escapeHtml(
+          formatRelativeAge(spec.latest_artifact_at),
+        )}</div>
+      </div>
+    `;
+  }
+
+  if (widget.widget_type === "map_context") {
+    const focus = spec.focus || {};
+    const items = Array.isArray(spec.items) ? spec.items : [];
+    const focusButton =
+      typeof focus.lat === "number" && typeof focus.lon === "number"
+        ? `
+            <button
+              type="button"
+              class="incident-intel-focus"
+              data-lat="${escapeHtml(focus.lat)}"
+              data-lon="${escapeHtml(focus.lon)}"
+              data-height="15000"
+            >
+              FOCUS INCIDENT
+            </button>
+          `
+        : "";
+
+    return `
+      <div class="incident-intel-widget">
+        <div class="incident-intel-widget-head">
+          <div class="incident-intel-widget-title">${title}</div>
+          <div class="incident-intel-widget-type">${widgetType}</div>
+        </div>
+        <div class="incident-intel-stat-grid">
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Located</span>
+            <span class="incident-intel-stat-value">${escapeHtml(spec.located_artifact_count || 0)}</span>
+          </div>
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Artifacts</span>
+            <span class="incident-intel-stat-value">${escapeHtml(spec.total_artifact_count || 0)}</span>
+          </div>
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">Focus</span>
+            <span class="incident-intel-stat-value">${escapeHtml(
+              focus.source ? String(focus.source).replaceAll("_", " ") : "--",
+            )}</span>
+          </div>
+          <div class="incident-intel-stat">
+            <span class="incident-intel-stat-label">AOI</span>
+            <span class="incident-intel-stat-value">${escapeHtml(spec.has_incident_aoi ? "yes" : "no")}</span>
+          </div>
+        </div>
+        ${focusButton ? `<div class="incident-intel-actions">${focusButton}</div>` : ""}
+        ${
+          items.length > 0
+            ? `
+              <div class="incident-intel-list">
+                ${items
+                  .map(
+                    (item) => `
+                      <div class="incident-intel-link">
+                        <div class="incident-intel-link-body">
+                          <div class="incident-intel-link-title">${escapeHtml(item.title || "Untitled")}</div>
+                          <div class="incident-intel-link-meta">${escapeHtml(item.provider || "")}${
+                            item.artifact_type ? ` - ${escapeHtml(item.artifact_type)}` : ""
+                          }</div>
+                        </div>
+                        <button
+                          type="button"
+                          class="incident-intel-focus"
+                          data-lat="${escapeHtml(item.lat)}"
+                          data-lon="${escapeHtml(item.lon)}"
+                          data-height="8000"
+                        >
+                          MAP
+                        </button>
+                      </div>
+                    `,
+                  )
+                  .join("")}
+              </div>
+            `
+            : '<div class="incident-intel-link-meta">No geolocated artifacts available yet.</div>'
+        }
+      </div>
+    `;
+  }
+
+  if (widget.widget_type === "related_articles" || widget.widget_type === "media_gallery") {
+    const items = Array.isArray(spec.items) ? spec.items : [];
+    return `
+      <div class="incident-intel-widget">
+        <div class="incident-intel-widget-head">
+          <div class="incident-intel-widget-title">${title}</div>
+          <div class="incident-intel-widget-type">${widgetType}</div>
+        </div>
+        <div class="incident-intel-list">
+          ${items
+            .map(
+              (item) => `
+                <a class="incident-intel-link" href="${escapeHtml(item.url || "#")}" target="_blank" rel="noopener noreferrer">
+                  ${
+                    item.thumbnail_url
+                      ? `<img class="incident-intel-thumb" src="${escapeHtml(item.thumbnail_url)}" alt="${escapeHtml(item.title || widget.title)}" />`
+                      : ""
+                  }
+                  <div class="incident-intel-link-body">
+                    <div class="incident-intel-link-title">${escapeHtml(item.title || "Untitled")}</div>
+                    <div class="incident-intel-link-meta">${escapeHtml(item.provider || "")}${
+                      item.published_at
+                        ? ` • ${escapeHtml(formatRelativeAge(item.published_at))}`
+                        : ""
+                    }</div>
+                  </div>
+                </a>
+              `,
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  if (widget.widget_type === "source_provenance") {
+    const providers = Array.isArray(spec.providers) ? spec.providers : [];
+    const verification = spec.verification_breakdown || {};
+    return `
+      <div class="incident-intel-widget">
+        <div class="incident-intel-widget-head">
+          <div class="incident-intel-widget-title">${title}</div>
+          <div class="incident-intel-widget-type">${widgetType}</div>
+        </div>
+        <div class="incident-intel-list">
+          ${providers
+            .map(
+              (provider) => `
+                <div class="incident-intel-link">
+                  <div class="incident-intel-link-body">
+                    <div class="incident-intel-link-title">${escapeHtml(provider.provider || "Unknown")}</div>
+                    <div class="incident-intel-link-meta">${escapeHtml(provider.count || 0)} artifacts</div>
+                  </div>
+                </div>
+              `,
+            )
+            .join("")}
+          <div class="incident-intel-link">
+            <div class="incident-intel-link-body">
+              <div class="incident-intel-link-title">Verification</div>
+              <div class="incident-intel-link-meta">${escapeHtml(
+                Object.entries(verification)
+                  .map(([key, count]) => `${key}: ${count}`)
+                  .join(" • "),
+              )}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (widget.widget_type === "pattern_brief") {
+    const notes = Array.isArray(spec.notes) ? spec.notes : [];
+    return `
+      <div class="incident-intel-widget">
+        <div class="incident-intel-widget-head">
+          <div class="incident-intel-widget-title">${title}</div>
+          <div class="incident-intel-widget-type">${widgetType}</div>
+        </div>
+        <ul class="incident-intel-notes">
+          ${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}
+        </ul>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="incident-intel-widget">
+      <div class="incident-intel-widget-head">
+        <div class="incident-intel-widget-title">${title}</div>
+        <div class="incident-intel-widget-type">${widgetType}</div>
+      </div>
+      <div class="incident-intel-link-meta">No renderer defined for this widget type yet.</div>
+    </div>
+  `;
+}
+
+function renderIncidentIntelligence() {
+  if (!dom.incidentIntelligenceContent || !dom.incidentIntelligenceStatus) {
+    return;
+  }
+
+  const intelligence = incidentState.intelligence || {
+    artifacts: [],
+    widgets: [],
+    runs: [],
+    updatedAt: null,
+  };
+
+  if ((intelligence.widgets || []).length === 0 && (intelligence.artifacts || []).length === 0) {
+    dom.incidentIntelligenceStatus.textContent = "No incident intelligence collected yet";
+    dom.incidentIntelligenceContent.innerHTML =
+      '<div class="no-intelligence">Run a refresh to collect related articles, media, and provenance.</div>';
+    clearIncidentIntelligenceEntities();
+    return;
+  }
+
+  dom.incidentIntelligenceStatus.textContent = intelligence.updatedAt
+    ? `Last updated ${formatRelativeAge(intelligence.updatedAt)}`
+    : "Incident intelligence loaded";
+  dom.incidentIntelligenceContent.innerHTML = (intelligence.widgets || [])
+    .map((widget) => renderIncidentIntelligenceWidget(widget))
+    .join("");
+
+  dom.incidentIntelligenceContent.querySelectorAll(".incident-intel-focus").forEach((button) => {
+    button.addEventListener("click", () => {
+      const lat = Number.parseFloat(button.dataset.lat || "");
+      const lon = Number.parseFloat(button.dataset.lon || "");
+      const height = Number.parseFloat(button.dataset.height || "12000");
+
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        focusMapOnLocation(lat, lon, Number.isFinite(height) ? height : 12000);
+      }
+    });
+  });
+
+  renderIncidentIntelligenceMapEntities();
 }
 
 async function createCaptureJob(sourceType) {
@@ -3481,6 +4130,8 @@ function getSourceDisplayName(sourceType) {
 }
 
 function renderCorrelationTimeline() {
+  clearIncidentTimelineEntities();
+
   const timeline = incidentState.timeline;
   const markers = incidentState.markers;
 
@@ -3760,17 +4411,15 @@ function setIncidentSpeed(speed) {
 }
 
 function focusOnAOI(aoi) {
-  if (!aoi?.coordinates) return;
+  const points = getAoiCoordinatePairs(aoi);
+  if (points.length === 0) return;
 
-  const coords = aoi.coordinates;
-  if (coords.length < 4) return;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
 
-  let minLon = Infinity,
-    maxLon = -Infinity;
-  let minLat = Infinity,
-    maxLat = -Infinity;
-
-  for (const [lon, lat] of coords) {
+  for (const [lon, lat] of points) {
     minLon = Math.min(minLon, lon);
     maxLon = Math.max(maxLon, lon);
     minLat = Math.min(minLat, lat);
@@ -3782,12 +4431,9 @@ function focusOnAOI(aoi) {
   const spanLon = maxLon - minLon;
   const spanLat = maxLat - minLat;
   const maxSpan = Math.max(spanLon, spanLat);
-  const height = maxSpan * 111000 * 2;
+  const height = Math.max(maxSpan * 111000 * 2, 5000);
 
-  viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(centerLon, centerLat, Math.max(height, 5000)),
-    duration: 1.5,
-  });
+  focusMapOnLocation(centerLat, centerLon, height);
 }
 
 async function createIncident() {
@@ -4476,6 +5122,7 @@ function initEventListeners() {
   dom.btnNewIncident.addEventListener("click", showNewIncidentForm);
 
   dom.btnAddCapture.addEventListener("click", showCaptureSourceModal);
+  dom.btnRefreshIncidentIntelligence?.addEventListener("click", refreshIncidentIntelligenceBundle);
   dom.closeNewIncidentModal.addEventListener("click", hideNewIncidentForm);
   dom.btnCancelIncident.addEventListener("click", hideNewIncidentForm);
   dom.btnCreateIncident.addEventListener("click", createIncident);
@@ -4520,7 +5167,9 @@ async function loadExternalLayerData(layerId) {
   if (!externalLayerState.layers.get(layerId)?.enabled) return;
 
   try {
-    const response = await fetch(`${apiBaseUrl}/layers/${layerId}/data${getExternalLayerBoundsQuery()}`);
+    const response = await fetch(
+      `${apiBaseUrl}/layers/${layerId}/data${getExternalLayerBoundsQuery()}`,
+    );
     if (!response.ok) {
       console.warn(`Failed to load ${layerId} data:`, response.status);
       return;
@@ -4534,6 +5183,12 @@ async function loadExternalLayerData(layerId) {
 }
 
 function renderExternalLayerData(layerId, data) {
+  const cache = new Map();
+  for (const event of data.events || []) {
+    cache.set(getExternalLayerEventKey(event), event);
+  }
+  externalLayerState.eventCache.set(layerId, cache);
+
   if (layerId !== "satellites") {
     clearExternalLayerEntities(layerId);
   }

@@ -6,6 +6,50 @@ import { startPostgresTestEnvironment } from "../helpers/postgres-test-environme
 let api: Awaited<ReturnType<typeof startApiServer>>;
 let environment: Awaited<ReturnType<typeof startPostgresTestEnvironment>>;
 
+async function openLiveEventStream(path: string): Promise<{
+  controller: AbortController;
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  readUntil: (needle: string) => Promise<string>;
+}> {
+  const controller = new AbortController();
+  const response = await fetch(path, {
+    signal: controller.signal,
+  });
+
+  expect(response.status).toBe(200);
+
+  const reader = response.body?.getReader();
+  expect(reader).toBeDefined();
+
+  if (!reader) {
+    throw new Error("Failed to get reader from response body");
+  }
+
+  const decoder = new TextDecoder();
+  let streamText = "";
+
+  const readUntil = async (needle: string) => {
+    while (!streamText.includes(needle)) {
+      const result = await reader.read();
+      const { value, done } = result;
+      if (done) {
+        break;
+      }
+      if (value) {
+        streamText += decoder.decode(value);
+      }
+    }
+
+    return streamText;
+  };
+
+  return {
+    controller,
+    reader,
+    readUntil,
+  };
+}
+
 describe("live event bus resilience", () => {
   beforeAll(async () => {
     environment = await startPostgresTestEnvironment();
@@ -268,5 +312,328 @@ describe("live reconnect behavior", () => {
     expect(snapshotPayload).toContain("external_layer_snapshot_update");
     expect(snapshotPayload).toContain("eq_stream_sf");
     expect(snapshotPayload).not.toContain("eq_stream_ny");
+  });
+
+  it("streams external layer deltas after the first scoped snapshot", async () => {
+    const stream = await openLiveEventStream(
+      `http://127.0.0.1:${api.port}/live/events?west=-123&south=37&east=-122&north=38`,
+    );
+
+    let streamText = await stream.readUntil("connection_info");
+
+    await api.persistence.clearExternalDataEvents("earthquakes");
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_delta_a",
+        external_id: "eq_delta_a",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.7749,
+        lon: -122.4194,
+        payload: { magnitude: 4.0, place: "San Francisco" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    streamText = await stream.readUntil("external_layer_snapshot_update");
+
+    await api.persistence.clearExternalDataEvents("earthquakes");
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_delta_b",
+        external_id: "eq_delta_b",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.8715,
+        lon: -122.273,
+        payload: { magnitude: 3.5, place: "Berkeley" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    streamText = await stream.readUntil("external_layer_delta_update");
+
+    stream.controller.abort();
+    expect(streamText).toContain("external_layer_delta_update");
+    expect(streamText).toContain("eq_delta_b");
+    expect(streamText).toContain("removed_external_ids");
+    expect(streamText).toContain("eq_delta_a");
+  });
+
+  it("backfills external layer updates in order using the latest persisted snapshot", async () => {
+    await api.persistence.clearExternalDataEvents("earthquakes");
+
+    const beforeSeq = liveEventBus.getSequence();
+
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_backfill_a",
+        external_id: "eq_backfill_a",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.7749,
+        lon: -122.4194,
+        payload: { magnitude: 4.4, place: "San Francisco" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    await api.persistence.clearExternalDataEvents("earthquakes");
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_backfill_b",
+        external_id: "eq_backfill_b",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.8715,
+        lon: -122.273,
+        payload: { magnitude: 3.7, place: "Berkeley" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    const stream = await openLiveEventStream(
+      `http://127.0.0.1:${api.port}/live/events?since_sequence=${beforeSeq}&west=-123&south=37&east=-122&north=38`,
+    );
+
+    let streamText = await stream.readUntil("external_layer_snapshot_update");
+    streamText = await stream.readUntil("external_layer_delta_update");
+
+    stream.controller.abort();
+
+    expect(streamText).toContain("external_layer_snapshot_update");
+    expect(streamText).toContain("external_layer_delta_update");
+    expect(streamText.indexOf("external_layer_snapshot_update")).toBeLessThan(
+      streamText.indexOf("external_layer_delta_update"),
+    );
+    expect(streamText).toContain("eq_backfill_b");
+    expect(streamText).toContain('"upserts":[]');
+    expect(streamText).toContain('"removed_external_ids":[]');
+  });
+
+  it("keeps per-layer snapshot baselines isolated within one SSE connection", async () => {
+    await api.persistence.clearExternalDataEvents("earthquakes");
+    await api.persistence.clearExternalDataEvents("satellites");
+
+    const stream = await openLiveEventStream(
+      `http://127.0.0.1:${api.port}/live/events?west=-123&south=37&east=-121&north=39`,
+    );
+
+    let streamText = await stream.readUntil("connection_info");
+
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_isolated_a",
+        external_id: "eq_isolated_a",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.7749,
+        lon: -122.4194,
+        payload: { magnitude: 4.0, place: "San Francisco" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    streamText = await stream.readUntil("eq_isolated_a");
+
+    await api.persistence.clearExternalDataEvents("earthquakes");
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_isolated_b",
+        external_id: "eq_isolated_b",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.8715,
+        lon: -122.273,
+        payload: { magnitude: 3.8, place: "Berkeley" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    streamText = await stream.readUntil("eq_isolated_b");
+
+    await api.persistence.persistExternalDataEvents("satellites", [
+      {
+        event_id: "sat_isolated_a",
+        external_id: "sat_isolated_a",
+        event_type: "satellite_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.8,
+        lon: -122.3,
+        altitude_m: 408000,
+        payload: { name: "ISS" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "satellites",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    streamText = await stream.readUntil("sat_isolated_a");
+
+    stream.controller.abort();
+
+    expect(streamText).toContain("external_layer_snapshot_update");
+    expect(streamText).toContain("external_layer_delta_update");
+    expect(streamText).toContain('"layer_id":"satellites"');
+    const satelliteIndex = streamText.indexOf('"layer_id":"satellites"');
+    const satelliteWindow = streamText.slice(
+      Math.max(streamText.lastIndexOf("external_layer_snapshot_update", satelliteIndex) - 20, 0),
+      satelliteIndex + 260,
+    );
+    expect(satelliteWindow).toContain("external_layer_snapshot_update");
+    expect(satelliteWindow).not.toContain("removed_external_ids");
+  });
+
+  it("keeps viewport-scoped removals isolated from out-of-bounds overlay changes", async () => {
+    await api.persistence.clearExternalDataEvents("earthquakes");
+
+    const stream = await openLiveEventStream(
+      `http://127.0.0.1:${api.port}/live/events?west=-123&south=37&east=-122&north=38`,
+    );
+
+    await stream.readUntil("connection_info");
+
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_viewport_inside",
+        external_id: "eq_viewport_inside",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 37.7749,
+        lon: -122.4194,
+        payload: { magnitude: 4.1, place: "San Francisco" },
+      },
+      {
+        event_id: "eq_viewport_outside",
+        external_id: "eq_viewport_outside",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 40.7128,
+        lon: -74.006,
+        payload: { magnitude: 3.2, place: "New York" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 2,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    let streamText = await stream.readUntil("eq_viewport_inside");
+
+    await api.persistence.clearExternalDataEvents("earthquakes");
+    await api.persistence.persistExternalDataEvents("earthquakes", [
+      {
+        event_id: "eq_viewport_outside_new",
+        external_id: "eq_viewport_outside_new",
+        event_type: "earthquake_observed",
+        observed_at: new Date().toISOString(),
+        lat: 41.8781,
+        lon: -87.6298,
+        payload: { magnitude: 2.9, place: "Chicago" },
+      },
+    ]);
+
+    liveEventBus.publish({
+      type: "external_layer_update",
+      timestamp: new Date().toISOString(),
+      payload: {
+        layer_id: "earthquakes",
+        status: "real",
+        count: 1,
+        last_update: new Date().toISOString(),
+        error_message: null,
+      },
+    } as LiveEvent);
+
+    streamText = await stream.readUntil("removed_external_ids");
+
+    stream.controller.abort();
+
+    expect(streamText).toContain("external_layer_delta_update");
+    expect(streamText).toContain('"removed_external_ids":["eq_viewport_inside"]');
+    expect(streamText).not.toContain("eq_viewport_outside_new");
   });
 });
