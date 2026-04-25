@@ -44,6 +44,7 @@ services:
       AUTH_PASSWORD_VIEWER: viewer123
       AUTH_PASSWORD_OPERATOR: operator123
       AUTH_PASSWORD_ADMIN: admin123
+      CORS_ALLOWED_ORIGIN: "*"
     ports:
       - "3001:3001"
     depends_on:
@@ -68,7 +69,7 @@ services:
     container_name: mordor-web
     environment:
       NODE_ENV: production
-      API_BASE_URL: http://127.0.0.1:3001
+      API_BASE_URL: http://mordor-api:3001
       PORT: 8080
     ports:
       - "8080:8080"
