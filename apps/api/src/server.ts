@@ -2319,6 +2319,93 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           return;
         }
 
+        if (request.method === "GET" && url.pathname === "/news") {
+          if (!authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+          const category = url.searchParams.get("category") ?? undefined;
+          const threat = url.searchParams.get("threat") ?? undefined;
+          const country = url.searchParams.get("country") ?? undefined;
+          const limitParam = url.searchParams.get("limit");
+          const limit = limitParam ? Number.parseInt(limitParam, 10) : 100;
+
+          try {
+            const { fetchAllNewsIntelligence } = await import(
+              "../../../packages/intelligence/src/news-service.js"
+            );
+            const intelligence = await fetchAllNewsIntelligence();
+
+            let items = intelligence.items;
+            if (category) items = items.filter((i) => i.category === category);
+            if (threat) items = items.filter((i) => i.threat_level === threat);
+            if (country) items = items.filter((i) => i.country_codes.includes(country));
+            items = items.slice(0, limit);
+
+            const clusters = intelligence.clusters
+              .filter((c) => !category || c.category === category)
+              .slice(0, Math.max(5, Math.floor(limit / 10)));
+
+            writeJsonWithEtag(response, request, 200, {
+              items,
+              clusters,
+              feeds: intelligence.feeds,
+              fetched_at: intelligence.fetched_at,
+              total_count: intelligence.total_count,
+              critical_count: intelligence.critical_count,
+              active_feeds: intelligence.active_feeds,
+            });
+          } catch (error) {
+            writeJson(response, 503, {
+              error: "news_service_unavailable",
+              message: String(error),
+            });
+          }
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname === "/news/feeds") {
+          const { DEFAULT_NEWS_FEEDS } = await import(
+            "../../../packages/intelligence/src/news-feeds.js"
+          );
+          writeJsonWithEtag(response, request, 200, { feeds: DEFAULT_NEWS_FEEDS });
+          return;
+        }
+
+        // ============ WEBCAM CHANNELS ENDPOINT ============
+
+        if (request.method === "GET" && url.pathname === "/webcams") {
+          const {
+            GEOPOLITICAL_WEBCAM_CHANNELS,
+            getWebcamChannelsByRegion,
+            getWebcamChannelsByTag,
+          } = await import("../../../packages/intelligence/src/webcam-registry.js");
+
+          const region = url.searchParams.get("region") ?? undefined;
+          const tag = url.searchParams.get("tag") ?? undefined;
+          const priority = url.searchParams.get("priority") ?? undefined;
+
+          let channels: typeof GEOPOLITICAL_WEBCAM_CHANNELS;
+          if (tag) {
+            channels = getWebcamChannelsByTag(tag);
+          } else if (region) {
+            channels = getWebcamChannelsByRegion(region);
+          } else {
+            channels = GEOPOLITICAL_WEBCAM_CHANNELS;
+          }
+
+          if (priority === "high") channels = channels.filter((c) => c.priority === "high");
+          else if (priority === "medium")
+            channels = channels.filter((c) => c.priority === "medium");
+
+          writeJsonWithEtag(response, request, 200, {
+            channels,
+            regions: [...new Set(GEOPOLITICAL_WEBCAM_CHANNELS.map((c) => c.region))],
+            total_count: GEOPOLITICAL_WEBCAM_CHANNELS.length,
+          });
+          return;
+        }
+
         // ============ SOURCE REGISTRY ENDPOINTS ============
 
         // GET /sources

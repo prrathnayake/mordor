@@ -166,6 +166,26 @@ const swanState = {
   pendingActivities: new Map(),
 };
 
+const newsState = {
+  items: [],
+  clusters: [],
+  feeds: [],
+  fetchedAt: null,
+  enabled: false,
+  categoryFilter: "",
+  totalCount: 0,
+  criticalCount: 0,
+  activeFeeds: 0,
+};
+
+const webcamState = {
+  channels: [],
+  regions: [],
+  enabled: false,
+  regionFilter: "",
+  activeEmbeds: new Set(),
+};
+
 // ===== CIRCUIT BREAKERS =====
 class CircuitBreaker {
   constructor(name, options = {}) {
@@ -406,6 +426,7 @@ const dom = {
   sessionStatus: document.getElementById("session-status") || { textContent: "" },
   authButton: document.getElementById("auth-button"),
   swanToggle: document.getElementById("swan-toggle"),
+  newsToggle: document.getElementById("news-toggle"),
   swanStatus: document.getElementById("swan-status") || { textContent: "" },
   swanNotifications: document.getElementById("swan-notifications"),
   timeDisplay: document.getElementById("time-display") || { textContent: "" },
@@ -3414,6 +3435,228 @@ function _focusCorrelationSignal(signalId) {
   window.focusCorrelationSignal(signalId);
 }
 
+async function loadNewsIntelligence() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/news?limit=80`, {
+      headers: sessionState.token ? { Authorization: `Bearer ${sessionState.token}` } : {},
+    });
+    if (!response.ok) return;
+
+    const data = await response.json();
+    newsState.items = data.items || [];
+    newsState.clusters = data.clusters || [];
+    newsState.feeds = data.feeds || [];
+    newsState.fetchedAt = data.fetched_at;
+    newsState.totalCount = data.total_count || 0;
+    newsState.criticalCount = data.critical_count || 0;
+    newsState.activeFeeds = data.active_feeds || 0;
+
+    renderNewsIntelligence();
+    renderNewsFeedList();
+  } catch (error) {
+    console.error("Failed to load news intelligence:", error);
+  }
+}
+
+function renderNewsIntelligence() {
+  const container = document.getElementById("news-clusters");
+  if (!container) return;
+
+  const countBadge = document.getElementById("news-count-badge");
+  const feedsBadge = document.getElementById("news-feeds-badge");
+  const criticalBadge = document.getElementById("news-critical-badge");
+
+  if (countBadge) countBadge.textContent = `${newsState.totalCount} items`;
+  if (feedsBadge) feedsBadge.textContent = `${newsState.activeFeeds} feeds`;
+  if (criticalBadge) {
+    if (newsState.criticalCount > 0) {
+      criticalBadge.textContent = `${newsState.criticalCount} CRITICAL`;
+      criticalBadge.classList.remove("hidden");
+    } else {
+      criticalBadge.classList.add("hidden");
+    }
+  }
+
+  let clusters = newsState.clusters;
+  if (newsState.categoryFilter) {
+    clusters = clusters.filter((c) => c.category === newsState.categoryFilter);
+  }
+
+  if (clusters.length === 0) {
+    container.innerHTML = `<div class="news-empty">No active intelligence feeds</div>`;
+    return;
+  }
+
+  container.innerHTML = clusters
+    .slice(0, 30)
+    .map(
+      (cluster) => `
+    <div class="news-cluster severity-${cluster.threat_level}" data-cluster-id="${cluster.cluster_id}">
+      <div class="news-cluster-phase ${cluster.story_phase}">${cluster.story_phase}</div>
+      <div class="news-cluster-title">${escapeHtml(cluster.primary_item.title)}</div>
+      <div class="news-cluster-meta">
+        <span>${escapeHtml(cluster.primary_item.source)}</span>
+        <span>${cluster.mention_count} mentions</span>
+        <span>${cluster.country_codes.join(", ")}</span>
+      </div>
+    </div>
+  `,
+    )
+    .join("");
+
+  container.querySelectorAll(".news-cluster").forEach((el) => {
+    el.addEventListener("click", () => {
+      const clusterId = el.dataset.clusterId;
+      const cluster = newsState.clusters.find((c) => c.cluster_id === clusterId);
+      if (cluster) {
+        if (cluster.center_lat != null && cluster.center_lon != null) {
+          viewer?.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(
+              cluster.center_lon,
+              cluster.center_lat,
+              500000,
+            ),
+          });
+        }
+        const link = cluster.primary_item.link;
+        if (link) window.open(link, "_blank");
+      }
+    });
+  });
+}
+
+function renderNewsFeedList() {
+  const listEl = document.getElementById("news-feed-list");
+  if (!listEl) return;
+
+  listEl.innerHTML = newsState.feeds
+    .map(
+      (feed) => `
+    <div class="news-feed-item">
+      <span class="feed-name">${escapeHtml(feed.name)}</span>
+      <span class="feed-count">${feed.last_item_count} items</span>
+      <span class="feed-status ${feed.status === "error" ? "error" : ""}">${feed.status}</span>
+    </div>
+  `,
+    )
+    .join("");
+}
+
+async function loadWebcamChannels() {
+  try {
+    const region = webcamState.regionFilter;
+    const url = `${apiBaseUrl}/webcams${region ? `?region=${encodeURIComponent(region)}` : ""}`;
+    const response = await fetch(url);
+    if (!response.ok) return;
+
+    const data = await response.json();
+    webcamState.channels = data.channels || [];
+    if (data.regions && webcamState.regions.length === 0) {
+      webcamState.regions = data.regions;
+      populateWebcamRegionFilter();
+    }
+
+    renderWebcamGrid();
+  } catch (error) {
+    console.error("Failed to load webcam channels:", error);
+  }
+}
+
+function renderWebcamGrid() {
+  const grid = document.getElementById("webcam-grid");
+  const countEl = document.getElementById("webcam-count");
+  if (!grid) return;
+
+  if (countEl) countEl.textContent = `${webcamState.channels.length} channels`;
+
+  if (webcamState.channels.length === 0) {
+    grid.innerHTML = `<div class="webcam-empty">No webcam channels available</div>`;
+    return;
+  }
+
+  grid.innerHTML = webcamState.channels
+    .slice(0, 24)
+    .map(
+      (channel) => `
+    <div class="webcam-channel webcam-channel-priority-${escapeHtml(channel.priority)}" data-channel-id="${channel.channel_id}">
+      <iframe
+        class="webcam-iframe"
+        src="https://www.youtube.com/embed/${channel.youtube_video_id}?autoplay=0&mute=1"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen
+        loading="lazy"
+        title="${escapeHtml(channel.name)}"
+      ></iframe>
+      <div class="webcam-channel-info">
+        <div class="webcam-channel-name">${escapeHtml(channel.name)}</div>
+        <div class="webcam-channel-region">${escapeHtml(channel.region)}</div>
+        <div class="webcam-channel-tags">
+          ${channel.relevance_tags
+            .slice(0, 3)
+            .map((t) => `<span class="webcam-tag">${escapeHtml(t)}</span>`)
+            .join("")}
+        </div>
+      </div>
+    </div>
+  `,
+    )
+    .join("");
+
+  grid.querySelectorAll(".webcam-channel").forEach((el) => {
+    el.addEventListener("click", () => {
+      const channelId = el.dataset.channelId;
+      const channel = webcamState.channels.find((c) => c.channel_id === channelId);
+      if (channel && viewer) {
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(channel.lon, channel.lat, 50000),
+        });
+      }
+    });
+  });
+}
+
+function populateWebcamRegionFilter() {
+  const select = document.getElementById("webcam-region-filter");
+  if (!select) return;
+
+  webcamState.regions.forEach((region) => {
+    const opt = document.createElement("option");
+    opt.value = region;
+    opt.textContent = region;
+    select.appendChild(opt);
+  });
+}
+
+function initNewsAndWebcam() {
+  const newsToggle = document.getElementById("news-toggle");
+  if (newsToggle) {
+    newsToggle.addEventListener("click", () => {
+      newsState.enabled = !newsState.enabled;
+      newsToggle.textContent = newsState.enabled ? "NEWS ON" : "NEWS OFF";
+      newsToggle.classList.toggle("active", newsState.enabled);
+      if (newsState.enabled) {
+        loadNewsIntelligence();
+      }
+    });
+  }
+
+  const newsFilter = document.getElementById("news-category-filter");
+  if (newsFilter) {
+    newsFilter.addEventListener("change", (e) => {
+      newsState.categoryFilter = e.target.value;
+      renderNewsIntelligence();
+    });
+  }
+
+  const webcamFilter = document.getElementById("webcam-region-filter");
+  if (webcamFilter) {
+    webcamFilter.addEventListener("change", (e) => {
+      webcamState.regionFilter = e.target.value;
+      loadWebcamChannels();
+    });
+  }
+}
+
 // ===== INCIDENTS =====
 
 async function loadIncidents() {
@@ -6346,6 +6589,29 @@ async function init() {
       intervalMs: 30000,
       pauseWhenHidden: true,
       maxBackoffMultiplier: 4,
+    }),
+  );
+
+  initNewsAndWebcam();
+
+  if (newsState.enabled) {
+    loadNewsIntelligence();
+    smartPollHandles.set(
+      "news",
+      startSmartPollLoop("news", loadNewsIntelligence, {
+        intervalMs: 120000,
+        pauseWhenHidden: true,
+        maxBackoffMultiplier: 2,
+      }),
+    );
+  }
+
+  smartPollHandles.set(
+    "webcams",
+    startSmartPollLoop("webcams", loadWebcamChannels, {
+      intervalMs: 60000,
+      pauseWhenHidden: true,
+      maxBackoffMultiplier: 2,
     }),
   );
 

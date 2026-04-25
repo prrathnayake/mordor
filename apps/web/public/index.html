@@ -46,6 +46,7 @@
         <div class="header-right">
           <button type="button" id="swan-toggle" class="swan-toggle">SWAN OFF</button>
           <span id="swan-status" class="swan-status">IDLE</span>
+          <button type="button" id="news-toggle" class="swan-toggle">NEWS OFF</button>
           <span id="session-status" class="session-status">NO SESSION</span>
           <button type="button" id="auth-button">LOGIN</button>
           <span id="time-display">--:--:--</span>
@@ -62,6 +63,7 @@
           <div class="rail-tabs" id="left-rail-tabs">
             <button type="button" class="rail-tab active" data-tab="layers">Layers</button>
             <button type="button" class="rail-tab" data-tab="operations">Operations</button>
+            <button type="button" class="rail-tab" data-tab="webcams">Webcams</button>
           </div>
           <div class="tab-panel" data-tab="layers">
           <div class="rail-header">
@@ -345,6 +347,19 @@
               </div>
             </div>
           </div>
+          <div class="tab-panel hidden" data-tab="webcams">
+            <div class="webcam-header">
+              <div class="webcam-count" id="webcam-count">0 channels</div>
+              <div class="webcam-filters">
+                <select id="webcam-region-filter">
+                  <option value="">All Regions</option>
+                </select>
+              </div>
+            </div>
+            <div class="webcam-grid" id="webcam-grid">
+              <div class="webcam-empty">Loading webcam channels...</div>
+            </div>
+          </div>
         </aside>
 
         <!-- Center: Globe Viewport -->
@@ -371,6 +386,7 @@
           <div class="rail-tabs" id="right-rail-tabs">
             <button type="button" class="rail-tab active" data-tab="visuals">Visuals</button>
             <button type="button" class="rail-tab" data-tab="intelligence">Intelligence</button>
+            <button type="button" class="rail-tab" data-tab="news">News</button>
           </div>
           <div class="tab-panel" data-tab="visuals">
           <div class="rail-header">
@@ -518,6 +534,32 @@
                 <span class="empty-text">Select an entity to view intelligence</span>
               </div>
             </div>
+          </div>
+          <div class="tab-panel hidden" data-tab="news">
+            <div class="news-header">
+              <div class="news-stats">
+                <span id="news-count-badge">0 items</span>
+                <span id="news-feeds-badge">-- feeds</span>
+                <span id="news-critical-badge" class="critical-badge hidden">CRITICAL</span>
+              </div>
+              <div class="news-filters">
+                <select id="news-category-filter">
+                  <option value="">All Categories</option>
+                  <option value="conflict">Conflict</option>
+                  <option value="military">Military</option>
+                  <option value="infrastructure">Infrastructure</option>
+                  <option value="disaster">Disaster</option>
+                  <option value="economic">Economic</option>
+                  <option value="cyber">Cyber</option>
+                  <option value="climate">Climate</option>
+                  <option value="political">Political</option>
+                </select>
+              </div>
+            </div>
+            <div class="news-clusters" id="news-clusters">
+              <div class="news-empty">Loading intelligence feeds...</div>
+            </div>
+            <div class="news-feed-list" id="news-feed-list"></div>
           </div>
         </aside>
       </main>

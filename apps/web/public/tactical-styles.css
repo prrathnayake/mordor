@@ -3365,3 +3365,297 @@ body {
   display: flex;
   gap: 8px;
 }
+
+/* News Intelligence Panel */
+.news-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.news-stats {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+#news-count-badge {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+#news-feeds-badge {
+  font-size: 10px;
+}
+
+.critical-badge {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #ef4444;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  animation: alertPulse 2s infinite;
+}
+
+.critical-badge.hidden {
+  display: none;
+}
+
+.news-filters select {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 3px 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  border-radius: 3px;
+}
+
+.news-clusters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.news-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}
+
+.news-cluster {
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.news-cluster:hover {
+  border-color: var(--accent-color);
+}
+
+.news-cluster.severity-critical {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+.news-cluster.severity-high {
+  border-left-color: #f97316;
+}
+.news-cluster.severity-medium {
+  border-left-color: #eab308;
+}
+.news-cluster.severity-low {
+  border-left-color: #3b82f6;
+}
+
+.news-cluster-phase {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  color: var(--text-dim);
+}
+
+.news-cluster-phase.breaking {
+  color: #ef4444;
+  animation: alertPulse 1s infinite;
+}
+.news-cluster-phase.developing {
+  color: #f97316;
+}
+.news-cluster-phase.sustained {
+  color: #3b82f6;
+}
+.news-cluster-phase.fading {
+  color: var(--text-dim);
+}
+
+.news-cluster-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.news-cluster-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+
+.news-cluster-meta span {
+  display: flex;
+  gap: 3px;
+}
+
+.news-cluster-count {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.news-feed-list {
+  border-top: 1px solid var(--border-color);
+  padding: 8px;
+}
+
+.news-feed-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  padding: 4px 0;
+  color: var(--text-dim);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.news-feed-item .feed-name {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.news-feed-item .feed-count {
+  color: var(--text-dim);
+}
+.news-feed-item .feed-status {
+  color: #22c55e;
+}
+.news-feed-item .feed-status.error {
+  color: #ef4444;
+}
+
+/* Webcam Surveillance Panel */
+.webcam-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 8px;
+}
+
+.webcam-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.webcam-filters select {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 3px 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  border-radius: 3px;
+}
+
+.webcam-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.webcam-empty {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}
+
+.webcam-channel {
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  aspect-ratio: 16 / 9;
+}
+
+.webcam-channel:hover {
+  border-color: var(--accent-color);
+}
+
+.webcam-channel-priority-high {
+  border-top: 2px solid #ef4444;
+}
+.webcam-channel-priority-medium {
+  border-top: 2px solid #f97316;
+}
+
+.webcam-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.webcam-channel-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 4px 6px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.9));
+}
+
+.webcam-channel-name {
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.webcam-channel-region {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.webcam-channel-tags {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.webcam-tag {
+  font-size: 7px;
+  background: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+
+/* News toggle button in header */
+#news-toggle {
+  font-size: 10px;
+  padding: 4px 8px;
+}
