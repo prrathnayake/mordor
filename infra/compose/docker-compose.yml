@@ -41,6 +41,9 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
       REDIS_URL: redis://redis:6379
       JWT_SECRET: mordor-dev-secret-change-in-production
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
     ports:
       - "3001:3001"
     depends_on:
@@ -115,6 +118,9 @@ services:
       AGENT_ID: collector-01
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
       REDIS_URL: redis://redis:6379
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +141,9 @@ services:
       AGENT_ID: detector-01
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
       REDIS_URL: redis://redis:6379
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,6 +164,9 @@ services:
       AGENT_ID: publisher-01
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
       REDIS_URL: redis://redis:6379
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
     depends_on:
       postgres:
         condition: service_healthy
