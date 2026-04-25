@@ -15,6 +15,8 @@ export interface AppConfig {
   autoRefreshIncidentIntelligence: boolean;
   incidentIntelligenceRefreshMs: number;
   incidentIntelligenceMaxIncidentsPerSweep: number;
+  autoRefreshRealtimeNews: boolean;
+  realtimeNewsRefreshMs: number;
   youtubeApiKey: string | null;
   swanArtifactRoot: string;
   swanMaxThreadsPerSession: number;
@@ -61,6 +63,10 @@ export function getConfigFromEnv(): AppConfig {
     .INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP
     ? Number.parseInt(process.env.INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP, 10)
     : 10;
+  const autoRefreshRealtimeNews = process.env.AUTO_REFRESH_REALTIME_NEWS === "true";
+  const realtimeNewsRefreshMs = process.env.REALTIME_NEWS_REFRESH_MS
+    ? Number.parseInt(process.env.REALTIME_NEWS_REFRESH_MS, 10)
+    : 60000;
   const youtubeApiKey = process.env.YOUTUBE_API_KEY || null;
   const swanArtifactRoot = process.env.SWAN_ARTIFACT_ROOT || "./runtime/swan";
   const swanMaxThreadsPerSession = process.env.SWAN_MAX_THREADS_PER_SESSION
@@ -99,6 +105,8 @@ export function getConfigFromEnv(): AppConfig {
     autoRefreshIncidentIntelligence,
     incidentIntelligenceRefreshMs,
     incidentIntelligenceMaxIncidentsPerSweep,
+    autoRefreshRealtimeNews,
+    realtimeNewsRefreshMs,
     youtubeApiKey,
     swanArtifactRoot,
     swanMaxThreadsPerSession,
@@ -156,6 +164,10 @@ export function validateConfig(config: AppConfig): ConfigValidationResult {
     config.incidentIntelligenceMaxIncidentsPerSweep < 1
   ) {
     errors.push("INCIDENT_INTELLIGENCE_MAX_INCIDENTS_PER_SWEEP must be at least 1");
+  }
+
+  if (!Number.isInteger(config.realtimeNewsRefreshMs) || config.realtimeNewsRefreshMs < 10000) {
+    errors.push("REALTIME_NEWS_REFRESH_MS must be at least 10000");
   }
 
   if (!config.swanArtifactRoot) {

@@ -22,6 +22,12 @@ import {
   refreshOpenIncidentIntelligence,
 } from "../../../packages/intelligence/src/index.js";
 import {
+  getTVChannelsByRegion,
+  getTVChannelsByTag,
+  NEWS_NETWORK_FEEDS,
+  TV_NEWS_CHANNELS,
+} from "../../../packages/intelligence/src/tv-channels.js";
+import {
   GEOPOLITICAL_WEBCAM_CHANNELS,
   getWebcamChannelsByRegion,
   getWebcamChannelsByTag,
@@ -573,6 +579,49 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
       runIncidentSweep,
       config.incidentIntelligenceRefreshMs,
     );
+  }
+
+  const REALTIME_NEWS_POLL_MS = 60000;
+  let _realtimeNewsInterval: NodeJS.Timeout | null = null;
+
+  async function startRealtimeNewsPolling(): Promise<void> {
+    const { addRealtimeUpdate, detectBreakingFromNews, getRealtimeState } = await import(
+      "../../../packages/intelligence/src/news-clips.js"
+    );
+
+    const state = getRealtimeState();
+    if (state.activeSubscriptions === 0) {
+      return;
+    }
+
+    try {
+      const newsIntelligence = await fetchAllNewsIntelligence({ maxItemsPerFeed: 20 });
+      const newUpdates = detectBreakingFromNews(
+        newsIntelligence.items.map((i) => ({
+          title: i.title,
+          source_tier: i.source_tier,
+          threat_level: i.threat_level,
+        })),
+      );
+
+      for (const update of newUpdates) {
+        addRealtimeUpdate(update);
+        liveEventBus.publish({
+          type: "news_realtime_update",
+          timestamp: update.published_at,
+          payload: update,
+        });
+      }
+    } catch (error) {
+      logger.warn("Realtime news polling failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const { getSubscriptionCount } = await import("../../../packages/intelligence/src/news-clips.js");
+  if (getSubscriptionCount() > 0) {
+    _realtimeNewsInterval = setInterval(startRealtimeNewsPolling, REALTIME_NEWS_POLL_MS);
   }
 
   async function waitForActiveRequestsToDrain(timeoutMs = 30000): Promise<void> {
@@ -2581,6 +2630,145 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           return;
         }
 
+        // ============ TV CHANNELS ENDPOINT ============
+
+        if (request.method === "GET" && url.pathname === "/tv-channels") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const region = url.searchParams.get("region") ?? undefined;
+          const tag = url.searchParams.get("tag") ?? undefined;
+          const priority = url.searchParams.get("priority") ?? undefined;
+          const liveOnly = url.searchParams.get("live") === "true";
+          const source = url.searchParams.get("source") ?? undefined;
+
+          let channels = [...TV_NEWS_CHANNELS, ...NEWS_NETWORK_FEEDS];
+          if (tag) {
+            channels = getTVChannelsByTag(tag);
+          } else if (region) {
+            channels = getTVChannelsByRegion(region);
+          }
+
+          if (liveOnly) channels = channels.filter((c) => c.is_live);
+          if (source) channels = channels.filter((c) => c.source === source);
+          if (priority === "high") channels = channels.filter((c) => c.priority === "high");
+          else if (priority === "medium")
+            channels = channels.filter((c) => c.priority === "medium");
+
+          writeJsonWithEtag(response, request, 200, {
+            channels,
+            regions: [...new Set(channels.map((c) => c.region))],
+            total_count: channels.length,
+            youtube_count: channels.filter((c) => c.source === "youtube").length,
+            news_network_count: channels.filter((c) => c.source === "news_network").length,
+          });
+          return;
+        }
+
+        // ============ REAL-TIME NEWS ENDPOINTS ============
+
+        if (request.method === "GET" && url.pathname === "/news/realtime") {
+          const since = url.searchParams.get("since") ?? undefined;
+          const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 100);
+          const severity = url.searchParams.get("severity") ?? undefined;
+
+          const { getRealtimeUpdates } = await import(
+            "../../../packages/intelligence/src/news-clips.js"
+          );
+
+          let updates = getRealtimeUpdates(since, limit);
+          if (severity) {
+            updates = updates.filter((u) => u.severity === severity);
+          }
+
+          writeJsonWithEtag(response, request, 200, {
+            updates,
+            fetched_at: new Date().toISOString(),
+            total_count: updates.length,
+          });
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname === "/news/realtime/stream") {
+          response.setHeader("Content-Type", "text/event-stream");
+          response.setHeader("Cache-Control", "no-cache");
+          response.setHeader("Connection", "keep-alive");
+          response.writeHead(200);
+
+          const { getRealtimeUpdates, incrementSubscriptions, decrementSubscriptions } =
+            await import("../../../packages/intelligence/src/news-clips.js");
+
+          incrementSubscriptions();
+          const initialUpdates = getRealtimeUpdates(undefined, 50);
+          for (const update of initialUpdates) {
+            response.write(`data: ${JSON.stringify(update)}\n\n`);
+          }
+
+          const connectionInfo = liveEventBus.getConnectionInfo();
+          response.write(`data: ${JSON.stringify(connectionInfo)}\n\n`);
+
+          const listener = (event: LiveEvent) => {
+            if (event.type === "news_realtime_update" || event.type === "news_clip_update") {
+              response.write(`data: ${JSON.stringify(event)}\n\n`);
+            }
+          };
+
+          const unsubscribe = liveEventBus.subscribe(listener);
+
+          const heartbeat = setInterval(() => {
+            response.write(`: heartbeat\n\n`);
+          }, 30000);
+
+          request.on("close", () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+            decrementSubscriptions();
+          });
+
+          return;
+        }
+
+        // ============ NEWS CLIPS ENDPOINT ============
+
+        if (request.method === "GET" && url.pathname === "/news/clips") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
+          const topic = url.searchParams.get("topic") ?? undefined;
+          const channelId = url.searchParams.get("channel_id") ?? undefined;
+          const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10), 50);
+
+          try {
+            const { fetchBreakingNewsClips, fetchLatestClipsByTopic, fetchYouTubeClips } =
+              await import("../../../packages/intelligence/src/news-clips.js");
+
+            let clips: Awaited<ReturnType<typeof fetchBreakingNewsClips>> = [];
+            if (channelId) {
+              clips = await fetchYouTubeClips(channelId, limit);
+            } else if (topic) {
+              clips = await fetchLatestClipsByTopic(topic, limit);
+            } else {
+              clips = await fetchBreakingNewsClips(limit);
+            }
+
+            writeJsonWithEtag(response, request, 200, {
+              clips,
+              fetched_at: new Date().toISOString(),
+              total_count: clips.length,
+            });
+          } catch (error) {
+            writeJson(response, 503, {
+              error: "clips_unavailable",
+              message: String(error),
+            });
+          }
+          return;
+        }
+
         // ============ SOURCE REGISTRY ENDPOINTS ============
 
         // GET /sources
@@ -2722,6 +2910,9 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
       await waitForActiveRequestsToDrain();
       if (incidentIntelligenceInterval) {
         clearInterval(incidentIntelligenceInterval);
+      }
+      if (_realtimeNewsInterval) {
+        clearInterval(_realtimeNewsInterval);
       }
       if (lagMonitorInterval) {
         clearInterval(lagMonitorInterval);

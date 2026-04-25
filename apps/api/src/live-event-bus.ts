@@ -18,7 +18,10 @@ export interface LiveEvent {
     | "swan_session_update"
     | "swan_thread_update"
     | "swan_projection_update"
-    | "swan_notification";
+    | "swan_notification"
+    | "news_realtime_update"
+    | "tv_channel_update"
+    | "news_clip_update";
   timestamp: string;
   sequence?: number;
   payload: unknown;
@@ -131,6 +134,47 @@ export interface IncidentIntelligenceUpdate extends LiveEvent {
     widget_count: number;
     run_count: number;
     updated_at: string;
+  };
+}
+
+export interface NewsRealtimeUpdate extends LiveEvent {
+  type: "news_realtime_update";
+  payload: {
+    update_id: string;
+    type: "breaking" | "development" | "alert" | "live_coverage" | "new_source";
+    severity: "critical" | "high" | "medium" | "low";
+    headline: string;
+    summary: string;
+    source: string;
+    source_tier: 1 | 2 | 3 | 4;
+    link?: string;
+    cluster_id?: string;
+    country_codes: string[];
+    published_at: string;
+  };
+}
+
+export interface TVChannelUpdate extends LiveEvent {
+  type: "tv_channel_update";
+  payload: {
+    channel_id: string;
+    name: string;
+    source: string;
+    is_live: boolean;
+    viewer_count?: number;
+    updated_at: string;
+  };
+}
+
+export interface NewsClipUpdate extends LiveEvent {
+  type: "news_clip_update";
+  payload: {
+    clip_id: string;
+    title: string;
+    source: string;
+    video_url: string;
+    thumbnail_url?: string;
+    published_at: string;
   };
 }
 
