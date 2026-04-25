@@ -375,6 +375,27 @@
               </div>
               <div class="coordinates" id="coordinates">--.----, --.----</div>
               <div class="zoom-level" id="zoom-level">ZOOM: --</div>
+
+              <!-- Location Search -->
+              <div class="viewport-search" id="viewport-search">
+                <input
+                  type="text"
+                  id="viewport-search-input"
+                  class="viewport-search-input"
+                  placeholder="Search location or coords..."
+                  autocomplete="off"
+                />
+                <button type="button" id="viewport-search-btn" class="viewport-search-btn" aria-label="Search">
+                  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                </button>
+                <div id="viewport-search-results" class="viewport-search-results hidden"></div>
+              </div>
+
+              <!-- 360 View Trigger -->
+              <button type="button" id="viewport-360-btn" class="viewport-360-btn hidden" title="Open 360° view">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                <span>360°</span>
+              </button>
             </div>
             <!-- CRT Scanlines Effect -->
             <div class="crt-overlay" id="crt-overlay"></div>
@@ -851,6 +872,30 @@
           <div class="modal-body" id="webcam-detail-content">
             <div class="webcam-player-container" id="webcam-player"></div>
             <div class="webcam-detail-meta" id="webcam-detail-meta"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 360 View Modal -->
+      <div id="panorama-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-wide">
+          <div class="modal-header">
+            <h3>360° STREET VIEW</h3>
+            <button type="button" id="close-panorama-modal" class="modal-close">×</button>
+          </div>
+          <div class="modal-body" id="panorama-body">
+            <div id="panorama-iframe-container" class="panorama-iframe-container">
+              <div class="panorama-placeholder">
+                <span class="panorama-placeholder-icon">◉</span>
+                <span class="panorama-placeholder-text">Loading panoramic view...</span>
+              </div>
+            </div>
+            <div class="panorama-meta" id="panorama-meta"></div>
+          </div>
+          <div class="modal-footer">
+            <a id="panorama-external-google" href="#" target="_blank" class="btn-primary">Google Maps</a>
+            <a id="panorama-external-mapillary" href="#" target="_blank" class="btn-secondary">Mapillary</a>
           </div>
         </div>
       </div>

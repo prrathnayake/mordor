@@ -3704,54 +3704,102 @@ function createInWorldInfoPanel(lat, lon, data) {
   const color = data.color || "#ef4444";
   const entityColor = Cesium.Color.fromCssColorString(color);
   const groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
-  const skyPos = Cesium.Cartesian3.fromDegrees(lon, lat, 60_000);
 
-  // Ground pulse ring
+  // Ground marker point
+  const point = viewer.entities.add({
+    position: groundPos,
+    point: {
+      pixelSize: 16,
+      color: entityColor,
+      outlineColor: Cesium.Color.WHITE,
+      outlineWidth: 2,
+      scaleByDistance: new Cesium.NearFarScalar(1e3, 2.0, 5e6, 0.5),
+    },
+  });
+  activeCesiumEntities.push(point);
+
+  // Ground pulse ring (expanding)
   const ring = viewer.entities.add({
     position: groundPos,
     ellipse: {
-      semiMinorAxis: 3000,
-      semiMajorAxis: 3000,
-      material: new Cesium.ColorMaterialProperty(entityColor.withAlpha(0.2)),
-      outline: true,
-      outlineColor: entityColor.withAlpha(0.8),
-      outlineWidth: 2,
+      semiMinorAxis: new Cesium.CallbackProperty(() => {
+        const t = (Date.now() % 2000) / 2000;
+        return 2000 + t * 4000;
+      }, false),
+      semiMajorAxis: new Cesium.CallbackProperty(() => {
+        const t = (Date.now() % 2000) / 2000;
+        return 2000 + t * 4000;
+      }, false),
+      material: new Cesium.ColorMaterialProperty(
+        new Cesium.CallbackProperty(() => {
+          const t = (Date.now() % 2000) / 2000;
+          return entityColor.withAlpha(0.4 * (1 - t));
+        }, false),
+      ),
+      outline: false,
     },
   });
   activeCesiumEntities.push(ring);
 
-  // Leader line from ground to sky
+  // Vertical leader line
+  const lineTop = Cesium.Cartesian3.fromDegrees(lon, lat, 40_000);
   activeLeaderLine = viewer.entities.add({
     polyline: {
-      positions: new Cesium.PositionPropertyArray([
-        new Cesium.ConstantPositionProperty(groundPos),
-        new Cesium.ConstantPositionProperty(skyPos),
-      ]),
-      width: 2,
-      material: new Cesium.ColorMaterialProperty(
-        new Cesium.CallbackProperty(() => {
-          const alpha = 0.4 + Math.sin(Date.now() / 500) * 0.2;
-          return entityColor.withAlpha(alpha);
-        }, false),
-      ),
+      positions: [groundPos, lineTop],
+      width: 3,
+      material: new Cesium.PolylineGlowMaterialProperty({
+        glowPower: 0.3,
+        color: entityColor,
+      }),
     },
   });
 
-  // Top glow at sky position
-  const topGlow = viewer.entities.add({
-    position: skyPos,
-    billboard: {
-      image: createGlowCanvas(color),
-      width: 64,
-      height: 64,
-      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.0, 5e6, 0.3),
+  // Top label on the line
+  const label = viewer.entities.add({
+    position: lineTop,
+    label: {
+      text: data.title.length > 30 ? `${data.title.substring(0, 30)}...` : data.title,
+      font: "bold 13px monospace",
+      fillColor: Cesium.Color.WHITE,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 3,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      pixelOffset: new Cesium.Cartesian2(0, -10),
+      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 2e6, 0.5),
+      translucencyByDistance: new Cesium.NearFarScalar(1e3, 1.0, 2e6, 0.3),
+      showBackground: true,
+      backgroundColor: new Cesium.Color(0.05, 0.05, 0.08, 0.85),
+      backgroundPadding: new Cesium.Cartesian2(8, 4),
     },
   });
-  activeCesiumEntities.push(topGlow);
+  activeCesiumEntities.push(label);
 
-  // Create DOM panel
+  // Badge label
+  const badgeLabel = viewer.entities.add({
+    position: lineTop,
+    label: {
+      text: ` [${data.badge}] `,
+      font: "bold 11px monospace",
+      fillColor: Cesium.Color.WHITE,
+      outlineColor: entityColor,
+      outlineWidth: 2,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.TOP,
+      pixelOffset: new Cesium.Cartesian2(0, 10),
+      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 2e6, 0.5),
+      showBackground: true,
+      backgroundColor: entityColor.withAlpha(0.9),
+      backgroundPadding: new Cesium.Cartesian2(6, 2),
+    },
+  });
+  activeCesiumEntities.push(badgeLabel);
+
+  // Create DOM overlay panel that tracks the 3D position
   const panel = document.createElement("div");
-  panel.className = "inworld-info-panel";
+  panel.className = "inworld-info-panel inworld-panel-visible";
+  panel.style.opacity = "1";
+  panel.style.transform = "scale(1)";
   panel.innerHTML = `
     <div class="inworld-panel-header">
       <span class="inworld-panel-badge" style="background:${color}">${data.badge}</span>
@@ -3763,7 +3811,7 @@ function createInWorldInfoPanel(lat, lon, data) {
       ${data.link ? `<a href="${data.link}" target="_blank" class="inworld-panel-link">Open Source &rarr;</a>` : ""}
       ${data.videoId ? `<a href="https://www.youtube.com/watch?v=${data.videoId}" target="_blank" class="inworld-panel-link">Watch Live &rarr;</a>` : ""}
     </div>
-    <div class="inworld-panel-arrow" style="border-top-color:${color}"></div>
+    <div class="inworld-panel-arrow" style="border-top-color:rgba(8,8,14,0.92)"></div>
   `;
 
   const viewport = document.getElementById("viewport-container") || document.body;
@@ -3778,26 +3826,29 @@ function createInWorldInfoPanel(lat, lon, data) {
     if (activeInWorldPanel === panel) clearInWorldPanel();
   }, 30_000);
 
-  // Position tracker
+  // Position tracker - projects 3D position to screen space every frame
   panelPostRenderListener = () => {
     if (!viewer || !activeInWorldPanel || viewer.isDestroyed()) return;
 
     try {
-      const canvasPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, skyPos);
-      if (!canvasPos) return;
+      const canvasPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, lineTop);
+      if (!canvasPos) {
+        panel.style.opacity = "0";
+        return;
+      }
 
       const rect = viewport.getBoundingClientRect();
       const x = canvasPos.x - rect.left;
-      const y = canvasPos.y - rect.top - panel.offsetHeight - 12;
+      const y = canvasPos.y - rect.top - panel.offsetHeight - 16;
 
-      // Check if behind globe
+      // Occlusion check - is the point behind the globe?
       const ellipsoid = viewer.scene.globe.ellipsoid;
       const cameraPos = viewer.camera.position;
       const occluder = new Cesium.EllipsoidalOccluder(ellipsoid, cameraPos);
       const occludeePos = Cesium.Cartographic.fromDegrees(lon, lat, 0);
       const isVisible = !occluder.isPointHidden(occludeePos);
 
-      if (isVisible && y > 0 && x > 0 && x < rect.width && y < rect.height) {
+      if (isVisible && x > -200 && y > -200 && x < rect.width + 200 && y < rect.height + 200) {
         panel.style.opacity = "1";
         panel.style.transform = "scale(1)";
         panel.style.left = `${x}px`;
@@ -3807,35 +3858,11 @@ function createInWorldInfoPanel(lat, lon, data) {
         panel.style.transform = "scale(0.8)";
       }
     } catch (_e) {
-      // ignore
+      // ignore projection errors
     }
   };
 
   viewer.scene.postRender.addEventListener(panelPostRenderListener);
-
-  // Trigger animation on next frame
-  requestAnimationFrame(() => {
-    if (activeInWorldPanel === panel) {
-      panel.classList.add("inworld-panel-visible");
-    }
-  });
-}
-
-function createGlowCanvas(color) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
-
-  const gradient = ctx.createRadialGradient(64, 64, 4, 64, 64, 60);
-  gradient.addColorStop(0, `${color}FF`);
-  gradient.addColorStop(0.3, `${color}80`);
-  gradient.addColorStop(1, `${color}00`);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 128, 128);
-
-  return canvas.toDataURL();
 }
 
 function getSeverityColor(severity) {
@@ -6810,6 +6837,267 @@ function _clearAllInferenceEntities() {
   inferenceState.entities.clear();
 }
 
+// ===== LOCATION SEARCH =====
+let searchAbortController = null;
+
+function parseCoordinates(input) {
+  // Match patterns like: "40.7128, -74.0060" or "40.7128 -74.0060" or "40.7128,-74.0060"
+  const coordRegex = /^\s*(-?\d+(?:\.\d+)?)\s*[,\s]+\s*(-?\d+(?:\.\d+)?)\s*$/;
+  const match = input.trim().match(coordRegex);
+  if (!match) return null;
+  const lat = Number.parseFloat(match[1]);
+  const lon = Number.parseFloat(match[2]);
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return { lat, lon, name: `${lat.toFixed(4)}, ${lon.toFixed(4)}` };
+}
+
+async function geocodeWithNominatim(query, signal) {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", "8");
+  url.searchParams.set("addressdetails", "1");
+
+  const response = await fetch(url.toString(), {
+    headers: { "Accept-Language": "en" },
+    signal,
+  });
+  if (!response.ok) throw new Error("Geocoding failed");
+  const data = await response.json();
+  return data.map((item) => ({
+    lat: Number.parseFloat(item.lat),
+    lon: Number.parseFloat(item.lon),
+    name: item.display_name.split(",")[0],
+    detail: item.display_name,
+    type: item.type,
+  }));
+}
+
+function renderSearchResults(results) {
+  const container = document.getElementById("viewport-search-results");
+  if (!container) return;
+
+  if (results.length === 0) {
+    container.innerHTML = '<div class="search-empty">No results found</div>';
+    container.classList.remove("hidden");
+    return;
+  }
+
+  container.innerHTML = results
+    .map(
+      (r) => `
+    <div class="search-result-item" data-lat="${r.lat}" data-lon="${r.lon}">
+      <div class="search-result-name">${escapeHtml(r.name)}</div>
+      <div class="search-result-meta">${escapeHtml(r.detail || r.type || "")}</div>
+      <div class="search-result-coords">${r.lat.toFixed(4)}, ${r.lon.toFixed(4)}</div>
+    </div>
+  `,
+    )
+    .join("");
+
+  container.querySelectorAll(".search-result-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const lat = Number.parseFloat(item.dataset.lat);
+      const lon = Number.parseFloat(item.dataset.lon);
+      flyToSearchResult(lat, lon, 2500);
+      container.classList.add("hidden");
+      document.getElementById("viewport-search-input").value =
+        item.querySelector(".search-result-name").textContent;
+    });
+  });
+
+  container.classList.remove("hidden");
+}
+
+function flyToSearchResult(lat, lon, altitude = 2500) {
+  if (!viewer || typeof Cesium === "undefined") return;
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, altitude),
+    duration: 1.5,
+  });
+  updateStatus(`LOC ${lat.toFixed(3)}, ${lon.toFixed(3)}`);
+}
+
+async function handleViewportSearch() {
+  const input = document.getElementById("viewport-search-input");
+  const container = document.getElementById("viewport-search-results");
+  if (!input || !container) return;
+  const query = input.value.trim();
+  if (!query) {
+    container.classList.add("hidden");
+    return;
+  }
+
+  // Try coordinates first
+  const coords = parseCoordinates(query);
+  if (coords) {
+    flyToSearchResult(coords.lat, coords.lon);
+    container.classList.add("hidden");
+    return;
+  }
+
+  // Geocode via Nominatim
+  if (searchAbortController) searchAbortController.abort();
+  searchAbortController = new AbortController();
+
+  try {
+    const results = await geocodeWithNominatim(query, searchAbortController.signal);
+    renderSearchResults(results);
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      renderSearchResults([]);
+    }
+  }
+}
+
+function initViewportSearch() {
+  const input = document.getElementById("viewport-search-input");
+  const btn = document.getElementById("viewport-search-btn");
+  const results = document.getElementById("viewport-search-results");
+  if (!input || !btn) return;
+
+  // Debounced input handler
+  let debounceTimer = null;
+  input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => handleViewportSearch(), 400);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleViewportSearch();
+    } else if (e.key === "Escape") {
+      results.classList.add("hidden");
+      input.blur();
+    }
+  });
+
+  btn.addEventListener("click", () => handleViewportSearch());
+
+  // Keyboard shortcut: / to focus search (only when not typing in another input)
+  document.addEventListener("keydown", (e) => {
+    const activeTag = document.activeElement?.tagName;
+    const isTypingInInput =
+      activeTag === "INPUT" ||
+      activeTag === "TEXTAREA" ||
+      document.activeElement?.isContentEditable;
+    if (e.key === "/" && document.activeElement !== input && !isTypingInInput) {
+      e.preventDefault();
+      input.focus();
+    }
+  });
+
+  // Close results on outside click
+  document.addEventListener("click", (e) => {
+    const searchEl = document.getElementById("viewport-search");
+    if (searchEl && !searchEl.contains(e.target)) {
+      results.classList.add("hidden");
+    }
+  });
+}
+
+// ===== 360° VIEW =====
+function getCameraLatLon() {
+  if (!viewer || typeof Cesium === "undefined") return null;
+  const center = new Cesium.Cartesian2(
+    viewer.canvas.clientWidth / 2,
+    viewer.canvas.clientHeight / 2,
+  );
+  const cartesian = viewer.camera.pickEllipsoid(center);
+  if (!cartesian) return null;
+  const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+  return {
+    lat: Cesium.Math.toDegrees(cartographic.latitude),
+    lon: Cesium.Math.toDegrees(cartographic.longitude),
+    altitude: cartographic.height,
+  };
+}
+
+function update360ButtonVisibility() {
+  const btn = document.getElementById("viewport-360-btn");
+  if (!btn || !viewer || typeof Cesium === "undefined") return;
+  const cameraHeight = viewer.camera.positionCartographic?.height ?? Infinity;
+  if (cameraHeight < 3000) {
+    btn.classList.remove("hidden");
+  } else {
+    btn.classList.add("hidden");
+  }
+}
+
+function openPanoramaModal() {
+  const pos = getCameraLatLon();
+  if (!pos) return;
+
+  const modal = document.getElementById("panorama-modal");
+  const container = document.getElementById("panorama-iframe-container");
+  const meta = document.getElementById("panorama-meta");
+  const googleLink = document.getElementById("panorama-external-google");
+  const mapillaryLink = document.getElementById("panorama-external-mapillary");
+
+  if (!modal) return;
+
+  const lat = pos.lat.toFixed(5);
+  const lon = pos.lon.toFixed(5);
+
+  // External links
+  if (googleLink) {
+    googleLink.href = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}`;
+  }
+  if (mapillaryLink) {
+    mapillaryLink.href = `https://www.mapillary.com/app/?lat=${lat}&lng=${lon}&z=17&panos=true`;
+  }
+
+  // Try Google Street View embed if API key is available
+  const streetScene = getStreetSceneConfig();
+  if (streetScene.googleApiKey) {
+    container.innerHTML = `
+      <iframe
+        src="https://www.google.com/maps/embed/v1/streetview?key=${encodeURIComponent(streetScene.googleApiKey)}&location=${lat},${lon}"
+        allowfullscreen
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade"
+      ></iframe>
+    `;
+  } else {
+    container.innerHTML = `
+      <div class="panorama-placeholder">
+        <span class="panorama-placeholder-icon">◉</span>
+        <span class="panorama-placeholder-text">Street View embed requires a Google Maps API key.</span>
+        <span class="panorama-placeholder-text">Use the buttons below to open an external viewer.</span>
+      </div>
+    `;
+  }
+
+  if (meta) {
+    meta.textContent = `LAT ${lat}  LON ${lon}  ALT ${Math.round(pos.altitude)}m`;
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function initPanorama() {
+  const btn = document.getElementById("viewport-360-btn");
+  const closeBtn = document.getElementById("close-panorama-modal");
+  const modal = document.getElementById("panorama-modal");
+
+  if (btn) btn.addEventListener("click", openPanoramaModal);
+  if (closeBtn && modal) {
+    closeBtn.addEventListener("click", () => modal.classList.add("hidden"));
+  }
+  if (modal) {
+    modal
+      .querySelector(".modal-overlay")
+      ?.addEventListener("click", () => modal.classList.add("hidden"));
+  }
+
+  // Update button visibility on camera change
+  if (viewer) {
+    viewer.camera.changed.addEventListener(update360ButtonVisibility);
+    update360ButtonVisibility();
+  }
+}
+
 // ===== INITIALIZATION =====
 async function init() {
   // Demo-ready replay defaults aligned with the bundled fixture data.
@@ -6914,6 +7202,10 @@ async function init() {
   switchToReplayMode();
   loadReplay();
   restoreStateFromUrl();
+
+  // Location search & 360° view
+  initViewportSearch();
+  initPanorama();
 }
 
 // Start the app when DOM is ready
