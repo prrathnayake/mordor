@@ -27,6 +27,10 @@ interface WebAppConfig {
   streetScene: StreetSceneConfig;
 }
 
+function resolveApiBaseUrl(requestOrigin: string | null, envApiBaseUrl: string): string {
+  return "http://localhost:3001";
+}
+
 async function serveStaticFile(
   response: ServerResponse,
   fileUrl: URL,
@@ -117,8 +121,11 @@ export function createWebServer(options: { app_config: WebAppConfig }): RunningW
 
     try {
       if (url.pathname === "/" || url.pathname === "/index.html") {
+        const requestOrigin = request.headers.origin;
+        const apiBaseUrl = resolveApiBaseUrl(requestOrigin ?? null, options.app_config.apiBaseUrl);
+        const dynamicConfig = { ...options.app_config, apiBaseUrl };
         const template = await readFile(new URL("index.html", publicRoot), "utf8");
-        const html = template.replaceAll("__APP_CONFIG_JSON__", JSON.stringify(options.app_config));
+        const html = template.replaceAll("__APP_CONFIG_JSON__", JSON.stringify(dynamicConfig));
         response.statusCode = 200;
         response.setHeader("Content-Type", "text/html; charset=utf-8");
         response.setHeader("Cache-Control", "no-store");
