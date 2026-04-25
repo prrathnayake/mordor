@@ -3705,18 +3705,18 @@ function createInWorldInfoPanel(lat, lon, data) {
   const entityColor = Cesium.Color.fromCssColorString(color);
   const groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
 
-  // Ground marker point
-  const point = viewer.entities.add({
+  // Ground pin billboard (custom canvas)
+  const pin = viewer.entities.add({
     position: groundPos,
-    point: {
-      pixelSize: 16,
-      color: entityColor,
-      outlineColor: Cesium.Color.WHITE,
-      outlineWidth: 2,
+    billboard: {
+      image: createPinCanvas(color, data.badge),
+      width: 48,
+      height: 48,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
       scaleByDistance: new Cesium.NearFarScalar(1e3, 2.0, 5e6, 0.5),
     },
   });
-  activeCesiumEntities.push(point);
+  activeCesiumEntities.push(pin);
 
   // Ground pulse ring (expanding)
   const ring = viewer.entities.add({
@@ -3742,127 +3742,193 @@ function createInWorldInfoPanel(lat, lon, data) {
   activeCesiumEntities.push(ring);
 
   // Vertical leader line
-  const lineTop = Cesium.Cartesian3.fromDegrees(lon, lat, 40_000);
+  const lineTop = Cesium.Cartesian3.fromDegrees(lon, lat, 35_000);
   activeLeaderLine = viewer.entities.add({
     polyline: {
       positions: [groundPos, lineTop],
-      width: 3,
+      width: 2,
       material: new Cesium.PolylineGlowMaterialProperty({
-        glowPower: 0.3,
+        glowPower: 0.25,
         color: entityColor,
       }),
     },
   });
 
-  // Top label on the line
-  const label = viewer.entities.add({
-    position: lineTop,
-    label: {
-      text: data.title.length > 30 ? `${data.title.substring(0, 30)}...` : data.title,
-      font: "bold 13px monospace",
-      fillColor: Cesium.Color.WHITE,
-      outlineColor: Cesium.Color.BLACK,
-      outlineWidth: 3,
-      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+  // Popup info box billboard — this is the "window from 3D earth"
+  const popupPos = Cesium.Cartesian3.fromDegrees(lon, lat, 38_000);
+  const popup = viewer.entities.add({
+    position: popupPos,
+    billboard: {
+      image: createPopupCanvas(data, color),
+      width: 280,
+      height: 200,
       verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-      pixelOffset: new Cesium.Cartesian2(0, -10),
-      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 2e6, 0.5),
-      translucencyByDistance: new Cesium.NearFarScalar(1e3, 1.0, 2e6, 0.3),
-      showBackground: true,
-      backgroundColor: new Cesium.Color(0.05, 0.05, 0.08, 0.85),
-      backgroundPadding: new Cesium.Cartesian2(8, 4),
+      pixelOffset: new Cesium.Cartesian2(0, -8),
+      scaleByDistance: new Cesium.NearFarScalar(5e3, 1.5, 2e6, 0.4),
+      translucencyByDistance: new Cesium.NearFarScalar(1e3, 1.0, 3e6, 0.3),
+      eyeOffset: new Cesium.Cartesian3(0, 0, -10),
     },
   });
-  activeCesiumEntities.push(label);
-
-  // Badge label
-  const badgeLabel = viewer.entities.add({
-    position: lineTop,
-    label: {
-      text: ` [${data.badge}] `,
-      font: "bold 11px monospace",
-      fillColor: Cesium.Color.WHITE,
-      outlineColor: entityColor,
-      outlineWidth: 2,
-      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-      verticalOrigin: Cesium.VerticalOrigin.TOP,
-      pixelOffset: new Cesium.Cartesian2(0, 10),
-      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 2e6, 0.5),
-      showBackground: true,
-      backgroundColor: entityColor.withAlpha(0.9),
-      backgroundPadding: new Cesium.Cartesian2(6, 2),
-    },
-  });
-  activeCesiumEntities.push(badgeLabel);
-
-  // Create DOM overlay panel that tracks the 3D position
-  const panel = document.createElement("div");
-  panel.className = "inworld-info-panel inworld-panel-visible";
-  panel.style.opacity = "1";
-  panel.style.transform = "scale(1)";
-  panel.innerHTML = `
-    <div class="inworld-panel-header">
-      <span class="inworld-panel-badge" style="background:${color}">${data.badge}</span>
-      <span class="inworld-panel-title">${escapeHtml(data.title)}</span>
-      <button class="inworld-panel-close" title="Close">&times;</button>
-    </div>
-    <div class="inworld-panel-body">
-      ${data.lines.map((line) => `<div class="inworld-panel-line">${escapeHtml(line)}</div>`).join("")}
-      ${data.link ? `<a href="${data.link}" target="_blank" class="inworld-panel-link">Open Source &rarr;</a>` : ""}
-      ${data.videoId ? `<a href="https://www.youtube.com/watch?v=${data.videoId}" target="_blank" class="inworld-panel-link">Watch Live &rarr;</a>` : ""}
-    </div>
-    <div class="inworld-panel-arrow" style="border-top-color:rgba(8,8,14,0.92)"></div>
-  `;
-
-  const viewport = document.getElementById("viewport-container") || document.body;
-  viewport.appendChild(panel);
-  activeInWorldPanel = panel;
-
-  // Close handler
-  panel.querySelector(".inworld-panel-close").addEventListener("click", clearInWorldPanel);
+  activeCesiumEntities.push(popup);
 
   // Auto-dismiss after 30s
   setTimeout(() => {
-    if (activeInWorldPanel === panel) clearInWorldPanel();
+    clearInWorldPanel();
   }, 30_000);
+}
 
-  // Position tracker - projects 3D position to screen space every frame
-  panelPostRenderListener = () => {
-    if (!viewer || !activeInWorldPanel || viewer.isDestroyed()) return;
+function createPinCanvas(color, badge) {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
 
-    try {
-      const canvasPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, lineTop);
-      if (!canvasPos) {
-        panel.style.opacity = "0";
-        return;
-      }
+  const c = color || "#ef4444";
+  const cx = size / 2;
 
-      const rect = viewport.getBoundingClientRect();
-      const x = canvasPos.x - rect.left;
-      const y = canvasPos.y - rect.top - panel.offsetHeight - 16;
+  // Glow
+  const glow = ctx.createRadialGradient(cx, 44, 2, cx, 44, 28);
+  glow.addColorStop(0, `${c}90`);
+  glow.addColorStop(1, `${c}00`);
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
 
-      // Occlusion check - is the point behind the globe?
-      const ellipsoid = viewer.scene.globe.ellipsoid;
-      const cameraPos = viewer.camera.position;
-      const occluder = new Cesium.EllipsoidalOccluder(ellipsoid, cameraPos);
-      const occludeePos = Cesium.Cartographic.fromDegrees(lon, lat, 0);
-      const isVisible = !occluder.isPointHidden(occludeePos);
+  // Pin circle
+  ctx.beginPath();
+  ctx.arc(cx, 28, 12, 0, Math.PI * 2);
+  ctx.fillStyle = c;
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
-      if (isVisible && x > -200 && y > -200 && x < rect.width + 200 && y < rect.height + 200) {
-        panel.style.opacity = "1";
-        panel.style.transform = "scale(1)";
-        panel.style.left = `${x}px`;
-        panel.style.top = `${y}px`;
-      } else {
-        panel.style.opacity = "0";
-        panel.style.transform = "scale(0.8)";
-      }
-    } catch (_e) {
-      // ignore projection errors
-    }
-  };
+  // Pin point
+  ctx.beginPath();
+  ctx.moveTo(cx, 40);
+  ctx.lineTo(cx - 8, 56);
+  ctx.lineTo(cx, 50);
+  ctx.lineTo(cx + 8, 56);
+  ctx.closePath();
+  ctx.fillStyle = c;
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
-  viewer.scene.postRender.addEventListener(panelPostRenderListener);
+  // Badge letter
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(badge, cx, 28);
+
+  return canvas.toDataURL();
+}
+
+function createPopupCanvas(data, color) {
+  const w = 560;
+  const h = 400;
+  const r = 12;
+  const pad = 16;
+  const lineH = 26;
+  const headerH = 44;
+  const arrowH = 14;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const c = color || "#ef4444";
+  const bg = "rgba(10, 10, 18, 0.92)";
+  const border = "rgba(255, 255, 255, 0.15)";
+  const textMain = "#e2e8f0";
+  const textDim = "#94a3b8";
+
+  // Draw rounded rect with arrow
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(w - r, 0);
+  ctx.quadraticCurveTo(w, 0, w, r);
+  ctx.lineTo(w, h - r - arrowH);
+  ctx.quadraticCurveTo(w, h - arrowH, w - r, h - arrowH);
+  ctx.lineTo(w / 2 + arrowH, h - arrowH);
+  ctx.lineTo(w / 2, h);
+  ctx.lineTo(w / 2 - arrowH, h - arrowH);
+  ctx.lineTo(r, h - arrowH);
+  ctx.quadraticCurveTo(0, h - arrowH, 0, h - r - arrowH);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = border;
+  ctx.stroke();
+  ctx.restore();
+
+  // Header bar
+  ctx.fillStyle = `${c}20`;
+  ctx.fillRect(2, 2, w - 4, headerH);
+  ctx.fillStyle = c;
+  ctx.fillRect(2, 2, 4, headerH);
+
+  // Badge circle
+  ctx.beginPath();
+  ctx.arc(pad + 14, headerH / 2 + 2, 14, 0, Math.PI * 2);
+  ctx.fillStyle = c;
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 16px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(data.badge, pad + 14, headerH / 2 + 2);
+
+  // Title
+  ctx.fillStyle = textMain;
+  ctx.font = "bold 20px monospace";
+  ctx.textAlign = "left";
+  const title = data.title.length > 38 ? `${data.title.substring(0, 38)}...` : data.title;
+  ctx.fillText(title, pad + 38, headerH / 2 + 2);
+
+  // Divider
+  const yStart = headerH + 16;
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, yStart - 6);
+  ctx.lineTo(w - pad, yStart - 6);
+  ctx.stroke();
+
+  // Info lines
+  ctx.textBaseline = "top";
+  data.lines.forEach((line, i) => {
+    ctx.fillStyle = textDim;
+    ctx.font = "18px monospace";
+    ctx.fillText(line, pad, yStart + i * lineH);
+  });
+
+  // Footer action
+  const footerY = yStart + data.lines.length * lineH + 10;
+  ctx.fillStyle = `${c}30`;
+  ctx.fillRect(pad, footerY, w - pad * 2, 34);
+  ctx.strokeStyle = `${c}60`;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad, footerY, w - pad * 2, 34);
+
+  ctx.fillStyle = c;
+  ctx.font = "bold 16px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const action = data.videoId ? "WATCH LIVE" : "OPEN SOURCE";
+  ctx.fillText(`${action}  \u2192`, w / 2, footerY + 17);
+
+  return canvas.toDataURL();
 }
 
 function getSeverityColor(severity) {
