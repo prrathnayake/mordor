@@ -57,6 +57,12 @@ Contains:
 - zone filters
 - saved views
 
+The left layer panel includes a Global Intel Sources layer for source discovery and
+watch capability. Its globe markers open location-anchored popups that can show
+embedded live video or source metadata without navigating away from the tactical
+shell. Non-map sources, such as space weather or cyber advisories, remain visible in
+the intelligence panel as catalog and alert context rather than misleading map pins.
+
 ### Center
 - 2D/3D map or globe
 - selected object highlights
@@ -175,6 +181,8 @@ Do not mix them all into one uncontrolled global store.
 - show source-level errors in health panel
 - stale replay data should be explicit
 - API loading and websocket reconnect states should be visible
+- media and source catalog failures should degrade to a local demo catalog so the
+  operator can still test popups, embeds, and source metadata while offline
 
 ## Frontend non-negotiables
 1. Live and replay must be visibly distinct.

@@ -19,6 +19,14 @@ Start with only a few source categories:
 - external geospatial feed
 - manual operator annotation feed
 
+The intelligence source catalog extends this with operational source groups for
+hazards, atmosphere, space weather, maritime/coastal monitoring, cyber advisories,
+health events, and public live video. Point-like feeds should continue to normalize
+into `external_data_events`; source/watch-wall metadata belongs in `source_registry`
+or `intelligence_source_catalog`; embedded video observations belong in
+`intelligence_media_observations` so incident/evidence workflows can reference the
+same source without duplicating provider details.
+
 ## Adapter lifecycle
 1. fetch or receive payload
 2. validate source envelope

@@ -68,7 +68,7 @@
           <div class="tab-panel" data-tab="layers">
           <div class="rail-header">
             <h2>DATA LAYERS</h2>
-            <span class="rail-count" id="active-layers-count">0/8</span>
+            <span class="rail-count" id="active-layers-count">0/9</span>
           </div>
           <div class="layers-list" id="layers-list">
             <!-- Live Flights -->
@@ -223,6 +223,26 @@
               </div>
               <label class="layer-toggle">
                 <input type="checkbox" id="layer-bikeshare" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <!-- Global Intelligence Sources -->
+            <div class="layer-item" data-layer="intelSources" data-available="true">
+              <div class="layer-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2 3 6v6c0 5 3.8 9.7 9 10 5.2-.3 9-5 9-10V6l-9-4zm0 2.2L19 7v5c0 4-2.9 7.6-7 8-4.1-.4-7-4-7-8V7l7-2.8zm-1 4.3h2v6h-2v-6zm0 8h2v2h-2v-2z"/></svg>
+              </div>
+              <div class="layer-info">
+                <div class="layer-name">Global Intel Sources</div>
+                <div class="layer-source" id="layer-provider-intel-sources">Open source catalog</div>
+                <div class="layer-meta">
+                  <span class="layer-count" id="intel-sources-count">--</span>
+                  <span class="layer-status" id="layer-status-intel-sources">LOADING</span>
+                  <span class="layer-update" id="layer-update-intel-sources">--</span>
+                </div>
+              </div>
+              <label class="layer-toggle">
+                <input type="checkbox" id="layer-intel-sources" checked />
                 <span class="toggle-slider"></span>
               </label>
             </div>

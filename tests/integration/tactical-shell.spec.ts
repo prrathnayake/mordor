@@ -82,7 +82,7 @@ describe("Tactical UI Shell Integration", () => {
       expect(html).toContain('class="tactical-footer"');
     });
 
-    it("should contain all 8 data layers", async () => {
+    it("should contain all 9 data layers", async () => {
       const response = await fetch(`http://127.0.0.1:${web.port}/`);
       const html = await response.text();
 
@@ -94,6 +94,8 @@ describe("Tactical UI Shell Integration", () => {
       expect(html).toContain('data-layer="weather"');
       expect(html).toContain('data-layer="cctv"');
       expect(html).toContain('data-layer="bikeshare"');
+      expect(html).toContain('data-layer="intelSources"');
+      expect(html).toContain('id="layer-intel-sources" checked');
     });
 
     it("should contain style preset buttons", async () => {
@@ -217,6 +219,20 @@ describe("Tactical UI State Management", () => {
       const html = await response.text();
 
       expect(html).toContain('id="layer-military" disabled');
+    });
+
+    it("should expose the global intelligence source catalog", async () => {
+      const response = await fetch(`http://127.0.0.1:${api.port}/intelligence/sources`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json();
+      expect(body.total_count).toBeGreaterThanOrEqual(8);
+      expect(
+        body.sources.some(
+          (source: { source_id: string }) => source.source_id === "nasa-eonet-open-events",
+        ),
+      ).toBe(true);
+      expect(body.sources.some((source: { embed_url?: string }) => source.embed_url)).toBe(true);
     });
   });
 

@@ -447,8 +447,12 @@ function renderLoadingStates() {
     dashDom.entityList.innerHTML = '<div class="loading-placeholder">Loading entities...</div>';
   }
   if (dashDom.intelligenceContent) {
-    dashDom.intelligenceContent.innerHTML =
-      '<div class="loading-placeholder">Loading intelligence...</div>';
+    if (typeof window.renderIntelligenceSourcePanel === "function") {
+      window.renderIntelligenceSourcePanel();
+    } else {
+      dashDom.intelligenceContent.innerHTML =
+        '<div class="loading-placeholder">Loading intelligence...</div>';
+    }
   }
   if (dashDom.telemetryContent) {
     dashDom.telemetryContent.innerHTML =
@@ -606,6 +610,10 @@ function renderIntelligencePanel() {
   const entity = dashboardState.entities.find((e) => e.id === dashboardState.selectedEntityId);
 
   if (!entity) {
+    if (typeof window.renderIntelligenceSourcePanel === "function") {
+      window.renderIntelligenceSourcePanel();
+      return;
+    }
     dashDom.intelligenceContent.innerHTML = `
       <div class="intelligence-empty">
         <span class="empty-icon">◉</span>
@@ -924,6 +932,12 @@ function initTabs() {
         });
         const panel = document.querySelector(`.right-rail .tab-panel[data-tab="${target}"]`);
         if (panel) panel.classList.remove("hidden");
+        if (
+          target === "intelligence" &&
+          typeof window.renderIntelligenceSourcePanel === "function"
+        ) {
+          window.renderIntelligenceSourcePanel();
+        }
       });
     });
   }

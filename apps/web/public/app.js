@@ -75,6 +75,7 @@ const layerState = {
   weather: false,
   cctv: true,
   bikeshare: false,
+  intelSources: true,
 };
 
 // External data layer state
@@ -185,6 +186,257 @@ const webcamState = {
   regionFilter: "",
   activeEmbeds: new Set(),
 };
+
+const intelligenceSourceState = {
+  sources: [],
+  layers: [],
+  generatedAt: null,
+  entities: new Map(),
+  enabled: true,
+  totalCount: 0,
+  embeddableCount: 0,
+};
+
+const demoNewsClusters = [
+  {
+    cluster_id: "demo_news_black_sea_shipping",
+    primary_item: {
+      item_id: "demo_news_black_sea_shipping_primary",
+      title: "Black Sea shipping corridor disruption monitored near Odesa",
+      link: "https://example.com/black-sea-shipping",
+      source: "Chrona Open Intel",
+      source_tier: 2,
+      category: "infrastructure",
+      published_at: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
+      captured_at: new Date().toISOString(),
+      lat: 46.48,
+      lon: 30.72,
+      country_codes: ["UA"],
+      threat_level: "high",
+      snippet: "Local maritime and port indicators suggest delayed transits around Odesa.",
+      thumbnail_url: null,
+      language: "en",
+      metadata: {},
+    },
+    related_items: [],
+    mention_count: 7,
+    source_count: 4,
+    source_tier: 2,
+    category: "infrastructure",
+    center_lat: 46.48,
+    center_lon: 30.72,
+    country_codes: ["UA"],
+    threat_level: "high",
+    velocity_score: 5.4,
+    story_phase: "developing",
+    published_at_range: {
+      earliest: new Date(Date.now() - 92 * 60 * 1000).toISOString(),
+      latest: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
+    },
+  },
+  {
+    cluster_id: "demo_news_red_sea_security",
+    primary_item: {
+      item_id: "demo_news_red_sea_security_primary",
+      title: "Red Sea security alerts remain elevated around shipping lane",
+      link: "https://example.com/red-sea-security",
+      source: "Chrona Open Intel",
+      source_tier: 2,
+      category: "conflict",
+      published_at: new Date(Date.now() - 47 * 60 * 1000).toISOString(),
+      captured_at: new Date().toISOString(),
+      lat: 14.93,
+      lon: 43.15,
+      country_codes: ["YE"],
+      threat_level: "critical",
+      snippet: "Multiple open indicators point to sustained risk near Red Sea passage routes.",
+      thumbnail_url: null,
+      language: "en",
+      metadata: {},
+    },
+    related_items: [],
+    mention_count: 12,
+    source_count: 5,
+    source_tier: 2,
+    category: "conflict",
+    center_lat: 14.93,
+    center_lon: 43.15,
+    country_codes: ["YE"],
+    threat_level: "critical",
+    velocity_score: 11.8,
+    story_phase: "breaking",
+    published_at_range: {
+      earliest: new Date(Date.now() - 138 * 60 * 1000).toISOString(),
+      latest: new Date(Date.now() - 47 * 60 * 1000).toISOString(),
+    },
+  },
+];
+
+const demoNewsFeeds = [
+  {
+    feed_id: "demo_open_intel",
+    name: "Chrona Open Intel",
+    url: "https://example.com/rss",
+    category: "conflict",
+    tier: 2,
+    language: "en",
+    last_fetched_at: new Date().toISOString(),
+    last_item_count: 19,
+    status: "active",
+    error_message: null,
+  },
+  {
+    feed_id: "demo_maritime_watch",
+    name: "Maritime Watch",
+    url: "https://example.com/maritime",
+    category: "infrastructure",
+    tier: 2,
+    language: "en",
+    last_fetched_at: new Date().toISOString(),
+    last_item_count: 8,
+    status: "active",
+    error_message: null,
+  },
+];
+
+const demoWebcamChannels = [
+  {
+    channel_id: "demo_red_sea_tv",
+    name: "Red Sea Passage TV",
+    region: "Middle East",
+    country_code: "YE",
+    lat: 14.93,
+    lon: 43.15,
+    youtube_video_id: "jfKfPfyJRdk",
+    youtube_live: true,
+    relevance_tags: ["shipping", "security", "red sea"],
+    priority: "high",
+  },
+  {
+    channel_id: "demo_odesa_port_tv",
+    name: "Odesa Port TV",
+    region: "Eastern Europe",
+    country_code: "UA",
+    lat: 46.48,
+    lon: 30.72,
+    youtube_video_id: "jfKfPfyJRdk",
+    youtube_live: true,
+    relevance_tags: ["port", "ukraine", "maritime"],
+    priority: "medium",
+  },
+  {
+    channel_id: "demo_taiwan_strait_tv",
+    name: "Taiwan Strait TV",
+    region: "East Asia",
+    country_code: "TW",
+    lat: 24.48,
+    lon: 119.94,
+    youtube_video_id: "jfKfPfyJRdk",
+    youtube_live: true,
+    relevance_tags: ["strait", "maritime", "monitoring"],
+    priority: "high",
+  },
+];
+
+const demoIntelligenceSources = [
+  {
+    source_id: "nasa-eonet-open-events",
+    layer_id: "natural_hazards",
+    source_type: "hazard",
+    label: "Natural Event Tracker",
+    provider: "NASA EONET",
+    source_url: "https://eonet.gsfc.nasa.gov/api/v3/events",
+    license: "NASA open data",
+    status: "real",
+    update_cadence_seconds: 900,
+    lat: 0,
+    lon: -30,
+    coverage: "global",
+    normalized_event_type: "natural_hazard_observed",
+    watch_capabilities: ["wildfire", "storm", "volcano", "event imagery"],
+    useful_fields: ["id", "title", "categories", "geometry", "sources"],
+    ui_layer: "Hazards",
+    ui_summary: "Near-real-time global natural events with source imagery links.",
+  },
+  {
+    source_id: "gdacs-global-disasters",
+    layer_id: "global_disasters",
+    source_type: "hazard",
+    label: "Global Disaster Alerts",
+    provider: "GDACS",
+    source_url: "https://www.gdacs.org/xml/rss.xml",
+    license: "Attribution requested",
+    status: "real",
+    update_cadence_seconds: 360,
+    lat: 10,
+    lon: 20,
+    coverage: "global",
+    normalized_event_type: "disaster_alert_observed",
+    watch_capabilities: ["earthquake", "cyclone", "flood", "severity alert"],
+    useful_fields: ["eventid", "eventtype", "alertlevel", "country"],
+    ui_layer: "Disasters",
+    ui_summary: "Global sudden-onset disaster alerts for operational triage.",
+  },
+  {
+    source_id: "noaa-swpc-space-weather",
+    layer_id: "space_weather",
+    source_type: "space",
+    label: "Space Weather Alerts",
+    provider: "NOAA SWPC",
+    source_url: "https://services.swpc.noaa.gov/json/",
+    license: "Public domain",
+    status: "planned",
+    update_cadence_seconds: 300,
+    lat: null,
+    lon: null,
+    coverage: "non_map",
+    normalized_event_type: "space_weather_observed",
+    watch_capabilities: ["geomagnetic storm", "radio blackout", "Kp index"],
+    useful_fields: ["issue_datetime", "message", "scale", "kp"],
+    ui_layer: "Space Weather",
+    ui_summary: "Non-map alert strip for GNSS, comms, and power-grid risk.",
+  },
+  {
+    source_id: "official-live-watchwall",
+    layer_id: "live_video",
+    source_type: "media",
+    label: "Live Video Watch Wall",
+    provider: "Official webcams and public live TV",
+    source_url: "https://www.youtube.com/",
+    license: "Per-channel terms",
+    status: "degraded",
+    update_cadence_seconds: 300,
+    lat: 40.76,
+    lon: -73.98,
+    coverage: "point",
+    normalized_event_type: "video_source_observed",
+    watch_capabilities: ["embedded player", "live availability", "evidence capture"],
+    useful_fields: ["video_id", "embed_url", "channel_id", "live_status"],
+    ui_layer: "Live Watch",
+    ui_summary: "Embeddable, location-linked video sources for globe and incident panels.",
+    embed_url: "https://www.youtube-nocookie.com/embed/jfKfPfyJRdk",
+    video_id: "jfKfPfyJRdk",
+  },
+  {
+    source_id: "maritime-coastal-open-sources",
+    layer_id: "maritime_watch",
+    source_type: "maritime",
+    label: "Maritime and Coastal Watch",
+    provider: "NOAA, port feeds, buoy networks",
+    source_url: "https://www.ndbc.noaa.gov/",
+    license: "Public domain where NOAA; verify partner feeds",
+    status: "planned",
+    update_cadence_seconds: 600,
+    lat: 1.29,
+    lon: 103.85,
+    coverage: "regional",
+    normalized_event_type: "maritime_signal_observed",
+    watch_capabilities: ["buoys", "marine warnings", "port cameras", "shipping chokepoints"],
+    useful_fields: ["station_id", "wave_height", "wind_speed", "warning_type"],
+    ui_layer: "Maritime",
+    ui_summary: "Chokepoint and coastal operations context for ports and sea lanes.",
+  },
+];
 
 // ===== CIRCUIT BREAKERS =====
 class CircuitBreaker {
@@ -487,6 +739,7 @@ const dom = {
   layerWeather: document.getElementById("layer-weather"),
   layerCctv: document.getElementById("layer-cctv"),
   layerBikeshare: document.getElementById("layer-bikeshare"),
+  layerIntelSources: document.getElementById("layer-intel-sources"),
 
   // Visual Controls
   presetButtons: document.querySelectorAll(".preset-button"),
@@ -1065,7 +1318,7 @@ function showAuthModal() {
 
 function updateActiveLayersCount() {
   const activeCount = Object.values(layerState).filter(Boolean).length;
-  dom.activeLayersCount.textContent = `${activeCount}/8`;
+  dom.activeLayersCount.textContent = `${activeCount}/${Object.keys(layerState).length}`;
 }
 
 function syncLayerStateFromDom() {
@@ -1077,6 +1330,7 @@ function syncLayerStateFromDom() {
   layerState.weather = Boolean(dom.layerWeather?.checked);
   layerState.cctv = Boolean(dom.layerCctv?.checked);
   layerState.bikeshare = Boolean(dom.layerBikeshare?.checked);
+  layerState.intelSources = Boolean(dom.layerIntelSources?.checked);
   syncStateToUrl();
 }
 
@@ -1694,6 +1948,32 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function sanitizeExternalHref(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(String(value), window.location.href);
+    return ["http:", "https:"].includes(url.protocol) ? escapeHtml(url.href) : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function sanitizeEmbedUrl(value) {
+  if (!value) return "";
+  try {
+    const url = new URL(String(value), window.location.href);
+    const allowedHosts = new Set([
+      "www.youtube.com",
+      "youtube.com",
+      "www.youtube-nocookie.com",
+      "youtube-nocookie.com",
+    ]);
+    return url.protocol === "https:" && allowedHosts.has(url.hostname) ? escapeHtml(url.href) : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
 function clearEntityMap(entityMap) {
   if (!viewer) {
     entityMap?.clear?.();
@@ -2006,6 +2286,16 @@ function initCesium() {
         selectedSatelliteId = null;
         clearSatelliteOrbit();
         selectObject(objectId);
+        return;
+      }
+
+      const intelligenceSource = pickedObject.id.properties.intelligenceSource?.getValue?.(
+        Cesium.JulianDate.now(),
+      );
+      if (intelligenceSource?.source_id) {
+        selectedSatelliteId = null;
+        clearSatelliteOrbit();
+        showIntelligenceSourceDetail(intelligenceSource.source_id);
         return;
       }
 
@@ -3440,7 +3730,11 @@ async function loadNewsIntelligence() {
     const response = await fetch(`${apiBaseUrl}/news?limit=80`, {
       headers: sessionState.token ? { Authorization: `Bearer ${sessionState.token}` } : {},
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      applyDemoNewsIntelligence();
+      updateStatus(response.status === 401 ? "NEWS DEMO MODE" : "NEWS FALLBACK");
+      return;
+    }
 
     const data = await response.json();
     newsState.items = data.items || [];
@@ -3455,7 +3749,23 @@ async function loadNewsIntelligence() {
     renderNewsFeedList();
   } catch (error) {
     console.error("Failed to load news intelligence:", error);
+    applyDemoNewsIntelligence();
+    updateStatus("NEWS FALLBACK");
   }
+}
+
+function applyDemoNewsIntelligence() {
+  newsState.clusters = demoNewsClusters;
+  newsState.items = demoNewsClusters.map((cluster) => cluster.primary_item);
+  newsState.feeds = demoNewsFeeds;
+  newsState.fetchedAt = new Date().toISOString();
+  newsState.totalCount = newsState.items.length;
+  newsState.criticalCount = newsState.items.filter(
+    (item) => item.threat_level === "critical",
+  ).length;
+  newsState.activeFeeds = demoNewsFeeds.filter((feed) => feed.status === "active").length;
+  renderNewsIntelligence();
+  renderNewsFeedList();
 }
 
 function renderNewsIntelligence() {
@@ -3534,7 +3844,11 @@ async function loadWebcamChannels() {
     const region = webcamState.regionFilter;
     const url = `${apiBaseUrl}/webcams${region ? `?region=${encodeURIComponent(region)}` : ""}`;
     const response = await fetch(url);
-    if (!response.ok) return;
+    if (!response.ok) {
+      applyDemoWebcamChannels();
+      updateStatus("WEBCAM FALLBACK");
+      return;
+    }
 
     const data = await response.json();
     webcamState.channels = data.channels || [];
@@ -3546,6 +3860,277 @@ async function loadWebcamChannels() {
     renderWebcamGrid();
   } catch (error) {
     console.error("Failed to load webcam channels:", error);
+    applyDemoWebcamChannels();
+    updateStatus("WEBCAM FALLBACK");
+  }
+}
+
+function applyDemoWebcamChannels() {
+  const region = webcamState.regionFilter;
+  webcamState.channels = region
+    ? demoWebcamChannels.filter((channel) => channel.region === region)
+    : demoWebcamChannels;
+  if (webcamState.regions.length === 0) {
+    webcamState.regions = [...new Set(demoWebcamChannels.map((channel) => channel.region))];
+    populateWebcamRegionFilter();
+  }
+  renderWebcamGrid();
+}
+
+async function loadIntelligenceSources() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/intelligence/sources`);
+    if (!response.ok) {
+      applyDemoIntelligenceSources();
+      updateStatus("INTEL SOURCE FALLBACK");
+      return;
+    }
+
+    const data = await response.json();
+    applyIntelligenceSourcePayload(data);
+  } catch (error) {
+    console.error("Failed to load intelligence source catalog:", error);
+    applyDemoIntelligenceSources();
+    updateStatus("INTEL SOURCE FALLBACK");
+  }
+}
+
+function applyDemoIntelligenceSources() {
+  applyIntelligenceSourcePayload({
+    generated_at: new Date().toISOString(),
+    total_count: demoIntelligenceSources.length,
+    embeddable_count: demoIntelligenceSources.filter((source) => source.embed_url).length,
+    layers: buildIntelligenceSourceLayers(demoIntelligenceSources),
+    sources: demoIntelligenceSources,
+  });
+}
+
+function applyIntelligenceSourcePayload(data) {
+  intelligenceSourceState.sources = Array.isArray(data.sources) ? data.sources : [];
+  intelligenceSourceState.layers = Array.isArray(data.layers)
+    ? data.layers
+    : buildIntelligenceSourceLayers(intelligenceSourceState.sources);
+  intelligenceSourceState.generatedAt = data.generated_at || new Date().toISOString();
+  intelligenceSourceState.totalCount = data.total_count || intelligenceSourceState.sources.length;
+  intelligenceSourceState.embeddableCount =
+    data.embeddable_count ||
+    intelligenceSourceState.sources.filter((source) => source.embed_url).length;
+  updateIntelligenceSourceRail();
+  renderIntelligenceSourcePanel();
+  renderIntelligenceSourceLayer();
+}
+
+function buildIntelligenceSourceLayers(sources) {
+  const grouped = new Map();
+  for (const source of sources) {
+    const existing = grouped.get(source.layer_id) || {
+      layer_id: source.layer_id,
+      label: source.ui_layer || source.layer_id,
+      source_count: 0,
+      source_types: new Set(),
+      status: source.status || "planned",
+    };
+    existing.source_count += 1;
+    existing.source_types.add(source.source_type);
+    if (source.status === "real") existing.status = "real";
+    grouped.set(source.layer_id, existing);
+  }
+  return Array.from(grouped.values()).map((layer) => ({
+    ...layer,
+    source_types: Array.from(layer.source_types),
+  }));
+}
+
+function updateIntelligenceSourceRail() {
+  const countEl = document.getElementById("intel-sources-count");
+  const statusEl = document.getElementById("layer-status-intel-sources");
+  const updateEl = document.getElementById("layer-update-intel-sources");
+  const providerEl = document.getElementById("layer-provider-intel-sources");
+  if (countEl) countEl.textContent = `${intelligenceSourceState.totalCount}`;
+  if (statusEl) {
+    const realCount = intelligenceSourceState.sources.filter(
+      (source) => source.status === "real",
+    ).length;
+    statusEl.textContent = `${realCount} LIVE`;
+    statusEl.className = realCount > 0 ? "layer-status" : "layer-status degraded";
+  }
+  if (updateEl) updateEl.textContent = formatRelativeAge(intelligenceSourceState.generatedAt);
+  if (providerEl) {
+    providerEl.textContent = `${intelligenceSourceState.embeddableCount} embeds / ${intelligenceSourceState.layers.length} layers`;
+  }
+}
+
+function renderIntelligenceSourcePanel(selectedSourceId = null) {
+  const container = document.getElementById("intelligence-content");
+  if (!container) return;
+
+  const selected = selectedSourceId
+    ? intelligenceSourceState.sources.find((source) => source.source_id === selectedSourceId)
+    : null;
+
+  const layerSummary = intelligenceSourceState.layers
+    .slice(0, 8)
+    .map(
+      (layer) => `
+        <div class="intel-source-layer">
+          <span class="intel-source-layer-name">${escapeHtml(layer.label)}</span>
+          <span class="intel-source-layer-count">${layer.source_count} sources</span>
+        </div>
+      `,
+    )
+    .join("");
+
+  const selectedHtml = selected
+    ? `
+      <div class="intel-source-selected">
+        <div class="intel-source-selected-title">${escapeHtml(selected.label)}</div>
+        <div class="intel-source-selected-provider">${escapeHtml(selected.provider)}</div>
+        <p>${escapeHtml(selected.ui_summary)}</p>
+        <div class="intel-source-field-grid">
+          <span>Layer</span><strong>${escapeHtml(selected.ui_layer || selected.layer_id)}</strong>
+          <span>Event</span><strong>${escapeHtml(selected.normalized_event_type)}</strong>
+          <span>Cadence</span><strong>${Math.round((selected.update_cadence_seconds || 0) / 60)} min</strong>
+          <span>Status</span><strong>${escapeHtml(selected.status)}</strong>
+        </div>
+      </div>
+    `
+    : "";
+
+  container.innerHTML = `
+    <div class="intel-source-overview">
+      <div class="intel-source-metric">
+        <span>${intelligenceSourceState.totalCount}</span>
+        <label>Sources</label>
+      </div>
+      <div class="intel-source-metric">
+        <span>${intelligenceSourceState.layers.length}</span>
+        <label>Layers</label>
+      </div>
+      <div class="intel-source-metric">
+        <span>${intelligenceSourceState.embeddableCount}</span>
+        <label>Embeds</label>
+      </div>
+    </div>
+    ${selectedHtml}
+    <div class="intel-source-list">
+      ${layerSummary || `<div class="intelligence-empty">No source catalog loaded</div>`}
+    </div>
+  `;
+}
+
+window.renderIntelligenceSourcePanel = renderIntelligenceSourcePanel;
+
+function renderIntelligenceSourceLayer() {
+  if (!viewer || typeof Cesium === "undefined") return;
+
+  if (!layerState.intelSources) {
+    clearIntelligenceSourceEntities();
+    return;
+  }
+
+  const nextIds = new Set();
+  const sources = intelligenceSourceState.sources.filter(
+    (source) => Number.isFinite(source.lat) && Number.isFinite(source.lon),
+  );
+
+  sources.forEach((source, index) => {
+    const entityId = `intel-source-${source.source_id}`;
+    nextIds.add(entityId);
+    const color = getIntelligenceSourceColor(source);
+    const position = Cesium.Cartesian3.fromDegrees(source.lon, source.lat, 1200);
+    const entitySpec = {
+      position,
+      point: {
+        pixelSize: source.embed_url ? 14 : 11,
+        color: Cesium.Color.fromCssColorString(color).withAlpha(0.88),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 1,
+      },
+      label: {
+        text: source.embed_url ? "WATCH" : source.ui_layer || source.source_type,
+        font: "10px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -17),
+        show: index < 6,
+      },
+      properties: {
+        intelligenceSource: source,
+      },
+    };
+
+    const existing = intelligenceSourceState.entities.get(entityId);
+    if (existing) {
+      existing.position = position;
+      existing.point.color = Cesium.Color.fromCssColorString(color).withAlpha(0.88);
+      existing.properties = entitySpec.properties;
+    } else {
+      intelligenceSourceState.entities.set(entityId, viewer.entities.add(entitySpec));
+    }
+  });
+
+  for (const [entityId, entity] of intelligenceSourceState.entities) {
+    if (!nextIds.has(entityId)) {
+      viewer.entities.remove(entity);
+      intelligenceSourceState.entities.delete(entityId);
+    }
+  }
+}
+
+function clearIntelligenceSourceEntities() {
+  if (!viewer) return;
+  for (const entity of intelligenceSourceState.entities.values()) {
+    viewer.entities.remove(entity);
+  }
+  intelligenceSourceState.entities.clear();
+}
+
+function getIntelligenceSourceColor(source) {
+  const colors = {
+    hazard: "#ef4444",
+    atmosphere: "#22c55e",
+    space: "#a78bfa",
+    maritime: "#38bdf8",
+    media: "#f59e0b",
+    cyber: "#f43f5e",
+    health: "#14b8a6",
+  };
+  return colors[source.source_type] || "#60a5fa";
+}
+
+function showIntelligenceSourceDetail(sourceId) {
+  const source = intelligenceSourceState.sources.find((item) => item.source_id === sourceId);
+  if (!source) return;
+
+  renderIntelligenceSourcePanel(source.source_id);
+  const lines = [
+    `${source.provider} / ${source.status}`,
+    `${source.coverage} coverage / ${Math.round((source.update_cadence_seconds || 0) / 60)} min cadence`,
+    `Stores: ${(source.storage_targets || ["external_data_events"]).join(", ")}`,
+    `Fields: ${(source.useful_fields || []).slice(0, 4).join(", ")}`,
+  ];
+  const tags = source.watch_capabilities || [];
+  const color = getIntelligenceSourceColor(source);
+
+  if (Number.isFinite(source.lat) && Number.isFinite(source.lon)) {
+    createInWorldInfoPanel(source.lat, source.lon, {
+      title: source.label,
+      badge: source.source_type === "media" ? "TV" : "I",
+      color,
+      lines,
+      summary: source.ui_summary,
+      link: source.source_url,
+      embedUrl: source.embed_url,
+      videoId: source.video_id,
+      tags,
+    });
+    flyToLocation(source.lat, source.lon, source.source_type === "media" ? "webcam" : "news");
+    updateStatus("INTEL SOURCE POPUP");
+  } else {
+    updateStatus("INTEL SOURCE PANEL");
   }
 }
 
@@ -3563,17 +4148,26 @@ function renderWebcamGrid() {
 
   grid.innerHTML = webcamState.channels
     .slice(0, 24)
-    .map(
-      (channel) => `
+    .map((channel) => {
+      const videoId = String(channel.youtube_video_id || "");
+      const canEmbed = isEmbeddableYouTubeId(videoId);
+      return `
     <div class="webcam-channel webcam-channel-priority-${escapeHtml(channel.priority)}" data-channel-id="${channel.channel_id}">
-      <iframe
-        class="webcam-iframe"
-        src="https://www.youtube.com/embed/${channel.youtube_video_id}?autoplay=0&mute=1"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen
-        loading="lazy"
-        title="${escapeHtml(channel.name)}"
-      ></iframe>
+      ${
+        canEmbed
+          ? `<iframe
+              class="webcam-iframe"
+              src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=0&mute=1"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen
+              loading="lazy"
+              title="${escapeHtml(channel.name)}"
+            ></iframe>`
+          : `<div class="webcam-iframe webcam-placeholder-frame">
+              <span>LIVE SOURCE</span>
+            </div>`
+      }
+      <button type="button" class="webcam-channel-open">Open location popup</button>
       <div class="webcam-channel-info">
         <div class="webcam-channel-name">${escapeHtml(channel.name)}</div>
         <div class="webcam-channel-region">${escapeHtml(channel.region)}</div>
@@ -3585,8 +4179,8 @@ function renderWebcamGrid() {
         </div>
       </div>
     </div>
-  `,
-    )
+  `;
+    })
     .join("");
 
   grid.querySelectorAll(".webcam-channel").forEach((el) => {
@@ -3595,6 +4189,10 @@ function renderWebcamGrid() {
       showWebcamDetail(channelId);
     });
   });
+}
+
+function isEmbeddableYouTubeId(videoId) {
+  return /^[a-zA-Z0-9_-]{8,}$/.test(videoId) && videoId !== "live";
 }
 
 function populateWebcamRegionFilter() {
@@ -3704,8 +4302,19 @@ function createInWorldInfoPanel(lat, lon, data) {
   const color = data.color || "#ef4444";
   const entityColor = Cesium.Color.fromCssColorString(color);
   const groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+  const safeLines = Array.isArray(data.lines) ? data.lines : [];
+  const safeLink = sanitizeExternalHref(data.link);
+  const safeVideoId = data.videoId ? encodeURIComponent(data.videoId) : "";
+  const safeEmbedUrl = sanitizeEmbedUrl(
+    data.embedUrl ||
+      (safeVideoId
+        ? `https://www.youtube-nocookie.com/embed/${safeVideoId}?autoplay=0&mute=1`
+        : ""),
+  );
+  const safeSummary = data.summary ? escapeHtml(data.summary) : "";
+  const safeTags = Array.isArray(data.tags) ? data.tags.slice(0, 6) : [];
 
-  // Ground pin billboard (custom canvas)
+  // Ground pin billboard
   const pin = viewer.entities.add({
     position: groundPos,
     billboard: {
@@ -3718,7 +4327,7 @@ function createInWorldInfoPanel(lat, lon, data) {
   });
   activeCesiumEntities.push(pin);
 
-  // Ground pulse ring (expanding)
+  // Ground pulse ring
   const ring = viewer.entities.add({
     position: groundPos,
     ellipse: {
@@ -3742,7 +4351,7 @@ function createInWorldInfoPanel(lat, lon, data) {
   activeCesiumEntities.push(ring);
 
   // Vertical leader line
-  const lineTop = Cesium.Cartesian3.fromDegrees(lon, lat, 35_000);
+  const lineTop = Cesium.Cartesian3.fromDegrees(lon, lat, 25_000);
   activeLeaderLine = viewer.entities.add({
     polyline: {
       positions: [groundPos, lineTop],
@@ -3754,26 +4363,99 @@ function createInWorldInfoPanel(lat, lon, data) {
     },
   });
 
-  // Popup info box billboard — this is the "window from 3D earth"
-  const popupPos = Cesium.Cartesian3.fromDegrees(lon, lat, 38_000);
-  const popup = viewer.entities.add({
-    position: popupPos,
-    billboard: {
-      image: createPopupCanvas(data, color),
-      width: 280,
-      height: 200,
-      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-      pixelOffset: new Cesium.Cartesian2(0, -8),
-      scaleByDistance: new Cesium.NearFarScalar(5e3, 1.5, 2e6, 0.4),
-      translucencyByDistance: new Cesium.NearFarScalar(1e3, 1.0, 3e6, 0.3),
-      eyeOffset: new Cesium.Cartesian3(0, 0, -10),
-    },
+  // Create DOM popup overlay that tracks the 3D position
+  const popupEl = document.createElement("div");
+  popupEl.className = "earth-popup-overlay";
+  popupEl.dataset.testid = "earth-popup-overlay";
+  popupEl.innerHTML = `
+    <div class="earth-popup-box" style="border-color:${color}">
+      <div class="earth-popup-header" style="background:${color}20">
+        <span class="earth-popup-badge" style="background:${color}">${escapeHtml(data.badge)}</span>
+        <span class="earth-popup-title">${escapeHtml(data.title)}</span>
+        <button class="earth-popup-close" title="Close">&times;</button>
+      </div>
+      <div class="earth-popup-body">
+        ${
+          safeEmbedUrl
+            ? `<div class="earth-popup-media">
+                <iframe
+                  src="${safeEmbedUrl}"
+                  title="${escapeHtml(data.title)}"
+                  loading="lazy"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen
+                ></iframe>
+              </div>`
+            : ""
+        }
+        ${safeSummary ? `<div class="earth-popup-summary">${safeSummary}</div>` : ""}
+        ${safeLines.map((line) => `<div class="earth-popup-line">${escapeHtml(line)}</div>`).join("")}
+        ${
+          safeTags.length > 0
+            ? `<div class="earth-popup-tags">${safeTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`
+            : ""
+        }
+        ${safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="earth-popup-link" style="color:${color}">Source details</a>` : ""}
+      </div>
+    </div>
+  `;
+
+  const cesiumContainer = document.getElementById("cesiumContainer") || document.body;
+  cesiumContainer.appendChild(popupEl);
+  activeInWorldPanel = popupEl;
+  popupEl.style.left = "50%";
+  popupEl.style.top = "50%";
+  popupEl.style.opacity = "1";
+
+  // Close handler
+  popupEl.querySelector(".earth-popup-close").addEventListener("click", clearInWorldPanel);
+
+  // Track 3D position and update DOM overlay
+  panelPostRenderListener = () => {
+    try {
+      if (!viewer || !activeInWorldPanel || viewer.isDestroyed?.()) return;
+      const result = new Cesium.Cartesian2();
+      const sceneTransform =
+        Cesium.SceneTransforms.wgs84ToWindowCoordinates ||
+        Cesium.SceneTransforms.worldToWindowCoordinates;
+      if (!sceneTransform) {
+        popupEl.dataset.projection = "unavailable";
+        return;
+      }
+      const canvasPos = sceneTransform?.(viewer.scene, lineTop, result);
+      if (!canvasPos) {
+        popupEl.style.opacity = "0";
+        popupEl.style.pointerEvents = "none";
+        return;
+      }
+
+      const rect = cesiumContainer.getBoundingClientRect();
+      const x = canvasPos.x;
+      const y = canvasPos.y;
+
+      const clampedX = Math.min(Math.max(x, 150), Math.max(rect.width - 150, 150));
+      const clampedY = Math.min(Math.max(y - 16, 110), Math.max(rect.height - 16, 110));
+      popupEl.style.opacity = "1";
+      popupEl.style.pointerEvents = "auto";
+      popupEl.style.transform = "translate(-50%, -100%) scale(1)";
+      popupEl.style.left = `${clampedX}px`;
+      popupEl.style.top = `${clampedY}px`;
+      popupEl.dataset.anchorX = String(Math.round(x));
+      popupEl.dataset.anchorY = String(Math.round(y));
+    } catch (_e) {
+      // ignore
+    }
+  };
+
+  viewer.scene.postRender.addEventListener(panelPostRenderListener);
+  // Force initial update next frame
+  requestAnimationFrame(() => {
+    if (panelPostRenderListener) panelPostRenderListener();
   });
-  activeCesiumEntities.push(popup);
 
   // Auto-dismiss after 30s
   setTimeout(() => {
-    clearInWorldPanel();
+    if (activeInWorldPanel === popupEl) clearInWorldPanel();
   }, 30_000);
 }
 
@@ -3827,7 +4509,7 @@ function createPinCanvas(color, badge) {
   return canvas.toDataURL();
 }
 
-function createPopupCanvas(data, color) {
+function _createPopupCanvas(data, color) {
   const w = 560;
   const h = 400;
   const r = 12;
@@ -3947,22 +4629,28 @@ function showNewsDetail(clusterId) {
   const cluster = newsState.clusters.find((c) => c.cluster_id === clusterId);
   if (!cluster) return;
 
+  const primaryItem = cluster.primary_item || {};
   const lines = [
-    cluster.primary_item.category.toUpperCase(),
+    String(primaryItem.category || cluster.category || "news").toUpperCase(),
     `${cluster.mention_count} mentions · ${cluster.source_count} sources`,
-    `Velocity: ${cluster.velocity_score.toFixed(1)}/hr · Threat: ${cluster.threat_level}`,
-    cluster.country_codes.join(", ") || "Global",
+    `Velocity: ${Number(cluster.velocity_score || 0).toFixed(1)}/hr · Threat: ${cluster.threat_level}`,
+    Array.isArray(cluster.country_codes) && cluster.country_codes.length > 0
+      ? cluster.country_codes.join(", ")
+      : "Global",
   ];
 
   if (cluster.center_lat != null && cluster.center_lon != null) {
     createInWorldInfoPanel(cluster.center_lat, cluster.center_lon, {
-      title: cluster.primary_item.title,
+      title: primaryItem.title || "News intelligence",
       badge: "N",
       color: getSeverityColor(cluster.threat_level),
       lines,
-      link: cluster.primary_item.link,
+      link: primaryItem.link,
     });
     flyToLocation(cluster.center_lat, cluster.center_lon, "news");
+    updateStatus("NEWS LOCATION POPUP");
+  } else {
+    updateStatus("NEWS HAS NO LOCATION");
   }
 }
 
@@ -3987,9 +4675,12 @@ function showWebcamDetail(channelId) {
     badge: "TV",
     color: channel.priority === "high" ? "#ef4444" : "#3b82f6",
     lines,
-    videoId: channel.youtube_video_id,
+    videoId: isEmbeddableYouTubeId(String(channel.youtube_video_id || ""))
+      ? channel.youtube_video_id
+      : null,
   });
   flyToLocation(channel.lat, channel.lon, "webcam");
+  updateStatus("TV LOCATION POPUP");
 }
 
 function hideWebcamDetail() {
@@ -6059,6 +6750,24 @@ function initEventListeners() {
     });
   });
 
+  dom.layerIntelSources.addEventListener("change", (e) => {
+    layerState.intelSources = e.target.checked;
+    intelligenceSourceState.enabled = e.target.checked;
+    updateActiveLayersCount();
+    if (e.target.checked) {
+      renderIntelligenceSourceLayer();
+      renderIntelligenceSourcePanel();
+    } else {
+      clearIntelligenceSourceEntities();
+      clearInWorldPanel();
+    }
+    emitSwanActivity("layer_toggled", {
+      targetType: "layer",
+      targetId: "intelSources",
+      context: { enabled: e.target.checked },
+    });
+  });
+
   // Inference layer toggles
   dom.layerDegradation.addEventListener("change", (e) => {
     inferenceState.layers.degradation = e.target.checked;
@@ -7251,10 +7960,21 @@ async function init() {
     );
   }
 
+  loadWebcamChannels();
   smartPollHandles.set(
     "webcams",
     startSmartPollLoop("webcams", loadWebcamChannels, {
       intervalMs: 60000,
+      pauseWhenHidden: true,
+      maxBackoffMultiplier: 2,
+    }),
+  );
+
+  loadIntelligenceSources();
+  smartPollHandles.set(
+    "intelligenceSources",
+    startSmartPollLoop("intelligenceSources", loadIntelligenceSources, {
+      intervalMs: 120000,
       pauseWhenHidden: true,
       maxBackoffMultiplier: 2,
     }),
