@@ -3507,20 +3507,7 @@ function renderNewsIntelligence() {
   container.querySelectorAll(".news-cluster").forEach((el) => {
     el.addEventListener("click", () => {
       const clusterId = el.dataset.clusterId;
-      const cluster = newsState.clusters.find((c) => c.cluster_id === clusterId);
-      if (cluster) {
-        if (cluster.center_lat != null && cluster.center_lon != null) {
-          viewer?.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(
-              cluster.center_lon,
-              cluster.center_lat,
-              500000,
-            ),
-          });
-        }
-        const link = cluster.primary_item.link;
-        if (link) window.open(link, "_blank");
-      }
+      showNewsDetail(clusterId);
     });
   });
 }
@@ -3605,12 +3592,7 @@ function renderWebcamGrid() {
   grid.querySelectorAll(".webcam-channel").forEach((el) => {
     el.addEventListener("click", () => {
       const channelId = el.dataset.channelId;
-      const channel = webcamState.channels.find((c) => c.channel_id === channelId);
-      if (channel && viewer) {
-        viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(channel.lon, channel.lat, 50000),
-        });
-      }
+      showWebcamDetail(channelId);
     });
   });
 }
@@ -3627,6 +3609,351 @@ function populateWebcamRegionFilter() {
   });
 }
 
+function _initNewsAndWebcam() {
+  const newsToggle = document.getElementById("news-toggle");
+  if (newsToggle) {
+    newsToggle.addEventListener("click", () => {
+      newsState.enabled = !newsState.enabled;
+      newsToggle.textContent = newsState.enabled ? "NEWS ON" : "NEWS OFF";
+      newsToggle.classList.toggle("active", newsState.enabled);
+      if (newsState.enabled) {
+        loadNewsIntelligence();
+      }
+    });
+  }
+
+  // News category filter
+  const newsFilter = document.getElementById("news-category-filter");
+  if (newsFilter) {
+    newsFilter.addEventListener("change", (e) => {
+      newsState.categoryFilter = e.target.value;
+      renderNewsIntelligence();
+    });
+  }
+
+  // Webcam region filter
+  const webcamFilter = document.getElementById("webcam-region-filter");
+  if (webcamFilter) {
+    webcamFilter.addEventListener("change", (e) => {
+      webcamState.regionFilter = e.target.value;
+      loadWebcamChannels();
+    });
+  }
+
+  // News detail modal close
+  const closeNewsDetail = document.getElementById("close-news-detail");
+  if (closeNewsDetail) {
+    closeNewsDetail.addEventListener("click", hideNewsDetail);
+  }
+
+  // Webcam detail modal close
+  const closeWebcamDetail = document.getElementById("close-webcam-detail");
+  if (closeWebcamDetail) {
+    closeWebcamDetail.addEventListener("click", hideWebcamDetail);
+  }
+}
+
+// ===== GLOBE VISUALIZATION FOR NEWS & WEBCAMS =====
+let selectionEntities = [];
+let selectionLineEntity = null;
+
+function clearSelectionEntities() {
+  for (const entity of selectionEntities) {
+    if (viewer && entity) viewer.entities.remove(entity);
+  }
+  selectionEntities = [];
+  if (viewer && selectionLineEntity) {
+    viewer.entities.remove(selectionLineEntity);
+    selectionLineEntity = null;
+  }
+}
+
+function visualizeLocationOnGlobe(lat, lon, title, type, color) {
+  if (!viewer || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+  clearSelectionEntities();
+
+  const entityColor = Cesium.Color.fromCssColorString(color || "#ef4444");
+  const position = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+
+  // Main billboard marker
+  const marker = viewer.entities.add({
+    position,
+    billboard: {
+      image: createMarkerCanvas(type, color),
+      width: 32,
+      height: 32,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 5e6, 0.5),
+    },
+  });
+  selectionEntities.push(marker);
+
+  // Label
+  const label = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(lon, lat, 200),
+    label: {
+      text: title,
+      font: "bold 14px monospace",
+      fillColor: Cesium.Color.WHITE,
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 3,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+      pixelOffset: new Cesium.Cartesian2(0, -40),
+      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 5e6, 0.5),
+      translucencyByDistance: new Cesium.NearFarScalar(1e3, 1.0, 5e6, 0.3),
+    },
+  });
+  selectionEntities.push(label);
+
+  // Vertical cylinder (height indicator)
+  const cylinder = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(lon, lat, 5000),
+    cylinder: {
+      length: 10000,
+      topRadius: 0,
+      bottomRadius: 500,
+      material: new Cesium.ColorMaterialProperty(entityColor.withAlpha(0.4)),
+      outline: true,
+      outlineColor: entityColor,
+      outlineWidth: 1,
+    },
+  });
+  selectionEntities.push(cylinder);
+
+  // Ground ring
+  const ring = viewer.entities.add({
+    position,
+    ellipse: {
+      semiMinorAxis: 2000,
+      semiMajorAxis: 2000,
+      material: new Cesium.ColorMaterialProperty(entityColor.withAlpha(0.15)),
+      outline: true,
+      outlineColor: entityColor.withAlpha(0.6),
+      outlineWidth: 2,
+    },
+  });
+  selectionEntities.push(ring);
+
+  return { marker, label, cylinder, ring };
+}
+
+function createMarkerCanvas(type, color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const c = color || "#ef4444";
+
+  // Outer glow
+  const gradient = ctx.createRadialGradient(32, 48, 2, 32, 48, 24);
+  gradient.addColorStop(0, `${c}80`);
+  gradient.addColorStop(1, `${c}00`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 64);
+
+  // Pin body
+  ctx.beginPath();
+  ctx.moveTo(32, 8);
+  ctx.arc(32, 24, 12, 0, Math.PI * 2);
+  ctx.fillStyle = c;
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Pin point
+  ctx.beginPath();
+  ctx.moveTo(32, 36);
+  ctx.lineTo(26, 52);
+  ctx.lineTo(32, 48);
+  ctx.lineTo(38, 52);
+  ctx.closePath();
+  ctx.fillStyle = c;
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Type icon in center
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const icon = type === "news" ? "N" : type === "webcam" ? "TV" : "●";
+  ctx.fillText(icon, 32, 24);
+
+  return canvas.toDataURL();
+}
+
+function flyToLocation(lat, lon, type) {
+  if (!viewer || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+  const height = type === "news" ? 150000 : type === "webcam" ? 80000 : 50000;
+  const duration = type === "news" ? 2.0 : 1.5;
+
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+    orientation: {
+      heading: Cesium.Math.toRadians(0),
+      pitch: Cesium.Math.toRadians(-45),
+      roll: 0,
+    },
+    duration,
+    easingFunction: Cesium.EasingFunction.QUAD_OUT,
+  });
+}
+
+// ===== NEWS DETAIL MODAL =====
+function showNewsDetail(clusterId) {
+  const cluster = newsState.clusters.find((c) => c.cluster_id === clusterId);
+  if (!cluster) return;
+
+  const modal = document.getElementById("news-detail-modal");
+  const content = document.getElementById("news-detail-content");
+  const linkBtn = document.getElementById("news-detail-link");
+  if (!modal || !content) return;
+
+  const relatedItems = cluster.related_items
+    .slice(1, 6)
+    .map(
+      (item) => `
+      <div class="news-detail-related-item">
+        <strong>${escapeHtml(item.source)}</strong> — ${escapeHtml(item.title)}
+      </div>
+    `,
+    )
+    .join("");
+
+  content.innerHTML = `
+    <div class="news-detail-phase ${cluster.story_phase}">${cluster.story_phase}</div>
+    <div class="news-detail-title">${escapeHtml(cluster.primary_item.title)}</div>
+    <div class="news-detail-snippet">${escapeHtml(cluster.primary_item.snippet)}</div>
+    <div class="news-detail-meta-grid">
+      <div class="news-detail-meta-item">
+        <span class="news-detail-meta-label">Source</span>
+        <span class="news-detail-meta-value">${escapeHtml(cluster.primary_item.source)} (Tier ${cluster.primary_item.source_tier})</span>
+      </div>
+      <div class="news-detail-meta-item">
+        <span class="news-detail-meta-label">Category</span>
+        <span class="news-detail-meta-value">${cluster.primary_item.category}</span>
+      </div>
+      <div class="news-detail-meta-item">
+        <span class="news-detail-meta-label">Mentions</span>
+        <span class="news-detail-meta-value">${cluster.mention_count} from ${cluster.source_count} sources</span>
+      </div>
+      <div class="news-detail-meta-item">
+        <span class="news-detail-meta-label">Velocity</span>
+        <span class="news-detail-meta-value">${cluster.velocity_score.toFixed(1)} sources/hr</span>
+      </div>
+      <div class="news-detail-meta-item">
+        <span class="news-detail-meta-label">Threat</span>
+        <span class="news-detail-meta-value" style="color: ${getSeverityColor(cluster.threat_level)}">${cluster.threat_level}</span>
+      </div>
+      <div class="news-detail-meta-item">
+        <span class="news-detail-meta-label">Countries</span>
+        <span class="news-detail-meta-value">${cluster.country_codes.join(", ") || "—"}</span>
+      </div>
+    </div>
+    ${relatedItems ? `<div class="news-detail-related"><h4>Related Coverage</h4>${relatedItems}</div>` : ""}
+  `;
+
+  if (linkBtn) {
+    linkBtn.href = cluster.primary_item.link;
+  }
+
+  modal.classList.remove("hidden");
+
+  // Visualize on globe
+  if (cluster.center_lat != null && cluster.center_lon != null) {
+    visualizeLocationOnGlobe(
+      cluster.center_lat,
+      cluster.center_lon,
+      cluster.primary_item.title,
+      "news",
+      "#ef4444",
+    );
+    flyToLocation(cluster.center_lat, cluster.center_lon, "news");
+  }
+}
+
+function hideNewsDetail() {
+  const modal = document.getElementById("news-detail-modal");
+  if (modal) modal.classList.add("hidden");
+  clearSelectionEntities();
+}
+
+function getSeverityColor(severity) {
+  const colors = {
+    critical: "#ef4444",
+    high: "#f97316",
+    medium: "#eab308",
+    low: "#3b82f6",
+    none: "#6b7280",
+  };
+  return colors[severity] || "#6b7280";
+}
+
+// ===== WEBCAM DETAIL MODAL =====
+function showWebcamDetail(channelId) {
+  const channel = webcamState.channels.find((c) => c.channel_id === channelId);
+  if (!channel) return;
+
+  const modal = document.getElementById("webcam-detail-modal");
+  const player = document.getElementById("webcam-player");
+  const meta = document.getElementById("webcam-detail-meta");
+  if (!modal || !player || !meta) return;
+
+  player.innerHTML = `
+    <iframe
+      src="https://www.youtube.com/embed/${channel.youtube_video_id}?autoplay=1&mute=0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen
+      title="${escapeHtml(channel.name)}"
+    ></iframe>
+  `;
+
+  meta.innerHTML = `
+    <div class="webcam-detail-meta-item">
+      <span class="webcam-detail-meta-label">Region</span>
+      <span class="webcam-detail-meta-value">${escapeHtml(channel.region)}</span>
+    </div>
+    <div class="webcam-detail-meta-item">
+      <span class="webcam-detail-meta-label">Country</span>
+      <span class="webcam-detail-meta-value">${escapeHtml(channel.country_code)}</span>
+    </div>
+    <div class="webcam-detail-meta-item">
+      <span class="webcam-detail-meta-label">Priority</span>
+      <span class="webcam-detail-meta-value">${escapeHtml(channel.priority)}</span>
+    </div>
+    <div class="webcam-detail-meta-item">
+      <span class="webcam-detail-meta-label">Coordinates</span>
+      <span class="webcam-detail-meta-value">${channel.lat.toFixed(4)}, ${channel.lon.toFixed(4)}</span>
+    </div>
+    <div class="webcam-detail-tags">
+      ${channel.relevance_tags.map((t) => `<span class="webcam-tag">${escapeHtml(t)}</span>`).join("")}
+    </div>
+  `;
+
+  modal.classList.remove("hidden");
+
+  // Visualize on globe
+  visualizeLocationOnGlobe(channel.lat, channel.lon, channel.name, "webcam", "#3b82f6");
+  flyToLocation(channel.lat, channel.lon, "webcam");
+}
+
+function hideWebcamDetail() {
+  const modal = document.getElementById("webcam-detail-modal");
+  if (modal) modal.classList.add("hidden");
+  const player = document.getElementById("webcam-player");
+  if (player) player.innerHTML = "";
+  clearSelectionEntities();
+}
+
+// ===== INIT NEWS AND WEBCAM =====
 function initNewsAndWebcam() {
   const newsToggle = document.getElementById("news-toggle");
   if (newsToggle) {
@@ -3640,6 +3967,7 @@ function initNewsAndWebcam() {
     });
   }
 
+  // News category filter
   const newsFilter = document.getElementById("news-category-filter");
   if (newsFilter) {
     newsFilter.addEventListener("change", (e) => {
@@ -3648,12 +3976,25 @@ function initNewsAndWebcam() {
     });
   }
 
+  // Webcam region filter
   const webcamFilter = document.getElementById("webcam-region-filter");
   if (webcamFilter) {
     webcamFilter.addEventListener("change", (e) => {
       webcamState.regionFilter = e.target.value;
       loadWebcamChannels();
     });
+  }
+
+  // News detail modal close
+  const closeNewsDetail = document.getElementById("close-news-detail");
+  if (closeNewsDetail) {
+    closeNewsDetail.addEventListener("click", hideNewsDetail);
+  }
+
+  // Webcam detail modal close
+  const closeWebcamDetail = document.getElementById("close-webcam-detail");
+  if (closeWebcamDetail) {
+    closeWebcamDetail.addEventListener("click", hideWebcamDetail);
   }
 }
 

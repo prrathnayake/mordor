@@ -823,6 +823,38 @@
         </div>
       </div>
 
+      <!-- News Detail Modal -->
+      <div id="news-detail-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-wide">
+          <div class="modal-header">
+            <h3>NEWS INTELLIGENCE</h3>
+            <button type="button" id="close-news-detail" class="modal-close">×</button>
+          </div>
+          <div class="modal-body" id="news-detail-content">
+            <!-- Populated by JS -->
+          </div>
+          <div class="modal-footer" id="news-detail-actions">
+            <a id="news-detail-link" href="#" target="_blank" class="btn-primary">Open Source</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Webcam Detail Modal -->
+      <div id="webcam-detail-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content modal-wide">
+          <div class="modal-header">
+            <h3>LIVE SURVEILLANCE</h3>
+            <button type="button" id="close-webcam-detail" class="modal-close">×</button>
+          </div>
+          <div class="modal-body" id="webcam-detail-content">
+            <div class="webcam-player-container" id="webcam-player"></div>
+            <div class="webcam-detail-meta" id="webcam-detail-meta"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- New Incident Modal -->
       <div id="new-incident-modal" class="modal hidden">
         <div class="modal-content">
