@@ -144,6 +144,39 @@ function writeJson(response: ServerResponse, statusCode: number, payload: unknow
   response.end(JSON.stringify(payload));
 }
 
+function fnv1aHash(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function writeJsonWithEtag(
+  response: ServerResponse,
+  request: IncomingMessage,
+  statusCode: number,
+  payload: unknown,
+): void {
+  const body = JSON.stringify(payload);
+  const etag = `"${fnv1aHash(body).toString(36)}-${body.length.toString(36)}"`;
+  const ifNoneMatch = request.headers["if-none-match"];
+  if (ifNoneMatch === etag) {
+    addCorsHeaders(response);
+    response.statusCode = 304;
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.setHeader("ETag", etag);
+    response.end();
+    return;
+  }
+  addCorsHeaders(response);
+  response.statusCode = statusCode;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("ETag", etag);
+  response.end(body);
+}
+
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
 
@@ -863,7 +896,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             return;
           }
           const snapshot = await liveWorldService.getLatestStates();
-          writeJson(response, 200, snapshot);
+          writeJsonWithEtag(response, request, 200, snapshot);
           return;
         }
 
@@ -902,7 +935,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             object_id: objectId,
             limit,
           });
-          writeJson(response, 200, { alerts });
+          writeJsonWithEtag(response, request, 200, { alerts });
           return;
         }
 
@@ -1325,8 +1358,9 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         if (request.method === "GET" && url.pathname === "/layers") {
           const layers = await persistence.fetchExternalDataLayers();
-          writeJson(
+          writeJsonWithEtag(
             response,
+            request,
             200,
             layers.map((layer) => ({
               layer_id: layer.layer_id,
@@ -1363,7 +1397,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
               return;
             }
 
-            writeJson(response, 200, {
+            writeJsonWithEtag(response, request, 200, {
               layer_id: layer.layer_id,
               label: getLayerLabel(layer.layer_id),
               provider: layer.source_name,
@@ -1395,7 +1429,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             const bounds = parseBoundsFromSearchParams(url);
             const events = await persistence.fetchExternalDataEvents(layerId, bounds ?? undefined);
 
-            writeJson(response, 200, {
+            writeJsonWithEtag(response, request, 200, {
               layer_id: layerId,
               status: layer.status,
               count: events.length,
@@ -1445,7 +1479,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           const limit = limitParam ? Number.parseInt(limitParam, 10) : 50;
 
           const incidents = await persistence.fetchIncidents({ status, severity, limit });
-          writeJson(response, 200, { incidents });
+          writeJsonWithEtag(response, request, 200, { incidents });
           return;
         }
 
@@ -2121,7 +2155,23 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             end_time: endTime,
           });
 
-          writeJson(response, 200, { inferences });
+          writeJsonWithEtag(response, request, 200, { inferences });
+          return;
+        }
+
+        // GET /correlations
+        if (request.method === "GET" && url.pathname === "/correlations") {
+          if (!authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+          const severity = url.searchParams.get("severity") ?? undefined;
+          const status = url.searchParams.get("status") ?? undefined;
+          const limitParam = url.searchParams.get("limit");
+          const limit = limitParam ? Number.parseInt(limitParam, 10) : 50;
+
+          const signals = await persistence.fetchCorrelationSignals({ severity, status, limit });
+          writeJsonWithEtag(response, request, 200, { signals });
           return;
         }
 
@@ -2274,7 +2324,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         // GET /sources
         if (request.method === "GET" && url.pathname === "/sources") {
           const sources = await persistence.listSourceRegistry();
-          writeJson(response, 200, { sources });
+          writeJsonWithEtag(response, request, 200, { sources });
           return;
         }
 
@@ -2326,8 +2376,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           return;
         }
 
-        // GET /sources/:sourceId
-        if (request.method === "GET" && url.pathname.startsWith("/sources/")) {
+        // GET /sources/:sourceId (catch-all — must NOT match /sources/nearest-to-point or /sources/linked)
+        if (
+          request.method === "GET" &&
+          url.pathname.match(/^\/sources\/[^/]+$/) &&
+          url.pathname !== "/sources/nearest-to-point"
+        ) {
           const sourceId = url.pathname.replace("/sources/", "");
           const source = await persistence.getSourceRegistry(sourceId);
 

@@ -13,6 +13,7 @@ import {
   type UpsertIncidentWidgetManifestInput,
 } from "../../contracts/src/index.js";
 import type { Geometry, ObjectState } from "../../contracts/src/models.js";
+import type { CorrelationSignal, CorrelationSignalInput } from "../../correlation/src/index.js";
 import { applyCanonicalEventToObjectState } from "../../domain/src/index.js";
 import type {
   AuditLogInput,
@@ -22,6 +23,11 @@ import type {
   RawPayloadReceipt,
 } from "../../ingestion/src/index.js";
 import type { ReplayQueryRepository, ReplayQueryRequest } from "../../replay/src/index.js";
+import {
+  type CorrelationSignalFilter,
+  fetchCorrelationSignals,
+  persistCorrelationSignal,
+} from "./correlation-gateway.js";
 import {
   coerceIsoTimestamp,
   createPostgresDatabase,
@@ -3450,5 +3456,13 @@ export class PostgresPersistenceGateway
         completed24h: Number(latencyStats.rows[0]?.completed_count ?? 0),
       },
     };
+  }
+
+  async fetchCorrelationSignals(filter: CorrelationSignalFilter): Promise<CorrelationSignal[]> {
+    return fetchCorrelationSignals(this.database.pool, filter);
+  }
+
+  async persistCorrelationSignal(input: CorrelationSignalInput): Promise<CorrelationSignal> {
+    return persistCorrelationSignal(this.database.pool, input);
   }
 }

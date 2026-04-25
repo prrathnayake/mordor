@@ -166,6 +166,237 @@ const swanState = {
   pendingActivities: new Map(),
 };
 
+// ===== CIRCUIT BREAKERS =====
+class CircuitBreaker {
+  constructor(name, options = {}) {
+    this.name = name;
+    this.maxFailures = options.maxFailures ?? 2;
+    this.cooldownMs = options.cooldownMs ?? 5 * 60 * 1000;
+    this.state = { failures: 0, cooldownUntil: 0, lastError: null };
+    this.cache = new Map();
+    this.cacheTtlMs = options.cacheTtlMs ?? 10 * 60 * 1000;
+  }
+
+  async execute(fn, defaultValue, _options = {}) {
+    const now = Date.now();
+    if (now < this.state.cooldownUntil) {
+      return defaultValue;
+    }
+
+    try {
+      const result = await fn();
+      this.state.failures = 0;
+      this.state.lastError = null;
+      return result;
+    } catch (error) {
+      this.state.failures += 1;
+      this.state.lastError = String(error.message || error);
+      if (this.state.failures >= this.maxFailures) {
+        this.state.cooldownUntil = now + this.cooldownMs;
+        console.warn(
+          `[CircuitBreaker] ${this.name} tripped. Cooling down for ${this.cooldownMs}ms`,
+        );
+      }
+      return defaultValue;
+    }
+  }
+
+  isOpen() {
+    return Date.now() < this.state.cooldownUntil;
+  }
+}
+
+const layerCircuitBreakers = new Map();
+function getLayerCircuitBreaker(layerId) {
+  if (!layerCircuitBreakers.has(layerId)) {
+    layerCircuitBreakers.set(
+      layerId,
+      new CircuitBreaker(`layer:${layerId}`, { maxFailures: 3, cooldownMs: 60000 }),
+    );
+  }
+  return layerCircuitBreakers.get(layerId);
+}
+
+// ===== SMART POLLING =====
+const smartPollHandles = new Map();
+
+function startSmartPollLoop(name, fn, options = {}) {
+  const {
+    intervalMs = 60000,
+    pauseWhenHidden = true,
+    maxBackoffMultiplier = 4,
+    jitterFraction = 0.1,
+  } = options;
+
+  const currentInterval = intervalMs;
+  let multiplier = 1;
+  let timerId = null;
+  let running = true;
+
+  const schedule = () => {
+    if (!running) return;
+    const jitter = intervalMs * jitterFraction * (Math.random() * 2 - 1);
+    const delay = Math.max(1000, currentInterval * multiplier + jitter);
+    timerId = setTimeout(async () => {
+      if (pauseWhenHidden && document.hidden) {
+        schedule();
+        return;
+      }
+      try {
+        await fn();
+        multiplier = 1;
+      } catch (_e) {
+        multiplier = Math.min(maxBackoffMultiplier, multiplier * 2);
+        console.warn(`[SmartPoll] ${name} failed, backoff multiplier ${multiplier}`);
+      }
+      schedule();
+    }, delay);
+  };
+
+  schedule();
+
+  return {
+    stop() {
+      running = false;
+      if (timerId) clearTimeout(timerId);
+    },
+  };
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    // Smart polling handles pause/resume automatically.
+    // No extra flush needed — smart polling resumes via its own schedule().
+  }
+});
+
+// ===== URL STATE SYNC =====
+const URL_SYNC_DEBOUNCE_MS = 250;
+let urlSyncTimeout = null;
+
+function syncStateToUrl() {
+  if (urlSyncTimeout) clearTimeout(urlSyncTimeout);
+  urlSyncTimeout = setTimeout(() => {
+    const params = new URLSearchParams();
+
+    if (currentMode !== "replay") {
+      params.set("mode", currentMode);
+    }
+
+    const activeLayers = Object.entries(layerState)
+      .filter(([, enabled]) => enabled)
+      .map(([id]) => id);
+    if (activeLayers.length > 0) {
+      params.set("layers", activeLayers.join(","));
+    }
+
+    if (incidentState.currentIncident?.incident_id) {
+      params.set("incident", incidentState.currentIncident.incident_id);
+    }
+
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+    window.history.replaceState(null, "", newUrl);
+  }, URL_SYNC_DEBOUNCE_MS);
+}
+
+function restoreStateFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+
+  const mode = params.get("mode");
+  if (mode === "live" || mode === "replay") {
+    if (mode === "live") switchToLiveMode();
+    else switchToReplayMode();
+  }
+
+  const layersParam = params.get("layers");
+  if (layersParam) {
+    const enabled = new Set(layersParam.split(","));
+    for (const key of Object.keys(layerState)) {
+      layerState[key] = enabled.has(key);
+      const checkbox = document.getElementById(`layer-${key}`);
+      if (checkbox && checkbox.checked !== enabled.has(key)) {
+        checkbox.checked = enabled.has(key);
+        checkbox.dispatchEvent(new Event("change"));
+      }
+    }
+  }
+
+  const incidentId = params.get("incident");
+  if (incidentId) {
+    setTimeout(() => openIncident(incidentId), 500);
+  }
+}
+
+// ===== BREAKING NEWS BANNER =====
+const breakingNewsState = {
+  activeAlerts: [],
+  maxAlerts: 3,
+};
+
+function showBreakingAlert(alert) {
+  const banner = document.getElementById("breaking-news-banner");
+  if (!banner) return;
+
+  // Deduplicate by ID
+  if (breakingNewsState.activeAlerts.some((a) => a.id === alert.id)) return;
+
+  // Evict lower priority if at max
+  if (breakingNewsState.activeAlerts.length >= breakingNewsState.maxAlerts) {
+    const lowestIndex = breakingNewsState.activeAlerts.findIndex(
+      (a) => severityRank(a.severity) < severityRank(alert.severity),
+    );
+    if (lowestIndex === -1) return;
+    const evicted = breakingNewsState.activeAlerts.splice(lowestIndex, 1)[0];
+    const evictedEl = document.getElementById(`breaking-alert-${evicted.id}`);
+    if (evictedEl) evictedEl.remove();
+  }
+
+  breakingNewsState.activeAlerts.push(alert);
+
+  const el = document.createElement("div");
+  el.id = `breaking-alert-${alert.id}`;
+  el.className = `breaking-alert severity-${alert.severity}`;
+  el.innerHTML = `
+    <span>▶</span>
+    <span class="breaking-alert-title">${escapeHtml(alert.title)}</span>
+    <span class="breaking-alert-meta">${escapeHtml(alert.source || "SYSTEM")}</span>
+    <button class="breaking-alert-dismiss" onclick="dismissBreakingAlert('${alert.id}')">&times;</button>
+  `;
+  el.addEventListener("click", (e) => {
+    if (e.target.closest(".breaking-alert-dismiss")) return;
+    if (alert.onClick) alert.onClick();
+  });
+
+  banner.appendChild(el);
+  banner.style.display = "flex";
+
+  // Update header status indicator
+  const alertStatus = document.getElementById("status-message");
+  if (alertStatus && alert.severity === "critical") {
+    alertStatus.textContent = "ALERT";
+    alertStatus.style.color = "#ef4444";
+  }
+
+  // Auto-dismiss
+  const ttl = alert.severity === "critical" ? 60000 : alert.severity === "high" ? 30000 : 15000;
+  setTimeout(() => dismissBreakingAlert(alert.id), ttl);
+}
+
+function dismissBreakingAlert(id) {
+  const banner = document.getElementById("breaking-news-banner");
+  const el = document.getElementById(`breaking-alert-${id}`);
+  if (el) el.remove();
+  breakingNewsState.activeAlerts = breakingNewsState.activeAlerts.filter((a) => a.id !== id);
+  if (breakingNewsState.activeAlerts.length === 0 && banner) {
+    banner.style.display = "none";
+  }
+}
+
+function severityRank(severity) {
+  const ranks = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+  return ranks[severity] ?? 0;
+}
+
 // ===== DOM REFERENCES =====
 const dom = {
   // Header
@@ -825,6 +1056,7 @@ function syncLayerStateFromDom() {
   layerState.weather = Boolean(dom.layerWeather?.checked);
   layerState.cctv = Boolean(dom.layerCctv?.checked);
   layerState.bikeshare = Boolean(dom.layerBikeshare?.checked);
+  syncStateToUrl();
 }
 
 // ===== AUTHENTICATION =====
@@ -2524,6 +2756,7 @@ function switchToLiveMode() {
       mode: "live",
     },
   });
+  syncStateToUrl();
 }
 
 function switchToReplayMode() {
@@ -2546,6 +2779,7 @@ function switchToReplayMode() {
       mode: "replay",
     },
   });
+  syncStateToUrl();
 }
 
 // ===== LIVE EVENTS =====
@@ -3082,6 +3316,19 @@ async function loadAlerts() {
           showAlertDetail(chip.dataset.alertId);
         });
       });
+
+      // Push critical alerts to breaking news banner
+      for (const alert of data.alerts
+        .filter((a) => a.severity === "critical" && a.status === "open")
+        .slice(0, 3)) {
+        showBreakingAlert({
+          id: alert.alert_id,
+          severity: alert.severity,
+          title: alert.summary || "Critical Alert",
+          source: "ALERTS",
+          onClick: () => showAlertDetail(alert.alert_id),
+        });
+      }
     } else {
       dom.alertsCount.textContent = "0";
       dom.alertsCount.classList.add("zero");
@@ -3092,6 +3339,79 @@ async function loadAlerts() {
     dom.alertsCount.textContent = "ERR";
     dom.alertsListMini.innerHTML = '<span class="no-alerts">Error loading</span>';
   }
+}
+
+async function loadCorrelations() {
+  try {
+    const response = await fetch(`${apiBaseUrl}/correlations?status=active&limit=20`, {
+      headers: sessionState.token ? { Authorization: `Bearer ${sessionState.token}` } : {},
+    });
+    if (!response.ok) return;
+
+    const data = await response.json();
+    renderCorrelationPanel(data.signals || []);
+  } catch (error) {
+    console.error("Failed to load correlations:", error);
+  }
+}
+
+function renderCorrelationPanel(signals) {
+  const panel = document.getElementById("correlation-panel");
+  const countEl = document.getElementById("correlation-signal-count");
+  const dotEl = document.getElementById("correlation-dot");
+  if (!panel) return;
+
+  if (countEl) countEl.textContent = String(signals.length);
+  if (dotEl) {
+    if (signals.length > 0) {
+      dotEl.classList.add("active");
+    } else {
+      dotEl.classList.remove("active");
+    }
+  }
+
+  signalStateMap.clear();
+  if (signals.length === 0) {
+    panel.innerHTML = `<div class="correlation-empty">No active correlations</div>`;
+    return;
+  }
+
+  panel.innerHTML = signals
+    .map((sig) => {
+      if (sig.metadata) signalStateMap.set(sig.signal_id, sig.metadata);
+      return `
+    <div class="correlation-signal severity-${escapeHtml(sig.severity)}" onclick="focusCorrelationSignal('${sig.signal_id}')">
+      <div class="correlation-signal-title">${escapeHtml(sig.title)}</div>
+      <div class="correlation-signal-meta">
+        <span>${escapeHtml(sig.signal_type)}</span>
+        <span>conf: ${Math.round(sig.confidence * 100)}%</span>
+      </div>
+    </div>
+  `;
+    })
+    .join("");
+}
+
+window.focusCorrelationSignal = (signalId) => {
+  const metadata = signalStateMap.get(signalId);
+  if (metadata?.center_lat != null && metadata?.center_lon != null) {
+    if (viewer) {
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          metadata.center_lon,
+          metadata.center_lat,
+          500000,
+        ),
+      });
+    }
+  }
+  console.log("Focus correlation:", signalId);
+};
+
+const signalStateMap = new Map();
+
+function _focusCorrelationSignal(signalId) {
+  window.focusCorrelationSignal(signalId);
 }
 
 // ===== INCIDENTS =====
@@ -3340,6 +3660,7 @@ async function openIncident(incidentId) {
     console.error("Failed to open incident:", error);
     updateStatus("INCIDENT LOAD FAILED");
   }
+  syncStateToUrl();
 }
 
 function showIncidentPanel() {
@@ -5152,6 +5473,11 @@ function initEventListeners() {
     updateInferenceCounts();
   });
 
+  // URL sync on layer changes
+  document.getElementById("layers-list")?.addEventListener("change", () => {
+    syncStateToUrl();
+  });
+
   // Style presets
   dom.presetButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -5288,20 +5614,28 @@ async function loadExternalLayers() {
 async function loadExternalLayerData(layerId) {
   if (!externalLayerState.layers.get(layerId)?.enabled) return;
 
-  try {
+  const breaker = getLayerCircuitBreaker(layerId);
+  if (breaker.isOpen()) {
+    const statusEl = document.getElementById(`layer-status-${layerId}`);
+    if (statusEl) {
+      statusEl.textContent = "TRIPPED";
+      statusEl.className = "layer-status degraded";
+    }
+    console.warn(`[CircuitBreaker] Skipping ${layerId} fetch (circuit open)`);
+    return;
+  }
+
+  await breaker.execute(async () => {
     const response = await fetch(
       `${apiBaseUrl}/layers/${layerId}/data${getExternalLayerBoundsQuery()}`,
     );
     if (!response.ok) {
-      console.warn(`Failed to load ${layerId} data:`, response.status);
-      return;
+      throw new Error(`HTTP ${response.status}`);
     }
 
     const data = await response.json();
     renderExternalLayerData(layerId, data);
-  } catch (error) {
-    console.error(`Failed to load ${layerId} data:`, error);
-  }
+  }, null);
 }
 
 function renderExternalLayerData(layerId, data) {
@@ -5982,13 +6316,38 @@ async function init() {
   setInterval(loadSourceHealth, 30000);
   setInterval(loadAlerts, 15000);
 
-  // Load external layers
+  // Load external layers with smart polling
   loadExternalLayers();
-  setInterval(loadExternalLayers, 60000); // Refresh layer metadata every minute
+  smartPollHandles.set(
+    "externalLayers",
+    startSmartPollLoop("externalLayers", loadExternalLayers, {
+      intervalMs: 60000,
+      pauseWhenHidden: true,
+      maxBackoffMultiplier: 4,
+    }),
+  );
 
-  // Load inferred intelligence
+  // Load inferred intelligence with smart polling
   loadInferences();
-  setInterval(loadInferences, 60000); // Refresh inferences every minute
+  smartPollHandles.set(
+    "inferences",
+    startSmartPollLoop("inferences", loadInferences, {
+      intervalMs: 60000,
+      pauseWhenHidden: true,
+      maxBackoffMultiplier: 4,
+    }),
+  );
+
+  // Load correlations with smart polling
+  loadCorrelations();
+  smartPollHandles.set(
+    "correlations",
+    startSmartPollLoop("correlations", loadCorrelations, {
+      intervalMs: 30000,
+      pauseWhenHidden: true,
+      maxBackoffMultiplier: 4,
+    }),
+  );
 
   // Initial load
   loadSourceHealth();
@@ -5997,7 +6356,10 @@ async function init() {
   // Start in replay mode
   switchToReplayMode();
   loadReplay();
+  restoreStateFromUrl();
 }
 
 // Start the app when DOM is ready
 document.addEventListener("DOMContentLoaded", init);
+
+// Breaking news banner is hooked inside loadAlerts()

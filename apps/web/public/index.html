@@ -37,6 +37,10 @@
               <span class="status-dot disconnected"></span>
               <span class="status-text" id="connection-text">DISCONNECTED</span>
             </div>
+            <div class="status-item" id="correlation-status">
+              <span class="status-dot" id="correlation-dot"></span>
+              <span class="status-text" id="correlation-text">CORRELATIONS</span>
+            </div>
           </div>
         </div>
         <div class="header-right">
@@ -47,6 +51,9 @@
           <span id="time-display">--:--:--</span>
         </div>
       </header>
+
+      <!-- Breaking News Banner -->
+      <div id="breaking-news-banner" class="breaking-news-banner" style="display:none;"></div>
 
       <!-- Main Layout -->
       <main class="tactical-main">
@@ -327,6 +334,15 @@
             </div>
             <div class="entity-list" id="entity-list">
               <div class="loading-placeholder">Loading entities...</div>
+            </div>
+            <div class="rail-section">
+              <div class="rail-header">
+                <h3>CROSS-DOMAIN CORRELATION</h3>
+                <span class="correlation-signal-count" id="correlation-signal-count">0</span>
+              </div>
+              <div id="correlation-panel" class="correlation-panel">
+                <div class="correlation-empty">No active correlations</div>
+              </div>
             </div>
           </div>
         </aside>
