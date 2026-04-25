@@ -135,6 +135,7 @@ function addCorsHeaders(response: ServerResponse): void {
     "content-type,authorization,x-client-session-id",
   );
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PATCH,DELETE");
+  response.setHeader("Access-Control-Max-Age", "86400");
 }
 
 function writeJson(response: ServerResponse, statusCode: number, payload: unknown): void {
@@ -669,11 +670,10 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           const levelFilter = urlParams.get("level")?.split(",") || [];
           const limit = Math.min(parseInt(urlParams.get("limit") || "100", 10), 1000);
 
-          response.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          });
+          response.setHeader("Content-Type", "text/event-stream");
+          response.setHeader("Cache-Control", "no-cache");
+          response.setHeader("Connection", "keep-alive");
+          response.writeHead(200);
 
           // Send log history from logger
           const logs = logger.getRecentLogs ? logger.getRecentLogs(limit, levelFilter) : [];
@@ -1104,12 +1104,10 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         }
 
         if (request.method === "GET" && url.pathname === "/live/events") {
-          response.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-          });
+          response.setHeader("Content-Type", "text/event-stream");
+          response.setHeader("Cache-Control", "no-cache");
+          response.setHeader("Connection", "keep-alive");
+          response.writeHead(200);
 
           const sinceSequence = Number.parseInt(url.searchParams.get("since_sequence") ?? "0", 10);
           const bounds = parseBoundsFromSearchParams(url);
@@ -1871,11 +1869,10 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // GET /insights/stream - SSE stream for live insights
         if (request.method === "GET" && url.pathname === "/insights/stream") {
-          response.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-          });
+          response.setHeader("Content-Type", "text/event-stream");
+          response.setHeader("Cache-Control", "no-cache");
+          response.setHeader("Connection", "keep-alive");
+          response.writeHead(200);
 
           const heartbeat = setInterval(() => {
             response.write(`: heartbeat\n\n`);
@@ -2369,6 +2366,14 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             "../../../packages/intelligence/src/news-feeds.js"
           );
           writeJsonWithEtag(response, request, 200, { feeds: DEFAULT_NEWS_FEEDS });
+          return;
+        }
+
+        if (request.method === "GET" && url.pathname === "/intelligence/sources") {
+          const { getIntelligenceSourceCatalog } = await import(
+            "../../../packages/intelligence/src/source-catalog.js"
+          );
+          writeJsonWithEtag(response, request, 200, getIntelligenceSourceCatalog());
           return;
         }
 

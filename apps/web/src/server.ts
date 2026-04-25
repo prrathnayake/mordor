@@ -88,8 +88,26 @@ function normalizeStreetSceneConfig(streetScene?: Partial<StreetSceneConfig>): S
   };
 }
 
+function addCorsHeaders(response: ServerResponse): void {
+  response.setHeader("Access-Control-Allow-Origin", "*");
+  response.setHeader(
+    "Access-Control-Allow-Headers",
+    "content-type,authorization,x-client-session-id",
+  );
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PATCH,DELETE");
+  response.setHeader("Access-Control-Max-Age", "86400");
+}
+
 export function createWebServer(options: { app_config: WebAppConfig }): RunningWebServer {
   const server = createServer(async (request, response) => {
+    addCorsHeaders(response);
+
+    if (request.method === "OPTIONS") {
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const isProduction = process.env.NODE_ENV === "production";
     const publicRoot = isProduction
