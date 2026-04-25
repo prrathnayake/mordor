@@ -189,3 +189,22 @@ What did we do so far? / Continue if you have next steps, or stop and ask for cl
 ### Assistant Final Response Summary
 Provided a full session recap of the dashboard upgrade work, then continued by fixing the root cause of dashboard e2e test failures: the web server was not serving `dashboard.js` and `dashboard-styles.css` (added whitelist routes in `server.ts`). Fixed Playwright strict-mode selector violations and a hidden-checkbox interaction issue. Verified typecheck, lint, gate, unit tests, and contract tests as green. Final e2e verification was blocked because the local Docker/container runtime became unavailable mid-session.
 
+## 2026-04-25 18:22:58 +10:00
+### User Message
+I want you to test my web UI. check are all UI components are renders correctlyy, and i want you to fix location base popup windoes in 3d glob for poup when on click on news , tv channel, news.
+
+find missing features and implement them as well
+### Assistant Final Response Summary
+Tested the local tactical UI in the in-app browser and fixed broken/missing UI behavior: news now has fallback clusters when the API/auth path is unavailable, webcams load immediately with fallback TV channels, iframe-backed webcam cards remain clickable, narrow-width rails remain reachable, and News/TV clicks open visible Cesium-positioned DOM popups clamped to the globe viewport. Verified with `node --check apps/web/public/app.js`, `npm run typecheck`, `npm run lint`, and `npx vitest run tests/integration/tactical-shell.spec.ts`.
+
+## 2026-04-25 18:40:13 +10:00
+### User Message
+You are helping with Chrona Twin in C:\Users\cybor\Desktop\mordor. The user requested more global info layers and embedded video/info capabilities. Please inspect the existing frontend and tests, then implement or propose a bounded patch only if you find a clear independent improvement in tests for the current app.js/tactical-styles behavior. Ownership: tests only under tests/integration or tests/e2e; do not edit app source. You are not alone in the codebase: do not revert others' edits, and accommodate existing worktree changes. If you edit tests, list changed files and verification run; if no safe test patch, return concrete test recommendations.
+### Assistant Final Response Summary
+Inspected the current tactical frontend changes and existing integration/e2e coverage, then added a tests-only static integration contract in `tests/integration/tactical-media-contract.spec.ts` covering fallback news/webcam data, safe embedded webcam cards, DOM Cesium earth popups, and narrow rail CSS reachability. Verified with the focused Vitest spec, Biome on the new test file, and `npm run typecheck`.
+
+## 2026-04-25 18:54:45 +10:00
+### User Message
+improve and optimize this project, add more capabilities and information layers to glob, find more source around the world, and instr=ead of dir=directing to other pages build in build video and information watching cabalitiles use sub agent to prepare informations. i want diffent information showing layers wike with live update location changes on objects, live tv channel monitoring and research for more usefullinformations to show and store on databases. test UI cabalities as well center location base popup window, add more indormations for this as well.
+### Assistant Final Response Summary
+Used sub-agents for source/layer research and test coverage, then implemented a global intelligence source catalog with `GET /intelligence/sources`, database tables for source and embedded media observations, a new enabled Global Intel Sources UI layer, source-catalog rendering in the Intelligence panel, and embedded media-capable Cesium location popups. Updated docs and tests, then verified in browser plus `node --check`, `npm run typecheck`, `npm run lint`, and focused integration tests.
