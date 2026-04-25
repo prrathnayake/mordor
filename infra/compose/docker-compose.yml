@@ -48,6 +48,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
     command: npx tsx apps/api/src/server.ts
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
@@ -71,6 +72,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    restart: unless-stopped
     command: npx tsx apps/web/src/server.ts
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ || exit 1"]
@@ -98,6 +100,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
     command: npx tsx apps/worker/src/index.ts
 
   agent-collector:
@@ -117,6 +120,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
     command: npx tsx apps/agents/src/index.ts
 
   agent-detector:
@@ -136,6 +140,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
     command: npx tsx apps/agents/src/index.ts
 
   agent-publisher:
@@ -155,6 +160,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
     command: npx tsx apps/agents/src/index.ts
 
 volumes:
