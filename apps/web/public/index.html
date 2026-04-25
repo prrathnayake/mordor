@@ -6,6 +6,7 @@
     <title>MORDOR - Tactical Operations Center</title>
     <link rel="stylesheet" href="/cesium/Widgets/widgets.css" />
     <link rel="stylesheet" href="/tactical-styles.css" />
+    <link rel="stylesheet" href="/dashboard-styles.css" />
     <script>
       window.CESIUM_BASE_URL = "/cesium/";
       window.__APP_CONFIG__ = __APP_CONFIG_JSON__;
@@ -51,6 +52,11 @@
       <main class="tactical-main">
         <!-- Left Rail: Data Layers -->
         <aside class="left-rail" id="left-rail">
+          <div class="rail-tabs" id="left-rail-tabs">
+            <button type="button" class="rail-tab active" data-tab="layers">Layers</button>
+            <button type="button" class="rail-tab" data-tab="operations">Operations</button>
+          </div>
+          <div class="tab-panel" data-tab="layers">
           <div class="rail-header">
             <h2>DATA LAYERS</h2>
             <span class="rail-count" id="active-layers-count">0/8</span>
@@ -296,6 +302,33 @@
               <div class="inference-empty">No inferences detected</div>
             </div>
           </div>
+          </div>
+          <div class="tab-panel hidden" data-tab="operations" id="operations-panel">
+            <div class="ops-search">
+              <input type="text" id="entity-search" placeholder="Search entities..." />
+            </div>
+            <div class="ops-filters">
+              <div class="filter-group">
+                <div class="filter-group-title">Type</div>
+                <div class="filter-chips" id="filter-types"></div>
+              </div>
+              <div class="filter-group">
+                <div class="filter-group-title">Status</div>
+                <div class="filter-chips" id="filter-statuses"></div>
+              </div>
+              <div class="filter-group">
+                <div class="filter-group-title">Severity</div>
+                <div class="filter-chips" id="filter-severities"></div>
+              </div>
+            </div>
+            <div class="rail-header" style="margin-top:8px;">
+              <h2>ENTITIES</h2>
+              <span class="rail-count" id="entity-count">0</span>
+            </div>
+            <div class="entity-list" id="entity-list">
+              <div class="loading-placeholder">Loading entities...</div>
+            </div>
+          </div>
         </aside>
 
         <!-- Center: Globe Viewport -->
@@ -319,6 +352,11 @@
 
         <!-- Right Rail: Visual Controls -->
         <aside class="right-rail" id="right-rail">
+          <div class="rail-tabs" id="right-rail-tabs">
+            <button type="button" class="rail-tab active" data-tab="visuals">Visuals</button>
+            <button type="button" class="rail-tab" data-tab="intelligence">Intelligence</button>
+          </div>
+          <div class="tab-panel" data-tab="visuals">
           <div class="rail-header">
             <h2>VISUAL CONTROLS</h2>
           </div>
@@ -453,6 +491,18 @@
               </div>
             </div>
           </div>
+          </div>
+          <div class="tab-panel hidden" data-tab="intelligence" id="intelligence-panel">
+            <div class="rail-header">
+              <h2>INTELLIGENCE</h2>
+            </div>
+            <div id="intelligence-content">
+              <div class="intelligence-empty">
+                <span class="empty-icon">◉</span>
+                <span class="empty-text">Select an entity to view intelligence</span>
+              </div>
+            </div>
+          </div>
         </aside>
       </main>
 
@@ -515,6 +565,11 @@
             <div class="alerts-list" id="alerts-list-mini">
               <span class="no-alerts">No active alerts</span>
             </div>
+          </div>
+        </div>
+        <div id="telemetry-panel" class="telemetry-panel-wrapper">
+          <div id="telemetry-content">
+            <div class="loading-placeholder">Loading telemetry...</div>
           </div>
         </div>
       </footer>
@@ -758,6 +813,7 @@
       </div>
     </div>
 
+    <script type="module" src="/dashboard.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

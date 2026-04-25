@@ -5251,6 +5251,7 @@ function initEventListeners() {
 
 // Make handleAuthClick available globally for onclick handler
 window.handleAuthClick = handleAuthClick;
+window.selectObject = selectObject;
 
 // ===== EXTERNAL DATA LAYERS =====
 async function loadExternalLayers() {

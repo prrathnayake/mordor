@@ -182,3 +182,10 @@ Added richer live-stream integration coverage in `tests/integration/live-resilie
 continue
 ### Assistant Final Response Summary
 Continued the incident-intelligence implementation by adding spatial `map_context` fusion and tactical globe rendering for incident AOIs plus geolocated intelligence artifacts, updated the related docs, and verified the new stage with `node --check apps/web/public/app.js`, `npm run typecheck`, and a new focused unit test while noting the existing integration specs are blocked locally by missing Testcontainers runtime support.
+
+## 2026-04-25 13:28:00 +10:00
+### User Message
+What did we do so far? / Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.
+### Assistant Final Response Summary
+Provided a full session recap of the dashboard upgrade work, then continued by fixing the root cause of dashboard e2e test failures: the web server was not serving `dashboard.js` and `dashboard-styles.css` (added whitelist routes in `server.ts`). Fixed Playwright strict-mode selector violations and a hidden-checkbox interaction issue. Verified typecheck, lint, gate, unit tests, and contract tests as green. Final e2e verification was blocked because the local Docker/container runtime became unavailable mid-session.
+

@@ -156,6 +156,26 @@ export function createWebServer(options: { app_config: WebAppConfig }): RunningW
         return;
       }
 
+      if (url.pathname === "/dashboard.js") {
+        await serveStaticFile(
+          response,
+          new URL("dashboard.js", publicRoot),
+          getContentType("dashboard.js"),
+          "no-store",
+        );
+        return;
+      }
+
+      if (url.pathname === "/dashboard-styles.css") {
+        await serveStaticFile(
+          response,
+          new URL("dashboard-styles.css", publicRoot),
+          getContentType("dashboard-styles.css"),
+          "no-store",
+        );
+        return;
+      }
+
       response.statusCode = 404;
       response.setHeader("Content-Type", "text/plain; charset=utf-8");
       response.end(`Not found: ${url.pathname}`);
