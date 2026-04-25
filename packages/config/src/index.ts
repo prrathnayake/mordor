@@ -205,7 +205,7 @@ export function requireConfig(): AppConfig {
 
 export function getEnvVar(name: string, defaultValue?: string): string {
   const value = process.env[name];
-  if (!value) {
+  if (value === undefined) {
     if (defaultValue !== undefined) {
       return defaultValue;
     }

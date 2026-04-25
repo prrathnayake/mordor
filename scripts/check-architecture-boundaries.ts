@@ -64,7 +64,7 @@ function isCorePackage(filePath: string): boolean {
     "packages/replay",
     "packages/ingestion",
     "packages/persistence",
-    "packages/alerting",
+    "packages/alerts",
     "packages/analytics",
     "packages/adapters",
   ].some((root) => isWithin(filePath, root));

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { extname } from "node:path";
+import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 interface RunningWebServer {
@@ -128,8 +128,10 @@ export function createWebServer(options: { app_config: WebAppConfig }): RunningW
 
       if (url.pathname.startsWith("/cesium/")) {
         const relativePath = url.pathname.replace("/cesium/", "");
+        const resolvedPath = resolve(cesiumRoot.pathname, relativePath);
+        const resolvedRoot = resolve(cesiumRoot.pathname);
 
-        if (relativePath.includes("..")) {
+        if (!resolvedPath.startsWith(resolvedRoot)) {
           response.statusCode = 400;
           response.setHeader("Content-Type", "text/plain; charset=utf-8");
           response.end("Invalid asset path");

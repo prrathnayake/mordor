@@ -743,7 +743,55 @@ export class PostgresPersistenceGateway
     return result.rows.map(mapCanonicalEventRow);
   }
 
+  async fetchCanonicalEventById(eventId: string): Promise<CanonicalEvent | null> {
+    const result = await this.database.pool.query<CanonicalEventRow>(
+      `
+        SELECT
+          event_id,
+          event_type,
+          object_id,
+          source_id,
+          observed_at,
+          ingested_at,
+          processed_at,
+          schema_version,
+          payload,
+          provenance,
+          confidence,
+          dedupe_key,
+          ST_AsGeoJSON(geometry) AS geometry_geojson,
+          altitude_m,
+          heading_deg,
+          speed_mps,
+          related_object_ids,
+          parent_event_id,
+          trace_id
+        FROM canonical_events
+        WHERE event_id = $1
+      `,
+      [eventId],
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return mapCanonicalEventRow(result.rows[0]);
+  }
+
   async countTableRows(tableName: string): Promise<number> {
+    // Prevent SQL injection by allowing only known tables
+    const ALLOWED_TABLES = [
+      "canonical_events",
+      "source_health",
+      "alerts",
+      "incidents",
+      "capture_jobs",
+      "evidence_freezes",
+    ];
+    if (!ALLOWED_TABLES.includes(tableName)) {
+      throw new Error(`Invalid table name: ${tableName}`);
+    }
     const result = await this.database.pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM ${tableName}`,
     );

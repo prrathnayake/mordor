@@ -167,7 +167,7 @@ export class OpenSkyFlightsAdapter {
   }
 
   private normalizeStateVector(vector: unknown[], observedAt: string): ObjectState | null {
-    if (!Array.isArray(vector) || vector.length < 17) {
+    if (!Array.isArray(vector) || vector.length < 18) {
       return null;
     }
 

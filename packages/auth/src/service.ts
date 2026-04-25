@@ -1,10 +1,32 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { AuthContext, AuthResult, User } from "./models.js";
 
 const TOKEN_EXPIRY_MS = 30 * 60 * 1000;
 
+function hashPassword(password: string): Buffer {
+  return createHash("sha256").update(password).digest();
+}
+
+function secureCompare(a: string, b: string): boolean {
+  try {
+    return timingSafeEqual(hashPassword(a), hashPassword(b));
+  } catch {
+    return false;
+  }
+}
+
+function getEnvPassword(role: string, fallback: string): string {
+  const envValue = process.env[`AUTH_PASSWORD_${role.toUpperCase()}`];
+  if (envValue) return envValue;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`AUTH_PASSWORD_${role.toUpperCase()} must be set in production`);
+  }
+  return fallback;
+}
+
 const MOCK_USERS: Record<string, { password: string; user: User }> = {
   viewer: {
-    password: "viewer123",
+    password: getEnvPassword("viewer", "viewer123"),
     user: {
       user_id: "user_viewer",
       username: "viewer",
@@ -13,7 +35,7 @@ const MOCK_USERS: Record<string, { password: string; user: User }> = {
     },
   },
   operator: {
-    password: "operator123",
+    password: getEnvPassword("operator", "operator123"),
     user: {
       user_id: "user_operator",
       username: "operator",
@@ -22,7 +44,7 @@ const MOCK_USERS: Record<string, { password: string; user: User }> = {
     },
   },
   admin: {
-    password: "admin123",
+    password: getEnvPassword("admin", "admin123"),
     user: {
       user_id: "user_admin",
       username: "admin",
@@ -42,7 +64,7 @@ const VALID_TOKENS: Map<string, TokenMetadata> = new Map();
 
 export function authenticate(username: string, password: string): AuthResult {
   const credentials = MOCK_USERS[username];
-  if (!credentials || credentials.password !== password) {
+  if (!credentials || !secureCompare(credentials.password, password)) {
     return { success: false, error: "Invalid credentials" };
   }
 

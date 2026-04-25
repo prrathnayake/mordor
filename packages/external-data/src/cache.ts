@@ -13,14 +13,22 @@ export class ExternalDataCache {
   /**
    * Get cached events for a layer if not expired.
    */
-  get(layerId: string, _maxAgeMs: number): ExternalDataEvent[] | null {
+  get(layerId: string, maxAgeMs: number): ExternalDataEvent[] | null {
     const entry = this.cache.get(layerId);
     if (!entry) {
       return null;
     }
 
-    const now = new Date().toISOString();
-    if (new Date(entry.expiresAt) < new Date(now)) {
+    const now = new Date();
+    const ttlExpiresAt = new Date(entry.expiresAt);
+    const maxAgeExpiresAt =
+      maxAgeMs > 0 ? new Date(new Date(entry.fetchedAt).getTime() + maxAgeMs) : null;
+
+    const isExpired = maxAgeExpiresAt
+      ? now >= ttlExpiresAt || now >= maxAgeExpiresAt
+      : now >= ttlExpiresAt;
+
+    if (isExpired) {
       this.cache.delete(layerId);
       return null;
     }

@@ -1,4 +1,5 @@
 import { createServer, IncomingMessage, type Server, ServerResponse } from "node:http";
+import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { createAlertRuleId, evaluateEventForAlerts } from "../../../packages/alerts/src/index.js";
 import { authenticate, logout, validateToken } from "../../../packages/auth/src/index.js";
@@ -13,20 +14,25 @@ import {
   validateFixtureTelemetryIngestionInput,
 } from "../../../packages/ingestion/src/index.js";
 import {
+  DEFAULT_NEWS_FEEDS,
+  fetchAllNewsIntelligence,
+  getIntelligenceSourceCatalog,
   type IncidentIntelligenceCollector,
   refreshIncidentIntelligence,
   refreshOpenIncidentIntelligence,
 } from "../../../packages/intelligence/src/index.js";
+import {
+  GEOPOLITICAL_WEBCAM_CHANNELS,
+  getWebcamChannelsByRegion,
+  getWebcamChannelsByTag,
+} from "../../../packages/intelligence/src/webcam-registry.js";
 import type { Logger } from "../../../packages/logging/src/index.js";
 import { createLogger } from "../../../packages/logging/src/index.js";
 import {
   PostgresPersistenceGateway,
   setObjectStateUpdateCallback,
 } from "../../../packages/persistence/src/index.js";
-import {
-  type ReplayQueryRequest,
-  validateReplayQueryRequest,
-} from "../../../packages/replay/src/index.js";
+import { validateReplayQueryRequest } from "../../../packages/replay/src/index.js";
 import {
   type SwanActivityEvent,
   type SwanFinding,
@@ -129,7 +135,8 @@ async function maybeBootstrapDevelopmentDemoData(input: {
 }
 
 function addCorsHeaders(response: ServerResponse): void {
-  response.setHeader("Access-Control-Allow-Origin", "*");
+  const allowedOrigin = process.env.CORS_ALLOWED_ORIGIN ?? "*";
+  response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   response.setHeader(
     "Access-Control-Allow-Headers",
     "content-type,authorization,x-client-session-id",
@@ -200,6 +207,47 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+const VALID_INCIDENT_SEVERITIES = ["critical", "high", "medium", "low", "info"];
+const VALID_INCIDENT_STATUSES = ["open", "active", "resolved", "closed", "archived"];
+
+function validateIncidentPayload(
+  body: Record<string, unknown>,
+): { ok: true } | { ok: false; error: string } {
+  if (typeof body.title === "string" && body.title.trim().length === 0) {
+    return { ok: false, error: "title must be a non-empty string" };
+  }
+  if (body.start_at !== undefined) {
+    const startTs = Date.parse(String(body.start_at));
+    if (!Number.isFinite(startTs)) {
+      return { ok: false, error: "start_at must be a valid ISO-8601 date-time" };
+    }
+  }
+  if (body.end_at !== undefined) {
+    const endTs = Date.parse(String(body.end_at));
+    if (!Number.isFinite(endTs)) {
+      return { ok: false, error: "end_at must be a valid ISO-8601 date-time" };
+    }
+  }
+  if (typeof body.start_at === "string" && typeof body.end_at === "string") {
+    if (Date.parse(body.start_at) > Date.parse(body.end_at)) {
+      return { ok: false, error: "start_at must be less than or equal to end_at" };
+    }
+  }
+  if (body.severity !== undefined && !VALID_INCIDENT_SEVERITIES.includes(String(body.severity))) {
+    return {
+      ok: false,
+      error: `severity must be one of: ${VALID_INCIDENT_SEVERITIES.join(", ")}`,
+    };
+  }
+  if (body.status !== undefined && !VALID_INCIDENT_STATUSES.includes(String(body.status))) {
+    return {
+      ok: false,
+      error: `status must be one of: ${VALID_INCIDENT_STATUSES.join(", ")}`,
+    };
+  }
+  return { ok: true };
 }
 
 function parseBoundsFromSearchParams(
@@ -381,9 +429,34 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
   const persistence = PostgresPersistenceGateway.fromConnectionString(options.connection_string);
   const clock = options.clock ?? systemClock;
   const config = getConfigFromEnv();
-  let closing = false;
+
+  // Simple event-loop lag monitor
+  let eventLoopLagMs = 0;
+  const lagMonitorInterval = setInterval(() => {
+    const start = performance.now();
+    setImmediate(() => {
+      eventLoopLagMs = performance.now() - start;
+    });
+  }, 1000);
+  const closing = false;
   let activeRequestCount = 0;
   let activeRequestsDrainedResolver: (() => void) | null = null;
+
+  // Simple in-memory rate limiter for public endpoints
+  const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+  function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+    const now = Date.now();
+    const entry = rateLimitStore.get(key);
+    if (!entry || now > entry.resetAt) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    if (entry.count >= maxRequests) {
+      return false;
+    }
+    entry.count += 1;
+    return true;
+  }
   const missingSwanTables = await getMissingSwanTables(persistence);
   const swanService =
     missingSwanTables.length === 0
@@ -549,9 +622,19 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         const rawAuthHeader = request.headers.authorization;
         const authHeader = typeof rawAuthHeader === "string" ? rawAuthHeader : null;
-        const authContext = authHeader?.startsWith("Bearer ")
-          ? validateToken(authHeader.substring(7))
-          : { user: null, isAuthenticated: false };
+        const authContext = !config.authEnabled
+          ? {
+              user: {
+                user_id: "anonymous",
+                username: "anonymous",
+                role: "admin" as const,
+                created_at: new Date().toISOString(),
+              },
+              isAuthenticated: true,
+            }
+          : authHeader?.startsWith("Bearer ")
+            ? validateToken(authHeader.substring(7))
+            : { user: null, isAuthenticated: false };
 
         logger.debug("Incoming request", { method: request.method, pathname: url.pathname });
 
@@ -585,6 +668,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // Detailed health check with component status
         if (request.method === "GET" && url.pathname === "/health/detailed") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const health = {
             status: "ok",
             timestamp: new Date().toISOString(),
@@ -639,6 +727,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // Basic metrics endpoint
         if (request.method === "GET" && url.pathname === "/metrics") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const memUsage = process.memoryUsage();
           const cpuUsage = process.cpuUsage();
 
@@ -656,7 +749,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
               system_ms: cpuUsage.system,
             },
             event_loop: {
-              lag_ms: 0,
+              lag_ms: Math.round(eventLoopLagMs),
             },
           };
 
@@ -666,6 +759,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // Log streaming endpoint (SSE)
         if (request.method === "GET" && url.pathname === "/logs") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const urlParams = url.searchParams;
           const levelFilter = urlParams.get("level")?.split(",") || [];
           const limit = Math.min(parseInt(urlParams.get("limit") || "100", 10), 1000);
@@ -694,6 +792,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         }
 
         if (request.method === "POST" && url.pathname === "/auth/login") {
+          const clientIp = request.socket.remoteAddress ?? "unknown";
+          if (!checkRateLimit(`login:${clientIp}`, 5, 60000)) {
+            writeJson(response, 429, { error: "rate_limited", message: "Too many login attempts" });
+            return;
+          }
+
           const startTime = Date.now();
           const body = (await readJsonBody(request)) as { username: string; password: string };
           const result = authenticate(body.username, body.password);
@@ -779,7 +883,15 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
           if (result.latest_state_by_object_id) {
             const now = clock.now();
-            const windowStart = new Date(Date.parse(now) - 60000).toISOString();
+            const nowTs = Date.parse(now);
+            if (!Number.isFinite(nowTs)) {
+              writeJson(response, 500, {
+                error: "clock_error",
+                message: "System clock returned an unparseable timestamp",
+              });
+              return;
+            }
+            const windowStart = new Date(nowTs - 60000).toISOString();
             for (const [objectId, state] of Object.entries(result.latest_state_by_object_id)) {
               const events = await persistence.fetchCanonicalEvents({
                 start_at: windowStart,
@@ -1020,15 +1132,13 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         }
 
         if (request.method === "GET" && url.pathname.startsWith("/events/")) {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const eventId = url.pathname.replace("/events/", "");
-
-          const query: ReplayQueryRequest = {
-            start_at: "2020-01-01T00:00:00Z",
-            end_at: "2030-12-31T23:59:59Z",
-          };
-          const events = await persistence.fetchCanonicalEvents(query);
-
-          const event = events.find((e) => e.event_id === eventId);
+          const event = await persistence.fetchCanonicalEventById(eventId);
 
           if (!event) {
             writeJson(response, 404, { error: "not_found", message: "Event not found" });
@@ -1040,6 +1150,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         }
 
         if (request.method === "POST" && url.pathname === "/replay/query") {
+          const clientIp = request.socket.remoteAddress ?? "unknown";
+          if (!checkRateLimit(`replay:${clientIp}`, 10, 60000)) {
+            writeJson(response, 429, { error: "rate_limited", message: "Too many replay queries" });
+            return;
+          }
+
           const startTime = Date.now();
           const body = await readJsonBody(request);
           const validation = validateReplayQueryRequest(body);
@@ -1048,6 +1164,24 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             writeJson(response, 400, {
               error: "invalid_replay_query_request",
               issues: validation.issues,
+            });
+            return;
+          }
+
+          const maxWindowMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+          const windowStart = Date.parse(validation.value.start_at);
+          const windowEnd = Date.parse(validation.value.end_at);
+          if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd)) {
+            writeJson(response, 400, {
+              error: "invalid_replay_query_request",
+              message: "Invalid date format",
+            });
+            return;
+          }
+          if (windowEnd - windowStart > maxWindowMs) {
+            writeJson(response, 400, {
+              error: "invalid_replay_query_request",
+              message: "Query window exceeds maximum of 7 days",
             });
             return;
           }
@@ -1145,7 +1279,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
               .then(async () => {
                 await writeEvent(event);
               })
-              .catch(() => {});
+              .catch((err) => {
+                logger.debug("SSE write error", {
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
           };
 
           const unsubscribe = liveEventBus.subscribe(listener);
@@ -1505,6 +1643,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             return;
           }
 
+          const validation = validateIncidentPayload(body as Record<string, unknown>);
+          if (!validation.ok) {
+            writeJson(response, 400, { error: validation.error });
+            return;
+          }
+
           const incidentId = `inc_${crypto.randomUUID().replace(/-/g, "").substring(0, 12)}`;
 
           await persistence.createIncident({
@@ -1574,6 +1718,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
             severity?: string;
             tags?: string[];
           };
+
+          const validation = validateIncidentPayload(body as Record<string, unknown>);
+          if (!validation.ok) {
+            writeJson(response, 400, { error: validation.error });
+            return;
+          }
 
           await persistence.updateIncident({
             incident_id: incidentId,
@@ -1869,6 +2019,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // GET /insights/stream - SSE stream for live insights
         if (request.method === "GET" && url.pathname === "/insights/stream") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           response.setHeader("Content-Type", "text/event-stream");
           response.setHeader("Cache-Control", "no-cache");
           response.setHeader("Connection", "keep-alive");
@@ -2250,6 +2405,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // GET /inferences/timeline (must come before /inferences/:id)
         if (request.method === "GET" && url.pathname === "/inferences/timeline") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const incidentId = url.searchParams.get("incident_id") ?? undefined;
           const markers = await persistence.listInferenceTimelineMarkers(incidentId);
 
@@ -2259,6 +2419,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // GET /inferences/:id
         if (request.method === "GET" && url.pathname.match(/^\/inferences\/[^/]+$/)) {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const inferenceId = url.pathname.replace("/inferences/", "");
           const inference = await persistence.getInferredEvent(inferenceId);
 
@@ -2307,6 +2472,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
 
         // GET /degradation-zones
         if (request.method === "GET" && url.pathname === "/degradation-zones") {
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           const zones = await persistence.listActiveDegradationZones();
 
           writeJson(response, 200, {
@@ -2328,9 +2498,6 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           const limit = limitParam ? Number.parseInt(limitParam, 10) : 100;
 
           try {
-            const { fetchAllNewsIntelligence } = await import(
-              "../../../packages/intelligence/src/news-service.js"
-            );
             const intelligence = await fetchAllNewsIntelligence();
 
             let items = intelligence.items;
@@ -2362,17 +2529,21 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         }
 
         if (request.method === "GET" && url.pathname === "/news/feeds") {
-          const { DEFAULT_NEWS_FEEDS } = await import(
-            "../../../packages/intelligence/src/news-feeds.js"
-          );
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           writeJsonWithEtag(response, request, 200, { feeds: DEFAULT_NEWS_FEEDS });
           return;
         }
 
         if (request.method === "GET" && url.pathname === "/intelligence/sources") {
-          const { getIntelligenceSourceCatalog } = await import(
-            "../../../packages/intelligence/src/source-catalog.js"
-          );
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
+
           writeJsonWithEtag(response, request, 200, getIntelligenceSourceCatalog());
           return;
         }
@@ -2380,11 +2551,10 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
         // ============ WEBCAM CHANNELS ENDPOINT ============
 
         if (request.method === "GET" && url.pathname === "/webcams") {
-          const {
-            GEOPOLITICAL_WEBCAM_CHANNELS,
-            getWebcamChannelsByRegion,
-            getWebcamChannelsByTag,
-          } = await import("../../../packages/intelligence/src/webcam-registry.js");
+          if (config.authEnabled && !authContext.isAuthenticated) {
+            writeJson(response, 401, { error: "unauthorized" });
+            return;
+          }
 
           const region = url.searchParams.get("region") ?? undefined;
           const tag = url.searchParams.get("tag") ?? undefined;
@@ -2549,28 +2719,16 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
     server,
     persistence,
     async close() {
-      logger.info("Shutting down API server");
-      closing = true;
+      await waitForActiveRequestsToDrain();
       if (incidentIntelligenceInterval) {
         clearInterval(incidentIntelligenceInterval);
-        incidentIntelligenceInterval = null;
+      }
+      if (lagMonitorInterval) {
+        clearInterval(lagMonitorInterval);
       }
       await liveWorldService.close();
-      await swanService?.close();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
-
-      await waitForActiveRequestsToDrain();
       await persistence.close();
-      logger.info("API server shut down");
+      server.close();
     },
   };
 }

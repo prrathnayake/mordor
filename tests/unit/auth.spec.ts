@@ -133,7 +133,7 @@ describe("auth service", () => {
       expect(expired).toBe(true);
     });
 
-    it("validateToken returns error for expired token after deletion from map", () => {
+    it("validateToken returns authenticated context for fresh token", () => {
       const authResult = authenticate("operator", "operator123");
       if (!authResult.token) throw new Error("no token");
 

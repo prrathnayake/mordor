@@ -53,11 +53,14 @@ async function main() {
       throw new Error(`Unknown AGENT_MODE: ${AGENT_MODE}`);
   }
 
-  process.on("SIGINT", async () => {
-    console.log("Shutting down...");
+  const shutdown = async (signal: string) => {
+    console.log(`Received ${signal}, shutting down...`);
     await worker.stop();
     process.exit(0);
-  });
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   await worker.start();
   console.log(`Agent started: ${AGENT_MODE} (${AGENT_ID})`);

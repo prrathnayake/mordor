@@ -12,9 +12,12 @@ export interface PostgresDatabase {
 }
 
 export function createPostgresDatabase(input: { connection_string: string }): PostgresDatabase {
+  const poolMax = process.env.DATABASE_POOL_MAX
+    ? Number.parseInt(process.env.DATABASE_POOL_MAX, 10)
+    : 10;
   const pool = new Pool({
     connectionString: input.connection_string,
-    max: 10,
+    max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 10,
   });
 
   return {
