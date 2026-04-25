@@ -3654,145 +3654,34 @@ function _initNewsAndWebcam() {
 }
 
 // ===== GLOBE VISUALIZATION FOR NEWS & WEBCAMS =====
-let selectionEntities = [];
-let selectionLineEntity = null;
+let activeInWorldPanel = null;
+let activeCesiumEntities = [];
+let activeLeaderLine = null;
+let panelPostRenderListener = null;
 
-function clearSelectionEntities() {
-  for (const entity of selectionEntities) {
+function clearInWorldPanel() {
+  if (activeInWorldPanel) {
+    activeInWorldPanel.remove();
+    activeInWorldPanel = null;
+  }
+  for (const entity of activeCesiumEntities) {
     if (viewer && entity) viewer.entities.remove(entity);
   }
-  selectionEntities = [];
-  if (viewer && selectionLineEntity) {
-    viewer.entities.remove(selectionLineEntity);
-    selectionLineEntity = null;
+  activeCesiumEntities = [];
+  if (viewer && activeLeaderLine) {
+    viewer.entities.remove(activeLeaderLine);
+    activeLeaderLine = null;
   }
-}
-
-function visualizeLocationOnGlobe(lat, lon, title, type, color) {
-  if (!viewer || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-  clearSelectionEntities();
-
-  const entityColor = Cesium.Color.fromCssColorString(color || "#ef4444");
-  const position = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
-
-  // Main billboard marker
-  const marker = viewer.entities.add({
-    position,
-    billboard: {
-      image: createMarkerCanvas(type, color),
-      width: 32,
-      height: 32,
-      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 5e6, 0.5),
-    },
-  });
-  selectionEntities.push(marker);
-
-  // Label
-  const label = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat, 200),
-    label: {
-      text: title,
-      font: "bold 14px monospace",
-      fillColor: Cesium.Color.WHITE,
-      outlineColor: Cesium.Color.BLACK,
-      outlineWidth: 3,
-      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-      pixelOffset: new Cesium.Cartesian2(0, -40),
-      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 5e6, 0.5),
-      translucencyByDistance: new Cesium.NearFarScalar(1e3, 1.0, 5e6, 0.3),
-    },
-  });
-  selectionEntities.push(label);
-
-  // Vertical cylinder (height indicator)
-  const cylinder = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat, 5000),
-    cylinder: {
-      length: 10000,
-      topRadius: 0,
-      bottomRadius: 500,
-      material: new Cesium.ColorMaterialProperty(entityColor.withAlpha(0.4)),
-      outline: true,
-      outlineColor: entityColor,
-      outlineWidth: 1,
-    },
-  });
-  selectionEntities.push(cylinder);
-
-  // Ground ring
-  const ring = viewer.entities.add({
-    position,
-    ellipse: {
-      semiMinorAxis: 2000,
-      semiMajorAxis: 2000,
-      material: new Cesium.ColorMaterialProperty(entityColor.withAlpha(0.15)),
-      outline: true,
-      outlineColor: entityColor.withAlpha(0.6),
-      outlineWidth: 2,
-    },
-  });
-  selectionEntities.push(ring);
-
-  return { marker, label, cylinder, ring };
-}
-
-function createMarkerCanvas(type, color) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
-
-  const c = color || "#ef4444";
-
-  // Outer glow
-  const gradient = ctx.createRadialGradient(32, 48, 2, 32, 48, 24);
-  gradient.addColorStop(0, `${c}80`);
-  gradient.addColorStop(1, `${c}00`);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 64, 64);
-
-  // Pin body
-  ctx.beginPath();
-  ctx.moveTo(32, 8);
-  ctx.arc(32, 24, 12, 0, Math.PI * 2);
-  ctx.fillStyle = c;
-  ctx.fill();
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Pin point
-  ctx.beginPath();
-  ctx.moveTo(32, 36);
-  ctx.lineTo(26, 52);
-  ctx.lineTo(32, 48);
-  ctx.lineTo(38, 52);
-  ctx.closePath();
-  ctx.fillStyle = c;
-  ctx.fill();
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Type icon in center
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 10px monospace";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const icon = type === "news" ? "N" : type === "webcam" ? "TV" : "●";
-  ctx.fillText(icon, 32, 24);
-
-  return canvas.toDataURL();
+  if (panelPostRenderListener && viewer) {
+    viewer.scene.postRender.removeEventListener(panelPostRenderListener);
+    panelPostRenderListener = null;
+  }
 }
 
 function flyToLocation(lat, lon, type) {
   if (!viewer || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-  const height = type === "news" ? 150000 : type === "webcam" ? 80000 : 50000;
+  const height = type === "news" ? 150_000 : type === "webcam" ? 80_000 : 50_000;
   const duration = type === "news" ? 2.0 : 1.5;
 
   viewer.camera.flyTo({
@@ -3807,83 +3696,146 @@ function flyToLocation(lat, lon, type) {
   });
 }
 
-// ===== NEWS DETAIL MODAL =====
-function showNewsDetail(clusterId) {
-  const cluster = newsState.clusters.find((c) => c.cluster_id === clusterId);
-  if (!cluster) return;
+function createInWorldInfoPanel(lat, lon, data) {
+  if (!viewer || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-  const modal = document.getElementById("news-detail-modal");
-  const content = document.getElementById("news-detail-content");
-  const linkBtn = document.getElementById("news-detail-link");
-  if (!modal || !content) return;
+  clearInWorldPanel();
 
-  const relatedItems = cluster.related_items
-    .slice(1, 6)
-    .map(
-      (item) => `
-      <div class="news-detail-related-item">
-        <strong>${escapeHtml(item.source)}</strong> — ${escapeHtml(item.title)}
-      </div>
-    `,
-    )
-    .join("");
+  const color = data.color || "#ef4444";
+  const entityColor = Cesium.Color.fromCssColorString(color);
+  const groundPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+  const skyPos = Cesium.Cartesian3.fromDegrees(lon, lat, 60_000);
 
-  content.innerHTML = `
-    <div class="news-detail-phase ${cluster.story_phase}">${cluster.story_phase}</div>
-    <div class="news-detail-title">${escapeHtml(cluster.primary_item.title)}</div>
-    <div class="news-detail-snippet">${escapeHtml(cluster.primary_item.snippet)}</div>
-    <div class="news-detail-meta-grid">
-      <div class="news-detail-meta-item">
-        <span class="news-detail-meta-label">Source</span>
-        <span class="news-detail-meta-value">${escapeHtml(cluster.primary_item.source)} (Tier ${cluster.primary_item.source_tier})</span>
-      </div>
-      <div class="news-detail-meta-item">
-        <span class="news-detail-meta-label">Category</span>
-        <span class="news-detail-meta-value">${cluster.primary_item.category}</span>
-      </div>
-      <div class="news-detail-meta-item">
-        <span class="news-detail-meta-label">Mentions</span>
-        <span class="news-detail-meta-value">${cluster.mention_count} from ${cluster.source_count} sources</span>
-      </div>
-      <div class="news-detail-meta-item">
-        <span class="news-detail-meta-label">Velocity</span>
-        <span class="news-detail-meta-value">${cluster.velocity_score.toFixed(1)} sources/hr</span>
-      </div>
-      <div class="news-detail-meta-item">
-        <span class="news-detail-meta-label">Threat</span>
-        <span class="news-detail-meta-value" style="color: ${getSeverityColor(cluster.threat_level)}">${cluster.threat_level}</span>
-      </div>
-      <div class="news-detail-meta-item">
-        <span class="news-detail-meta-label">Countries</span>
-        <span class="news-detail-meta-value">${cluster.country_codes.join(", ") || "—"}</span>
-      </div>
+  // Ground pulse ring
+  const ring = viewer.entities.add({
+    position: groundPos,
+    ellipse: {
+      semiMinorAxis: 3000,
+      semiMajorAxis: 3000,
+      material: new Cesium.ColorMaterialProperty(entityColor.withAlpha(0.2)),
+      outline: true,
+      outlineColor: entityColor.withAlpha(0.8),
+      outlineWidth: 2,
+    },
+  });
+  activeCesiumEntities.push(ring);
+
+  // Leader line from ground to sky
+  activeLeaderLine = viewer.entities.add({
+    polyline: {
+      positions: new Cesium.PositionPropertyArray([
+        new Cesium.ConstantPositionProperty(groundPos),
+        new Cesium.ConstantPositionProperty(skyPos),
+      ]),
+      width: 2,
+      material: new Cesium.ColorMaterialProperty(
+        new Cesium.CallbackProperty(() => {
+          const alpha = 0.4 + Math.sin(Date.now() / 500) * 0.2;
+          return entityColor.withAlpha(alpha);
+        }, false),
+      ),
+    },
+  });
+
+  // Top glow at sky position
+  const topGlow = viewer.entities.add({
+    position: skyPos,
+    billboard: {
+      image: createGlowCanvas(color),
+      width: 64,
+      height: 64,
+      scaleByDistance: new Cesium.NearFarScalar(1e3, 1.0, 5e6, 0.3),
+    },
+  });
+  activeCesiumEntities.push(topGlow);
+
+  // Create DOM panel
+  const panel = document.createElement("div");
+  panel.className = "inworld-info-panel";
+  panel.innerHTML = `
+    <div class="inworld-panel-header">
+      <span class="inworld-panel-badge" style="background:${color}">${data.badge}</span>
+      <span class="inworld-panel-title">${escapeHtml(data.title)}</span>
+      <button class="inworld-panel-close" title="Close">&times;</button>
     </div>
-    ${relatedItems ? `<div class="news-detail-related"><h4>Related Coverage</h4>${relatedItems}</div>` : ""}
+    <div class="inworld-panel-body">
+      ${data.lines.map((line) => `<div class="inworld-panel-line">${escapeHtml(line)}</div>`).join("")}
+      ${data.link ? `<a href="${data.link}" target="_blank" class="inworld-panel-link">Open Source &rarr;</a>` : ""}
+      ${data.videoId ? `<a href="https://www.youtube.com/watch?v=${data.videoId}" target="_blank" class="inworld-panel-link">Watch Live &rarr;</a>` : ""}
+    </div>
+    <div class="inworld-panel-arrow" style="border-top-color:${color}"></div>
   `;
 
-  if (linkBtn) {
-    linkBtn.href = cluster.primary_item.link;
-  }
+  const viewport = document.getElementById("viewport-container") || document.body;
+  viewport.appendChild(panel);
+  activeInWorldPanel = panel;
 
-  modal.classList.remove("hidden");
+  // Close handler
+  panel.querySelector(".inworld-panel-close").addEventListener("click", clearInWorldPanel);
 
-  // Visualize on globe
-  if (cluster.center_lat != null && cluster.center_lon != null) {
-    visualizeLocationOnGlobe(
-      cluster.center_lat,
-      cluster.center_lon,
-      cluster.primary_item.title,
-      "news",
-      "#ef4444",
-    );
-    flyToLocation(cluster.center_lat, cluster.center_lon, "news");
-  }
+  // Auto-dismiss after 30s
+  setTimeout(() => {
+    if (activeInWorldPanel === panel) clearInWorldPanel();
+  }, 30_000);
+
+  // Position tracker
+  panelPostRenderListener = () => {
+    if (!viewer || !activeInWorldPanel || viewer.isDestroyed()) return;
+
+    try {
+      const canvasPos = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, skyPos);
+      if (!canvasPos) return;
+
+      const rect = viewport.getBoundingClientRect();
+      const x = canvasPos.x - rect.left;
+      const y = canvasPos.y - rect.top - panel.offsetHeight - 12;
+
+      // Check if behind globe
+      const ellipsoid = viewer.scene.globe.ellipsoid;
+      const cameraPos = viewer.camera.position;
+      const occluder = new Cesium.EllipsoidalOccluder(ellipsoid, cameraPos);
+      const occludeePos = Cesium.Cartographic.fromDegrees(lon, lat, 0);
+      const isVisible = !occluder.isPointHidden(occludeePos);
+
+      if (isVisible && y > 0 && x > 0 && x < rect.width && y < rect.height) {
+        panel.style.opacity = "1";
+        panel.style.transform = "scale(1)";
+        panel.style.left = `${x}px`;
+        panel.style.top = `${y}px`;
+      } else {
+        panel.style.opacity = "0";
+        panel.style.transform = "scale(0.8)";
+      }
+    } catch (_e) {
+      // ignore
+    }
+  };
+
+  viewer.scene.postRender.addEventListener(panelPostRenderListener);
+
+  // Trigger animation on next frame
+  requestAnimationFrame(() => {
+    if (activeInWorldPanel === panel) {
+      panel.classList.add("inworld-panel-visible");
+    }
+  });
 }
 
-function hideNewsDetail() {
-  const modal = document.getElementById("news-detail-modal");
-  if (modal) modal.classList.add("hidden");
-  clearSelectionEntities();
+function createGlowCanvas(color) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const gradient = ctx.createRadialGradient(64, 64, 4, 64, 64, 60);
+  gradient.addColorStop(0, `${color}FF`);
+  gradient.addColorStop(0.3, `${color}80`);
+  gradient.addColorStop(1, `${color}00`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 128, 128);
+
+  return canvas.toDataURL();
 }
 
 function getSeverityColor(severity) {
@@ -3897,60 +3849,58 @@ function getSeverityColor(severity) {
   return colors[severity] || "#6b7280";
 }
 
-// ===== WEBCAM DETAIL MODAL =====
+// ===== NEWS DETAIL — IN WORLD PANEL =====
+function showNewsDetail(clusterId) {
+  const cluster = newsState.clusters.find((c) => c.cluster_id === clusterId);
+  if (!cluster) return;
+
+  const lines = [
+    cluster.primary_item.category.toUpperCase(),
+    `${cluster.mention_count} mentions · ${cluster.source_count} sources`,
+    `Velocity: ${cluster.velocity_score.toFixed(1)}/hr · Threat: ${cluster.threat_level}`,
+    cluster.country_codes.join(", ") || "Global",
+  ];
+
+  if (cluster.center_lat != null && cluster.center_lon != null) {
+    createInWorldInfoPanel(cluster.center_lat, cluster.center_lon, {
+      title: cluster.primary_item.title,
+      badge: "N",
+      color: getSeverityColor(cluster.threat_level),
+      lines,
+      link: cluster.primary_item.link,
+    });
+    flyToLocation(cluster.center_lat, cluster.center_lon, "news");
+  }
+}
+
+function hideNewsDetail() {
+  clearInWorldPanel();
+}
+
+// ===== WEBCAM DETAIL — IN WORLD PANEL =====
 function showWebcamDetail(channelId) {
   const channel = webcamState.channels.find((c) => c.channel_id === channelId);
   if (!channel) return;
 
-  const modal = document.getElementById("webcam-detail-modal");
-  const player = document.getElementById("webcam-player");
-  const meta = document.getElementById("webcam-detail-meta");
-  if (!modal || !player || !meta) return;
+  const lines = [
+    channel.region,
+    `${channel.country_code} · ${channel.priority} priority`,
+    `${channel.lat.toFixed(4)}, ${channel.lon.toFixed(4)}`,
+    channel.relevance_tags.slice(0, 3).join(" · "),
+  ];
 
-  player.innerHTML = `
-    <iframe
-      src="https://www.youtube.com/embed/${channel.youtube_video_id}?autoplay=1&mute=0"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-      allowfullscreen
-      title="${escapeHtml(channel.name)}"
-    ></iframe>
-  `;
-
-  meta.innerHTML = `
-    <div class="webcam-detail-meta-item">
-      <span class="webcam-detail-meta-label">Region</span>
-      <span class="webcam-detail-meta-value">${escapeHtml(channel.region)}</span>
-    </div>
-    <div class="webcam-detail-meta-item">
-      <span class="webcam-detail-meta-label">Country</span>
-      <span class="webcam-detail-meta-value">${escapeHtml(channel.country_code)}</span>
-    </div>
-    <div class="webcam-detail-meta-item">
-      <span class="webcam-detail-meta-label">Priority</span>
-      <span class="webcam-detail-meta-value">${escapeHtml(channel.priority)}</span>
-    </div>
-    <div class="webcam-detail-meta-item">
-      <span class="webcam-detail-meta-label">Coordinates</span>
-      <span class="webcam-detail-meta-value">${channel.lat.toFixed(4)}, ${channel.lon.toFixed(4)}</span>
-    </div>
-    <div class="webcam-detail-tags">
-      ${channel.relevance_tags.map((t) => `<span class="webcam-tag">${escapeHtml(t)}</span>`).join("")}
-    </div>
-  `;
-
-  modal.classList.remove("hidden");
-
-  // Visualize on globe
-  visualizeLocationOnGlobe(channel.lat, channel.lon, channel.name, "webcam", "#3b82f6");
+  createInWorldInfoPanel(channel.lat, channel.lon, {
+    title: channel.name,
+    badge: "TV",
+    color: channel.priority === "high" ? "#ef4444" : "#3b82f6",
+    lines,
+    videoId: channel.youtube_video_id,
+  });
   flyToLocation(channel.lat, channel.lon, "webcam");
 }
 
 function hideWebcamDetail() {
-  const modal = document.getElementById("webcam-detail-modal");
-  if (modal) modal.classList.add("hidden");
-  const player = document.getElementById("webcam-player");
-  if (player) player.innerHTML = "";
-  clearSelectionEntities();
+  clearInWorldPanel();
 }
 
 // ===== INIT NEWS AND WEBCAM =====
