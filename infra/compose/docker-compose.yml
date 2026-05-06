@@ -37,51 +37,63 @@ services:
     container_name: mordor-api
     environment:
       NODE_ENV: production
-      PORT: 3001
+      API_PORT: 3000
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: mordor-dev-secret-change-in-production
+      AUTH_ENABLED: true
       AUTH_PASSWORD_VIEWER: viewer123
       AUTH_PASSWORD_OPERATOR: operator123
       AUTH_PASSWORD_ADMIN: admin123
       CORS_ALLOWED_ORIGIN: "*"
+      LOG_LEVEL: info
+      ENABLE_LIVE_WORLD_SERVICE: true
+      LIVE_FLIGHTS_REFRESH_MS: 120000
+      LIVE_FLIGHTS_CACHE_TTL_MS: 300000
+      LIVE_FLIGHT_HISTORY_POINTS: 18
+      LIVE_FLIGHT_LIMIT: 7000
+      AUTO_REFRESH_EXTERNAL_LAYERS: true
+      SWAN_ARTIFACT_ROOT: /app/runtime/swan
+      SWAN_MAX_THREADS_PER_SESSION: 5
+      SWAN_MAX_GLOBAL_THREADS: 20
+      SWAN_SESSION_IDLE_TTL_MS: 1800000
+      SWAN_WATCH_INTERVAL_MS: 60000
+      SWAN_PROVIDER_ALLOWLIST: app_context,existing_external_layers,external_research
     ports:
-      - "3001:3001"
+      - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
-    command: npx tsx apps/api/src/server.ts
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   web:
     build:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
-      target: builder
+      target: runner
     container_name: mordor-web
     environment:
       NODE_ENV: production
-      API_BASE_URL: http://mordor-api:3001
-      PORT: 8080
+      WEB_PORT: 3001
+      API_BASE_URL: http://localhost:3000
+      MAP_IMAGERY_PROVIDER: arcgis-world-imagery
+      MAP_IMAGERY_MAX_LEVEL: 19
+      STREET_SCENE_PROVIDER: none
     ports:
-      - "8080:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "3001:3001"
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
-    command: npx tsx apps/web/src/server.ts
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -97,6 +109,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
       WORKER_INPUT_FILE: /app/worker-input.json
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
     volumes:
       - ./worker-input.json:/app/worker-input.json:ro
     depends_on:
@@ -106,8 +121,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     command: npx tsx apps/worker/src/index.ts
+    restart: "no"
 
   agent-collector:
     build:
@@ -129,8 +144,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     command: npx tsx apps/agents/src/index.ts
+    restart: unless-stopped
 
   agent-detector:
     build:
@@ -152,8 +167,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     command: npx tsx apps/agents/src/index.ts
+    restart: unless-stopped
 
   agent-publisher:
     build:
@@ -175,8 +190,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
     command: npx tsx apps/agents/src/index.ts
+    restart: unless-stopped
 
 volumes:
   postgres_data:

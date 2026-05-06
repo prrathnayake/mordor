@@ -28,7 +28,7 @@ interface WebAppConfig {
 }
 
 function resolveApiBaseUrl(requestOrigin: string | null, envApiBaseUrl: string): string {
-  return "http://localhost:3001";
+  return envApiBaseUrl || "http://localhost:3000";
 }
 
 async function serveStaticFile(

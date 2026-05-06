@@ -20,16 +20,19 @@ docker compose -f infra/compose/docker-compose.yml down
 | Service | Port | Description |
 |---------|------|-------------|
 | redis | 6379 | Live world cache for globe snapshots and tracks |
-| postgres | 5432 | PostgreSQL database |
-| api | 3001 | REST API server |
-| web | 8080 | Tactical UI (Cesium-based) |
+| postgres | 5432 | PostgreSQL/PostGIS database |
+| api | 3000 | REST API server |
+| web | 3001 | Tactical UI (Cesium-based) |
 | worker | - | Background data processing |
+| agent-collector | - | Agent data collection |
+| agent-detector | - | Anomaly detection agent |
+| agent-publisher | - | Publishing agent |
 
 ## Accessing the Application
 
-- Tactical UI: <http://localhost:8080>
-- API Health: <http://localhost:3001/health>
-- API Docs: <http://localhost:3001/>
+- Tactical UI: <http://localhost:3001>
+- API Health: <http://localhost:3000/health>
+- API Docs: <http://localhost:3000/>
 
 ## Database
 
@@ -50,7 +53,6 @@ npm run web:dev
 Copy `infra/compose/docker.env.example` to `.env` and configure:
 
 - `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - Secret for JWT token signing
 - External API keys for data sources (optional)
 
 ## Layout
