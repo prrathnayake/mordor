@@ -27,7 +27,7 @@ interface WebAppConfig {
   streetScene: StreetSceneConfig;
 }
 
-function resolveApiBaseUrl(requestOrigin: string | null, envApiBaseUrl: string): string {
+function resolveApiBaseUrl(_requestOrigin: string | null, envApiBaseUrl: string): string {
   return envApiBaseUrl || "http://localhost:3000";
 }
 

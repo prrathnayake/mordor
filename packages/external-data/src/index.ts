@@ -6,6 +6,11 @@
  * real, degraded, or unavailable.
  */
 
+export { AbuseIpDbAdapter, createAbuseIpDbAdapter } from "./adapters/abuseipdb.js";
+// Universal Data Adapters
+export { AdsbLolAdapter, createAdsbLolAdapter } from "./adapters/adsb-lol.js";
+export { AlphaVantageAdapter, createAlphaVantageAdapter } from "./adapters/alpha-vantage.js";
+export { BlueskyAdapter, createBlueskyAdapter } from "./adapters/bluesky.js";
 export {
   CelesTrakAdapter,
   createCelesTrakAdapter,
@@ -14,25 +19,46 @@ export {
   type TLESet,
 } from "./adapters/celestrak-satellites.js";
 export { CityBikesAdapter, createCityBikesAdapter } from "./adapters/citybikes.js";
+export { CoinGeckoAdapter, createCoinGeckoAdapter } from "./adapters/coingecko.js";
+export { createFredAdapter, FredAdapter } from "./adapters/fred.js";
+export { createIpInfoAdapter, IpInfoAdapter } from "./adapters/ipinfo.js";
+export { createMediaStackAdapter, MediaStackAdapter } from "./adapters/media-stack.js";
 export {
   createMilitaryFlightsAdapter,
   MilitaryFlightsAdapter,
 } from "./adapters/military-flights.js";
+export { createNasaApiAdapter, NasaApiAdapter } from "./adapters/nasa-apis.js";
+export { createNewsApiAdapter, NewsApiAdapter } from "./adapters/news-api.js";
 export { createNOAAWeatherAdapter, NOAAWeatherAdapter } from "./adapters/noaa-weather.js";
-// Adapters
 export {
   createOpenSkyFlightsAdapter,
   OpenSkyFlightsAdapter,
   type OpenSkyFlightsFetchResult,
 } from "./adapters/opensky-flights.js";
+export { createOpenWeatherMapAdapter, OpenWeatherMapAdapter } from "./adapters/openweathermap.js";
+export { createOtxAdapter, OtxAdapter } from "./adapters/otx.js";
+export { createRedditAdapter, RedditAdapter } from "./adapters/reddit.js";
+export { createRestCountriesAdapter, RestCountriesAdapter } from "./adapters/rest-countries.js";
+export { createShodanAdapter, ShodanAdapter } from "./adapters/shodan.js";
 export { createStreetTrafficAdapter, StreetTrafficAdapter } from "./adapters/street-traffic.js";
 export {
   createUSGSEarthquakeAdapter,
   USGSEarthquakeAdapter,
 } from "./adapters/usgs-earthquakes.js";
 export { calculateFreshness, createCacheKey, ExternalDataCache } from "./cache.js";
+export {
+  createDataSourceCacheKey,
+  DataSourceCache,
+  getGlobalDataSourceCache,
+} from "./data-source-cache.js";
 // Core utilities
 export { createHttpClient, RateLimitedHttpClient } from "./http-client.js";
+// Universal Data Services
+export {
+  createUniversalDataRegistry,
+  UniversalDataRegistry,
+  type UniversalDataRegistryConfig,
+} from "./services/universal-data-registry.js";
 // Types
 export type {
   AdapterConfig,
@@ -44,9 +70,25 @@ export type {
   LayerStatus,
   SourceHealth,
 } from "./types.js";
-
 // Default configurations
 export { DEFAULT_ADAPTER_CONFIG } from "./types.js";
+export type {
+  AdapterFetchResult,
+  AviationPosition,
+  DataAdapter,
+  DataSourceCategory,
+  DataSourceConfig,
+  DataSourceRegistryEntry,
+  DataSourceStatus,
+  FinancialData,
+  NewsArticle,
+  SocialPost,
+  SpaceData,
+  ThreatIntel,
+  UtilityData,
+  WeatherAlert,
+  WeatherObservation,
+} from "./universal-types.js";
 
 import { CelesTrakAdapter } from "./adapters/celestrak-satellites.js";
 import { CityBikesAdapter } from "./adapters/citybikes.js";

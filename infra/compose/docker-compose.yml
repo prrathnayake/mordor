@@ -58,6 +58,20 @@ services:
       SWAN_SESSION_IDLE_TTL_MS: 1800000
       SWAN_WATCH_INTERVAL_MS: 60000
       SWAN_PROVIDER_ALLOWLIST: app_context,existing_external_layers,external_research
+      # Universal Data Sources
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      MEDIASTACK_KEY: ${MEDIASTACK_KEY:-}
+      OPENWEATHERMAP_KEY: ${OPENWEATHERMAP_KEY:-}
+      NASA_API_KEY: ${NASA_API_KEY:-DEMO_KEY}
+      ALPHAVANTAGE_KEY: ${ALPHAVANTAGE_KEY:-}
+      FRED_KEY: ${FRED_KEY:-}
+      ABUSEIPDB_KEY: ${ABUSEIPDB_KEY:-}
+      OTX_KEY: ${OTX_KEY:-}
+      SHODAN_KEY: ${SHODAN_KEY:-}
+      IPINFO_KEY: ${IPINFO_KEY:-}
+      UNIVERSAL_DATA_CACHE_TTL_MS: 60000
+      UNIVERSAL_DATA_STALE_TTL_MS: 300000
+      UNIVERSAL_DATA_FETCH_INTERVAL_MS: 60000
     ports:
       - "3000:3000"
     depends_on:
@@ -85,7 +99,9 @@ services:
       API_BASE_URL: http://localhost:3000
       MAP_IMAGERY_PROVIDER: arcgis-world-imagery
       MAP_IMAGERY_MAX_LEVEL: 19
-      STREET_SCENE_PROVIDER: none
+      STREET_SCENE_PROVIDER: ${STREET_SCENE_PROVIDER:-none}
+      CESIUM_ION_TOKEN: ${CESIUM_ION_TOKEN:-}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     ports:
       - "3001:3001"
     depends_on:

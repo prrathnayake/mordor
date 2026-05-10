@@ -53,8 +53,8 @@ export async function fetchYouTubeClips(channelId: string, maxResults = 20): Pro
 }
 
 async function fetchYouTubeSearchFallback(
-  channelId: string,
-  maxResults: number,
+  _channelId: string,
+  _maxResults: number,
 ): Promise<NewsClip[]> {
   return [];
 }

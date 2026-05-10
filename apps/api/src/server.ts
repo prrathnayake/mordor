@@ -5,6 +5,7 @@ import { createAlertRuleId, evaluateEventForAlerts } from "../../../packages/ale
 import { authenticate, logout, validateToken } from "../../../packages/auth/src/index.js";
 import { getConfigFromEnv, validateConfig } from "../../../packages/config/src/index.js";
 import { applyCanonicalEventToObjectState } from "../../../packages/domain/src/index.js";
+import { UniversalDataRegistry } from "../../../packages/external-data/src/services/universal-data-registry.js";
 import {
   type Clock,
   ingestCameraObservationBatch,
@@ -38,6 +39,7 @@ import {
   PostgresPersistenceGateway,
   setObjectStateUpdateCallback,
 } from "../../../packages/persistence/src/index.js";
+import { UniversalDataGateway } from "../../../packages/persistence/src/universal-data-gateway.js";
 import { validateReplayQueryRequest } from "../../../packages/replay/src/index.js";
 import {
   type SwanActivityEvent,
@@ -48,6 +50,10 @@ import { loadJsonFixture } from "../../../packages/test-fixtures/src/index.js";
 import { runCaptureJob } from "./capture-service.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
 import { createLiveWorldService, refreshExternalDataLayer } from "./live-world-service.js";
+import {
+  createUniversalDataEnvConfig,
+  registerUniversalDataRoutes,
+} from "./universal-data-routes.js";
 
 // Layer ID to display label mapping
 function getLayerLabel(layerId: string): string {
@@ -433,6 +439,8 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
   const logger = createLogger("api-server");
   const incidentIntelligenceLogger = createLogger("incident-intelligence");
   const persistence = PostgresPersistenceGateway.fromConnectionString(options.connection_string);
+  const universalDataGateway = new UniversalDataGateway(persistence.getDatabase());
+  const universalDataRegistry = new UniversalDataRegistry(createUniversalDataEnvConfig());
   const clock = options.clock ?? systemClock;
   const config = getConfigFromEnv();
 
@@ -622,6 +630,50 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
   const { getSubscriptionCount } = await import("../../../packages/intelligence/src/news-clips.js");
   if (getSubscriptionCount() > 0) {
     _realtimeNewsInterval = setInterval(startRealtimeNewsPolling, REALTIME_NEWS_POLL_MS);
+  }
+
+  // Background universal data fetch loop
+  let universalDataInterval: NodeJS.Timeout | null = null;
+  async function runUniversalDataFetch(): Promise<void> {
+    const activeSources = universalDataRegistry.getActiveSources();
+    for (const source of activeSources) {
+      try {
+        const result = await universalDataRegistry.fetchSource(source.sourceId);
+        if (result.success) {
+          await universalDataGateway.updateDataSourceRegistryStatus(source.sourceId, "active");
+          logger.debug("Universal data fetch succeeded", {
+            source: source.sourceId,
+            count: result.data.length,
+          });
+        } else {
+          await universalDataGateway.updateDataSourceRegistryStatus(
+            source.sourceId,
+            "error",
+            result.error,
+          );
+          logger.warn("Universal data fetch failed", {
+            source: source.sourceId,
+            error: result.error,
+          });
+        }
+      } catch (error) {
+        await universalDataGateway.updateDataSourceRegistryStatus(
+          source.sourceId,
+          "error",
+          String(error),
+        );
+        logger.error("Universal data fetch error", {
+          source: source.sourceId,
+          error: String(error),
+        });
+      }
+    }
+  }
+  if (universalDataRegistry.getActiveSources().length > 0) {
+    universalDataInterval = setInterval(runUniversalDataFetch, 60000);
+    runUniversalDataFetch().catch((err) =>
+      logger.warn("Initial universal data fetch failed", { error: String(err) }),
+    );
   }
 
   async function waitForActiveRequestsToDrain(timeoutMs = 30000): Promise<void> {
@@ -2872,6 +2924,18 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           return;
         }
 
+        const handled = registerUniversalDataRoutes(
+          request,
+          response,
+          url,
+          universalDataGateway,
+          universalDataRegistry,
+          logger,
+        );
+        if (handled) {
+          return;
+        }
+
         logger.warn("Route not found", { pathname: url.pathname, method: request.method });
 
         writeJson(response, 404, {
@@ -2913,6 +2977,9 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
       }
       if (_realtimeNewsInterval) {
         clearInterval(_realtimeNewsInterval);
+      }
+      if (universalDataInterval) {
+        clearInterval(universalDataInterval);
       }
       if (lagMonitorInterval) {
         clearInterval(lagMonitorInterval);
