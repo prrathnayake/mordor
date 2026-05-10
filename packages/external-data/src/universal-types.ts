@@ -207,6 +207,54 @@ export interface UtilityData {
   observedAt: string;
 }
 
+export interface SeismicEvent {
+  eventId: string;
+  source: "usgs" | "emsc";
+  externalId: string;
+  magnitude: number;
+  magnitudeType: "ml" | "mw" | "mb" | "md";
+  depthKm: number;
+  lat: number;
+  lon: number;
+  locationName: string;
+  country: string;
+  observedAt: string;
+  tsunamiWarning: boolean;
+  feltReports: number;
+  significant: boolean;
+  dataType: "earthquake" | "explosion" | "quarry";
+}
+
+export interface VesselPosition {
+  vesselId: string;
+  source: "marinetraffic" | "vesselfinder";
+  imo: string | null;
+  vesselName: string;
+  vesselType: string;
+  flag: string;
+  lat: number;
+  lon: number;
+  speedKnots: number | null;
+  headingDeg: number | null;
+  destination: string | null;
+  eta: string | null;
+  observedAt: string;
+}
+
+export interface CustomIntel {
+  intelId: string;
+  sourceId: string;
+  sourceName: string;
+  title: string;
+  description: string;
+  severity: "low" | "medium" | "high" | "critical";
+  lat: number | null;
+  lon: number | null;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  receivedAt: string;
+}
+
 export interface AdapterFetchResult<T> {
   success: boolean;
   data: T[];

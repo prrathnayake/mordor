@@ -180,6 +180,65 @@ export function registerUniversalDataRoutes(
     return true;
   }
 
+  // === SEISMIC ===
+  if (method === "GET" && pathname === "/universal/seismic") {
+    const minMagnitude = readSearchParams(url, "min_magnitude");
+    const source = readSearchParams(url, "source");
+    const limit = parseIntParam(url, "limit", 50);
+    gateway
+      .fetchSeismicEvents({
+        minMagnitude: minMagnitude ? Number(minMagnitude) : undefined,
+        source: source ?? undefined,
+        limit,
+      })
+      .then((data) => writeJson(response, 200, data))
+      .catch((err) => {
+        logger.error("Failed to fetch seismic", err);
+        writeJson(response, 500, { error: "Internal server error" });
+      });
+    return true;
+  }
+
+  // === VESSELS ===
+  if (method === "GET" && pathname === "/universal/vessels") {
+    const west = readSearchParams(url, "west");
+    const south = readSearchParams(url, "south");
+    const east = readSearchParams(url, "east");
+    const north = readSearchParams(url, "north");
+    const bounds =
+      west && south && east && north
+        ? { west: Number(west), south: Number(south), east: Number(east), north: Number(north) }
+        : undefined;
+    const limit = parseIntParam(url, "limit", 50);
+    gateway
+      .fetchVesselPositions({ bounds, limit })
+      .then((data) => writeJson(response, 200, data))
+      .catch((err) => {
+        logger.error("Failed to fetch vessels", err);
+        writeJson(response, 500, { error: "Internal server error" });
+      });
+    return true;
+  }
+
+  // === CUSTOM INTEL ===
+  if (method === "GET" && pathname === "/universal/custom-intel") {
+    const sourceId = readSearchParams(url, "source_id");
+    const severity = readSearchParams(url, "severity");
+    const limit = parseIntParam(url, "limit", 50);
+    gateway
+      .fetchCustomIntel({
+        sourceId: sourceId ?? undefined,
+        severity: severity ?? undefined,
+        limit,
+      })
+      .then((data) => writeJson(response, 200, data))
+      .catch((err) => {
+        logger.error("Failed to fetch custom intel", err);
+        writeJson(response, 500, { error: "Internal server error" });
+      });
+    return true;
+  }
+
   // === TRIGGER FETCH (Refresh a specific source via the registry) ===
   if (method === "POST" && pathname.startsWith("/universal/fetch/") && registry) {
     const sourceId = pathname.replace("/universal/fetch/", "");

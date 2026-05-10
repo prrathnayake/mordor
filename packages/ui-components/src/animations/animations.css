@@ -1,0 +1,206 @@
+@keyframes clusterExpand {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes clusterContract {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+}
+
+@keyframes labelFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes labelFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes cardSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cardSlideDown {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+}
+
+@keyframes tooltipFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulseElement {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--pulse-color, var(--accent-primary));
+  }
+  50% {
+    transform: scale(var(--pulse-scale, 1.15));
+    box-shadow: 0 0 15px 5px var(--pulse-color, var(--accent-primary));
+  }
+}
+
+@keyframes liveGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 5px 2px var(--alert-critical, #ff3333);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 15px 5px var(--alert-critical, #ff3333);
+    opacity: 0.7;
+  }
+}
+
+@keyframes badgePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 8px 3px currentColor;
+  }
+}
+
+@keyframes routeDash {
+  0% {
+    stroke-dashoffset: 20;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes zoomIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes zoomOut {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+.widget-cluster {
+  animation: clusterExpand 0.3s ease-out;
+}
+
+.widget-cluster.cluster-expanded {
+  animation: clusterExpand 0.2s ease-out forwards;
+}
+
+.widget-tooltip {
+  animation: tooltipFadeIn 0.15s ease-out;
+}
+
+.widget-info-card {
+  animation: cardSlideUp 0.3s ease-out;
+}
+
+.widget-info-card.closing {
+  animation: cardSlideDown 0.2s ease-in forwards;
+}
+
+.live-indicator {
+  transition: opacity 0.2s ease;
+}
+
+.live-indicator.live-active {
+  animation: liveGlow 2s ease-in-out infinite;
+}
+
+.live-indicator.live-pulse {
+  animation: liveGlow 0.5s ease-in-out;
+}
+
+.pulse-badge {
+  animation: badgePulse 1.5s ease-in-out infinite;
+}
+
+.label-animated {
+  animation: labelFadeIn 0.2s ease-out;
+}
+
+.label-animated.hidden {
+  animation: labelFadeOut 0.15s ease-in forwards;
+}
+
+.route-line-animated {
+  stroke-dasharray: 10, 5;
+  animation: routeDash 1s linear infinite;
+}
+
+.zoom-transition-in {
+  animation: zoomIn 0.3s ease-out;
+}
+
+.zoom-transition-out {
+  animation: zoomOut 0.2s ease-in forwards;
+}

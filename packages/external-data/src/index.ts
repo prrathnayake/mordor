@@ -20,8 +20,18 @@ export {
 } from "./adapters/celestrak-satellites.js";
 export { CityBikesAdapter, createCityBikesAdapter } from "./adapters/citybikes.js";
 export { CoinGeckoAdapter, createCoinGeckoAdapter } from "./adapters/coingecko.js";
+export {
+  CustomIntelAdapter,
+  type CustomIntelObservation,
+  type CustomIntelSource,
+  createCustomIntelAdapter,
+} from "./adapters/custom-intel.js";
 export { createFredAdapter, FredAdapter } from "./adapters/fred.js";
 export { createIpInfoAdapter, IpInfoAdapter } from "./adapters/ipinfo.js";
+export {
+  createMaritimeTrafficAdapter,
+  MaritimeTrafficAdapter,
+} from "./adapters/maritime-traffic.js";
 export { createMediaStackAdapter, MediaStackAdapter } from "./adapters/media-stack.js";
 export {
   createMilitaryFlightsAdapter,
@@ -43,6 +53,7 @@ export { createShodanAdapter, ShodanAdapter } from "./adapters/shodan.js";
 export { createStreetTrafficAdapter, StreetTrafficAdapter } from "./adapters/street-traffic.js";
 export {
   createUSGSEarthquakeAdapter,
+  type SeismicEvent,
   USGSEarthquakeAdapter,
 } from "./adapters/usgs-earthquakes.js";
 export { calculateFreshness, createCacheKey, ExternalDataCache } from "./cache.js";
@@ -75,6 +86,7 @@ export { DEFAULT_ADAPTER_CONFIG } from "./types.js";
 export type {
   AdapterFetchResult,
   AviationPosition,
+  CustomIntel,
   DataAdapter,
   DataSourceCategory,
   DataSourceConfig,
@@ -86,6 +98,7 @@ export type {
   SpaceData,
   ThreatIntel,
   UtilityData,
+  VesselPosition,
   WeatherAlert,
   WeatherObservation,
 } from "./universal-types.js";

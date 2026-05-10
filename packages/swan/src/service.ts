@@ -27,8 +27,12 @@ import {
   appContextProvider,
   createExternalResearchProvider,
   existingExternalLayersProvider,
+  geofenceProvider,
   type SwanGeneratedFinding,
   type SwanProvider,
+  thresholdProvider,
+  widgetInteractionProvider,
+  zoomContextProvider,
 } from "./providers.js";
 import { type SwanFindingWrite, SwanRepository } from "./repository.js";
 
@@ -185,6 +189,46 @@ function getThreadDefinitions(
           recurrence_interval_ms: watchIntervalMs,
         },
       ];
+    case "zoom_level_changed":
+      return [
+        {
+          recipe: "context",
+          target_type: "system",
+          target_id: "zoom",
+          is_recurring: false,
+          recurrence_interval_ms: null,
+        },
+      ];
+    case "widget_interacted":
+      return [
+        {
+          recipe: "context",
+          target_type: "system",
+          target_id: "widget",
+          is_recurring: false,
+          recurrence_interval_ms: null,
+        },
+      ];
+    case "geofence_entered":
+      return [
+        {
+          recipe: "watch",
+          target_type: "system",
+          target_id: "geofence",
+          is_recurring: true,
+          recurrence_interval_ms: watchIntervalMs,
+        },
+      ];
+    case "data_threshold_crossed":
+      return [
+        {
+          recipe: "watch",
+          target_type: "system",
+          target_id: "threshold",
+          is_recurring: false,
+          recurrence_interval_ms: null,
+        },
+      ];
     default:
       return [];
   }
@@ -222,6 +266,10 @@ export class SwanProtocolService {
         externalResearchFeeds: config.externalResearchFeeds ?? [],
       }),
     );
+    this.providers.set("zoom_context", zoomContextProvider);
+    this.providers.set("geofence", geofenceProvider);
+    this.providers.set("threshold", thresholdProvider);
+    this.providers.set("widget_interaction", widgetInteractionProvider);
 
     this.schedulerInterval = setInterval(() => {
       void this.runBackgroundTask("drainQueue", () => this.drainQueue());
@@ -306,15 +354,31 @@ export class SwanProtocolService {
     });
   }
 
-  private getProviderNamesForRecipe(recipe: SwanThread["recipe"]): string[] {
+  private getProviderNamesForRecipe(thread: SwanThread): string[] {
+    const recipe = thread.recipe;
+    const activityType = thread.context.last_activity_type as string | undefined;
+
     switch (recipe) {
       case "context":
+        if (activityType === "zoom_level_changed") {
+          return ["app_context", "zoom_context"];
+        }
+        if (activityType === "widget_interacted") {
+          return ["app_context", "widget_interaction"];
+        }
         return ["app_context", "existing_external_layers"];
       case "verify":
         return ["app_context", "existing_external_layers"];
       case "research":
         return ["external_research", "existing_external_layers"];
       case "watch":
+        if (activityType === "geofence_entered") {
+          return ["app_context", "geofence"];
+        }
+        if (activityType === "data_threshold_crossed") {
+          return ["app_context", "threshold"];
+        }
+        return ["app_context", "existing_external_layers", "external_research"];
       case "window_watch":
       case "layer_watch":
         return ["app_context", "existing_external_layers", "external_research"];
@@ -782,8 +846,8 @@ export class SwanProtocolService {
         return;
       }
 
-      const providerNames = this.getProviderNamesForRecipe(runningThread.recipe).filter(
-        (providerName) => this.config.providerAllowlist.includes(providerName),
+      const providerNames = this.getProviderNamesForRecipe(runningThread).filter((providerName) =>
+        this.config.providerAllowlist.includes(providerName),
       );
 
       const generatedFindings: SwanGeneratedFinding[] = [];

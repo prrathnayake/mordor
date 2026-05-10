@@ -144,6 +144,63 @@ export interface SpaceDataRow {
   media_type: string | null;
 }
 
+export interface SeismicEventRow {
+  event_id: string;
+  source: "usgs" | "emsc";
+  external_id: string;
+  magnitude: number;
+  magnitude_type: "ml" | "mw" | "mb" | "md";
+  depth_km: number;
+  lat: number;
+  lon: number;
+  location_name: string;
+  country: string | null;
+  observed_at: string;
+  tsunami_warning: boolean;
+  felt_reports: number;
+  significant: boolean;
+  data_type: "earthquake" | "explosion" | "quarry";
+}
+
+export interface VesselPositionRow {
+  vessel_id: string;
+  source: "marinetraffic" | "vesselfinder";
+  imo: string | null;
+  vessel_name: string;
+  vessel_type: string;
+  flag: string | null;
+  lat: number;
+  lon: number;
+  speed_knots: number | null;
+  heading_deg: number | null;
+  destination: string | null;
+  eta: string | null;
+  observed_at: string;
+}
+
+export interface CustomIntelSourceRow {
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  provider: string;
+  license: string;
+  status: "active" | "inactive" | "error";
+  update_cadence_seconds: number;
+}
+
+export interface CustomIntelObservationRow {
+  intel_id: string;
+  source_id: string;
+  source_name: string;
+  title: string;
+  description: string | null;
+  severity: "low" | "medium" | "high" | "critical";
+  lat: number | null;
+  lon: number | null;
+  tags: string[];
+  received_at: string;
+}
+
 export class UniversalDataGateway {
   constructor(private readonly database: PostgresDatabase) {}
 
@@ -535,6 +592,201 @@ export class UniversalDataGateway {
     }
     query += ` ORDER BY confidence DESC LIMIT $${idx}`;
     params.push(input?.limit ?? 50);
+    const result = await this.database.pool.query(query, params);
+    return result.rows;
+  }
+
+  // ============ SEISMIC ============
+
+  async persistSeismicEvents(events: SeismicEventRow[]): Promise<void> {
+    if (events.length === 0) return;
+    for (const e of events) {
+      await this.database.pool.query(
+        `INSERT INTO seismic_events (event_id, source, external_id, magnitude, magnitude_type, depth_km, lat, lon, location_name, country, observed_at, tsunami_warning, felt_reports, significant, data_type, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'{}'::jsonb)
+         ON CONFLICT (source, external_id, observed_at) DO UPDATE SET magnitude=EXCLUDED.magnitude, felt_reports=EXCLUDED.felt_reports`,
+        [
+          e.event_id,
+          e.source,
+          e.external_id,
+          e.magnitude,
+          e.magnitude_type,
+          e.depth_km,
+          e.lat,
+          e.lon,
+          e.location_name,
+          e.country,
+          e.observed_at,
+          e.tsunami_warning,
+          e.felt_reports,
+          e.significant,
+          e.data_type,
+        ],
+      );
+    }
+  }
+
+  async fetchSeismicEvents(input?: {
+    minMagnitude?: number;
+    source?: string;
+    bounds?: { west: number; south: number; east: number; north: number };
+    limit?: number;
+  }): Promise<SeismicEventRow[]> {
+    const params: unknown[] = [];
+    let whereClause = "WHERE 1=1";
+    let idx = 1;
+
+    if (input?.minMagnitude !== undefined) {
+      whereClause += ` AND magnitude >= $${idx++}`;
+      params.push(input.minMagnitude);
+    }
+    if (input?.source) {
+      whereClause += ` AND source = $${idx++}`;
+      params.push(input.source);
+    }
+    if (input?.bounds) {
+      whereClause += ` AND lon BETWEEN $${idx++} AND $${idx++} AND lat BETWEEN $${idx++} AND $${idx++}`;
+      params.push(input.bounds.west, input.bounds.east, input.bounds.south, input.bounds.north);
+    }
+
+    const query = `SELECT * FROM seismic_events ${whereClause} ORDER BY observed_at DESC LIMIT $${idx}`;
+    params.push(input?.limit ?? 100);
+
+    const result = await this.database.pool.query(query, params);
+    return result.rows;
+  }
+
+  // ============ VESSEL POSITIONS ============
+
+  async persistVesselPositions(positions: VesselPositionRow[]): Promise<void> {
+    if (positions.length === 0) return;
+    for (const p of positions) {
+      await this.database.pool.query(
+        `INSERT INTO vessel_positions (vessel_id, source, imo, vessel_name, vessel_type, flag, lat, lon, speed_knots, heading_deg, destination, eta, observed_at, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'{}'::jsonb)
+         ON CONFLICT (vessel_id, observed_at) DO UPDATE SET lat=EXCLUDED.lat, lon=EXCLUDED.lon, speed_knots=EXCLUDED.speed_knots, heading_deg=EXCLUDED.heading_deg`,
+        [
+          p.vessel_id,
+          p.source,
+          p.imo,
+          p.vessel_name,
+          p.vessel_type,
+          p.flag,
+          p.lat,
+          p.lon,
+          p.speed_knots,
+          p.heading_deg,
+          p.destination,
+          p.eta,
+          p.observed_at,
+        ],
+      );
+    }
+  }
+
+  async fetchVesselPositions(input?: {
+    bounds?: { west: number; south: number; east: number; north: number };
+    flag?: string;
+    vesselType?: string;
+    limit?: number;
+  }): Promise<VesselPositionRow[]> {
+    const params: unknown[] = [];
+    let whereClause = "WHERE 1=1";
+    let idx = 1;
+
+    if (input?.bounds) {
+      whereClause += ` AND lon BETWEEN $${idx++} AND $${idx++} AND lat BETWEEN $${idx++} AND $${idx++}`;
+      params.push(input.bounds.west, input.bounds.east, input.bounds.south, input.bounds.north);
+    }
+    if (input?.flag) {
+      whereClause += ` AND flag = $${idx++}`;
+      params.push(input.flag);
+    }
+    if (input?.vesselType) {
+      whereClause += ` AND vessel_type = $${idx++}`;
+      params.push(input.vesselType);
+    }
+
+    const query = `SELECT * FROM vessel_positions ${whereClause} ORDER BY observed_at DESC LIMIT $${idx}`;
+    params.push(input?.limit ?? 100);
+
+    const result = await this.database.pool.query(query, params);
+    return result.rows;
+  }
+
+  // ============ CUSTOM INTEL ============
+
+  async persistCustomIntelSources(sources: CustomIntelSourceRow[]): Promise<void> {
+    if (sources.length === 0) return;
+    for (const s of sources) {
+      await this.database.pool.query(
+        `INSERT INTO custom_intel_sources (source_id, source_name, source_type, provider, license, status, update_cadence_seconds, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'{}'::jsonb)
+         ON CONFLICT (source_id) DO UPDATE SET source_name=EXCLUDED.source_name, status=EXCLUDED.status`,
+        [
+          s.source_id,
+          s.source_name,
+          s.source_type,
+          s.provider,
+          s.license,
+          s.status,
+          s.update_cadence_seconds,
+        ],
+      );
+    }
+  }
+
+  async persistCustomIntelObservations(observations: CustomIntelObservationRow[]): Promise<void> {
+    if (observations.length === 0) return;
+    for (const o of observations) {
+      await this.database.pool.query(
+        `INSERT INTO custom_intel_observations (intel_id, source_id, source_name, title, description, severity, lat, lon, tags, metadata, received_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],'{}'::jsonb,$10)
+         ON CONFLICT (intel_id) DO UPDATE SET title=EXCLUDED.title, severity=EXCLUDED.severity, tags=EXCLUDED.tags`,
+        [
+          o.intel_id,
+          o.source_id,
+          o.source_name,
+          o.title,
+          o.description,
+          o.severity,
+          o.lat,
+          o.lon,
+          o.tags,
+          o.received_at,
+        ],
+      );
+    }
+  }
+
+  async fetchCustomIntelSources(): Promise<CustomIntelSourceRow[]> {
+    const result = await this.database.pool.query(
+      "SELECT * FROM custom_intel_sources WHERE status = 'active' ORDER BY source_name",
+    );
+    return result.rows;
+  }
+
+  async fetchCustomIntel(input?: {
+    sourceId?: string;
+    severity?: string;
+    limit?: number;
+  }): Promise<CustomIntelObservationRow[]> {
+    const params: unknown[] = [];
+    let whereClause = "WHERE 1=1";
+    let idx = 1;
+
+    if (input?.sourceId) {
+      whereClause += ` AND source_id = $${idx++}`;
+      params.push(input.sourceId);
+    }
+    if (input?.severity) {
+      whereClause += ` AND severity = $${idx++}`;
+      params.push(input.severity);
+    }
+
+    const query = `SELECT * FROM custom_intel_observations ${whereClause} ORDER BY received_at DESC LIMIT $${idx}`;
+    params.push(input?.limit ?? 50);
+
     const result = await this.database.pool.query(query, params);
     return result.rows;
   }

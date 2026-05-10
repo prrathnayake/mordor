@@ -1519,4 +1519,60 @@ export class SwanRepository {
       error_message: row.error_message ?? null,
     };
   }
+
+  async fetchActiveGeofences(): Promise<
+    Array<{
+      geofence_id: string;
+      name: string;
+      lat: number;
+      lon: number;
+      radius_m: number;
+      alert_type: string;
+      status: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT geofence_id, name, lat, lon, radius_m, alert_type, status
+        FROM geofences
+        WHERE status = 'active'
+      `,
+    );
+
+    return result.rows.map((row) => ({
+      geofence_id: row.geofence_id,
+      name: row.name,
+      lat: Number(row.lat),
+      lon: Number(row.lon),
+      radius_m: Number(row.radius_m),
+      alert_type: row.alert_type,
+      status: row.status,
+    }));
+  }
+
+  async fetchDataThresholds(): Promise<
+    Array<{
+      threshold_id: string;
+      attribute_name: string;
+      threshold_value: number;
+      operator: "gt" | "lt" | "eq" | "gte" | "lte";
+      status: string;
+    }>
+  > {
+    const result = await this.database.pool.query(
+      `
+        SELECT threshold_id, attribute_name, threshold_value, operator, status
+        FROM data_thresholds
+        WHERE status = 'active'
+      `,
+    );
+
+    return result.rows.map((row) => ({
+      threshold_id: row.threshold_id,
+      attribute_name: row.attribute_name,
+      threshold_value: Number(row.threshold_value),
+      operator: row.operator as "gt" | "lt" | "eq" | "gte" | "lte",
+      status: row.status,
+    }));
+  }
 }

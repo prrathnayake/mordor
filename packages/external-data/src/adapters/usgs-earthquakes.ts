@@ -11,6 +11,10 @@
 
 import { createHttpClient } from "../http-client.js";
 import type { ExternalDataEvent, ExternalDataSource, FetchResult } from "../types.js";
+import type { SeismicEvent } from "../universal-types.js";
+
+// Re-export for backwards compatibility
+export type { SeismicEvent };
 
 /**
  * USGS GeoJSON Feature structure
@@ -205,7 +209,7 @@ export class USGSEarthquakeAdapter {
       observedAt: new Date(feature.properties.time).toISOString(),
       lat,
       lon,
-      altitudeM: -depth, // Negative altitude for depth below surface
+      altitudeM: -depth,
       payload: {
         magnitude: feature.properties.mag,
         magnitudeType: feature.properties.magType,
@@ -219,6 +223,91 @@ export class USGSEarthquakeAdapter {
         alert: feature.properties.alert,
       },
     };
+  }
+
+  /**
+   * Normalize USGS feature to SeismicEvent format.
+   */
+  toSeismicEvent(feature: USGSFeature): SeismicEvent {
+    const [lon, lat, depth] = feature.geometry.coordinates;
+    const placeParts = feature.properties.place.split(", ");
+    const country = placeParts.length > 1 ? placeParts[placeParts.length - 1] : placeParts[0];
+
+    return {
+      eventId: `eq_${feature.id}`,
+      source: "usgs",
+      externalId: feature.id,
+      magnitude: feature.properties.mag,
+      magnitudeType: feature.properties.magType.toLowerCase().substring(0, 2) as
+        | "ml"
+        | "mw"
+        | "mb"
+        | "md",
+      depthKm: depth,
+      lat,
+      lon,
+      locationName: feature.properties.place,
+      country,
+      observedAt: new Date(feature.properties.time).toISOString(),
+      tsunamiWarning: feature.properties.tsunami === 1,
+      feltReports: feature.properties.felt ?? 0,
+      significant: feature.properties.sig >= 1000,
+      dataType:
+        feature.properties.type === "earthquake" ||
+        feature.properties.type === "explosion" ||
+        feature.properties.type === "quarry"
+          ? feature.properties.type
+          : "earthquake",
+    };
+  }
+
+  /**
+   * Fetch earthquakes returning SeismicEvent array.
+   */
+  async fetchSeismicEvents(minMagnitude = 2.5): Promise<SeismicEvent[]> {
+    const result = await this.fetch(minMagnitude);
+    if (!result.success) {
+      return [];
+    }
+    return result.events.map((event) => {
+      const feature: USGSFeature = {
+        type: "Feature",
+        properties: {
+          mag: event.payload.magnitude as number,
+          place: event.payload.place as string,
+          time: new Date(event.observedAt).getTime(),
+          updated: Date.now(),
+          tz: null,
+          url: event.payload.url as string,
+          detail: "",
+          felt: event.payload.feltReports as number | null,
+          cdi: null,
+          mmi: null,
+          alert: event.payload.alert as string | null,
+          status: event.payload.status as string,
+          tsunami: event.payload.tsunami ? 1 : 0,
+          sig: event.payload.significance as number,
+          net: "usgs",
+          code: event.externalId,
+          ids: "",
+          sources: "",
+          types: "",
+          nst: null,
+          dmin: null,
+          rms: 0,
+          gap: null,
+          magType: event.payload.magnitudeType as string,
+          type: "earthquake",
+          title: event.payload.place as string,
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [event.lon, event.lat, event.payload.depthKm as number],
+        },
+        id: event.externalId,
+      };
+      return this.toSeismicEvent(feature);
+    });
   }
 
   /**

@@ -2355,6 +2355,7 @@ function initCesium() {
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
   // Update coordinates display
+  let lastEmittedZoomLevel = null;
   viewer.camera.changed.addEventListener(() => {
     const cartographic = viewer.camera.positionCartographic;
     const lat = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
@@ -2365,6 +2366,26 @@ function initCesium() {
     const height = cartographic.height;
     const zoom = Math.max(1, Math.min(20, Math.round(20 - Math.log2(height / 100))));
     dom.zoomLevel.textContent = `ZOOM: ${zoom}`;
+
+    // Emit zoom level change event to SWAN (debounced)
+    if (lastEmittedZoomLevel !== zoom) {
+      lastEmittedZoomLevel = zoom;
+      emitSwanActivity("zoom_level_changed", {
+        targetType: "system",
+        targetId: "zoom",
+        context: {
+          zoomLevel: zoom,
+          centerLat: parseFloat(lat),
+          centerLon: parseFloat(lon),
+          visibleBounds: {
+            north: Cesium.Math.toDegrees(cartographic.latitude) + 0.5,
+            south: Cesium.Math.toDegrees(cartographic.latitude) - 0.5,
+            east: Cesium.Math.toDegrees(cartographic.longitude) + 0.5,
+            west: Cesium.Math.toDegrees(cartographic.longitude) - 0.5,
+          },
+        },
+      });
+    }
   });
 
   renderSwanMapOverlays();

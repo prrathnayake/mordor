@@ -88,6 +88,39 @@
       icon: "🔒",
       interval: 120000,
     },
+    {
+      id: "seismic",
+      name: "Seismic Events",
+      source: "USGS + EMSC",
+      endpoint: "/universal/seismic?limit=50",
+      geospatial: true,
+      cluster: true,
+      defaultOn: false,
+      icon: "📡",
+      interval: 30000,
+    },
+    {
+      id: "maritime",
+      name: "Maritime Traffic",
+      source: "MarineTraffic + VesselFinder",
+      endpoint: "/universal/vessels?limit=50",
+      geospatial: true,
+      cluster: true,
+      defaultOn: false,
+      icon: "🚢",
+      interval: 60000,
+    },
+    {
+      id: "custom_intel",
+      name: "Custom Intel",
+      source: "Internal Sources",
+      endpoint: "/universal/custom-intel?limit=25",
+      geospatial: true,
+      cluster: false,
+      defaultOn: false,
+      icon: "🎯",
+      interval: 120000,
+    },
   ];
 
   const LAYER_META = {};
@@ -105,6 +138,9 @@
     finance: { fill: "#4ade80", outline: "#16a34a" },
     social: { fill: "#60a5fa", outline: "#2563eb" },
     security: { fill: "#f87171", outline: "#dc2626" },
+    seismic: { fill: "#fb923c", outline: "#ea580c" },
+    maritime: { fill: "#0ea5e9", outline: "#0284c7" },
+    custom_intel: { fill: "#e879f9", outline: "#c026d3" },
   };
 
   // ===== Canvas Icon Factory =====
@@ -353,6 +389,12 @@
         return item.ip_address || item.domain || "";
       case "space":
         return item.title ? item.title.slice(0, 25) : "";
+      case "seismic":
+        return item.magnitude != null ? `M${item.magnitude}` : "";
+      case "maritime":
+        return item.vessel_name || item.imo || "";
+      case "custom_intel":
+        return item.title ? item.title.slice(0, 30) : "";
       default:
         return "";
     }

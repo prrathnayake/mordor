@@ -148,6 +148,26 @@ export function buildSessionProjection(
   };
 }
 
+export function buildZoomProjection(
+  sessionId: string,
+  findings: SwanFinding[],
+): SwanArtifactProjection {
+  const zoomFindings = findings.filter(
+    (finding) =>
+      finding.finding_kind === "zoom_context" && finding.projection_targets.includes("panel"),
+  );
+
+  return {
+    schema_version: SWAN_ARTIFACT_PROJECTION_SCHEMA_VERSION,
+    session_id: sessionId,
+    projection: "zoom",
+    generated_at: nowIso(),
+    data: {
+      zoom_findings: zoomFindings,
+    },
+  };
+}
+
 export function buildThreadArtifact(
   thread: SwanThread,
   findings: SwanFinding[],

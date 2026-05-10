@@ -489,3 +489,251 @@ export function createExternalResearchProvider(input: {
     ];
   };
 }
+
+export const zoomContextProvider: SwanProvider = async ({ thread, repository, session }) => {
+  const zoomLevel = thread.context.zoomLevel as number | undefined;
+  const centerLat = thread.context.centerLat as number | undefined;
+  const centerLon = thread.context.centerLon as number | undefined;
+
+  if (typeof zoomLevel !== "number") {
+    return [];
+  }
+
+  const suggestions: string[] = [];
+  const verificationStatus: SwanFindingVerificationStatus = "trusted_source";
+  const projectionTargets: SwanProjectionTarget[] = ["panel"];
+
+  if (zoomLevel < 5) {
+    suggestions.push("Consider enabling cluster view for better performance at low zoom levels");
+  } else if (zoomLevel > 10) {
+    suggestions.push("Detailed data layers are now visible at this zoom level");
+  }
+
+  const visibleBounds = thread.context.visibleBounds as
+    | {
+        north: number;
+        south: number;
+        east: number;
+        west: number;
+      }
+    | undefined;
+
+  return [
+    {
+      provider: "zoom_context",
+      target_type: "system",
+      target_id: `zoom_${zoomLevel}`,
+      finding_kind: "zoom_context",
+      title: `Zoom Level ${zoomLevel}`,
+      summary:
+        suggestions.length > 0 ? suggestions.join(". ") : `Viewing at zoom level ${zoomLevel}.`,
+      details: {
+        zoomLevel,
+        centerLat,
+        centerLon,
+        visibleBounds,
+        suggestions,
+      },
+      verification_status: verificationStatus,
+      confidence: 0.85,
+      projection_targets: projectionTargets,
+      source_urls: [],
+      media: [],
+      lat: typeof centerLat === "number" ? centerLat : null,
+      lon: typeof centerLon === "number" ? centerLon : null,
+    },
+  ];
+};
+
+export const geofenceProvider: SwanProvider = async ({ thread, repository, session }) => {
+  const geofences = await repository.fetchActiveGeofences();
+  if (geofences.length === 0) {
+    return [];
+  }
+
+  const objectLat = thread.context.objectLat as number | undefined;
+  const objectLon = thread.context.objectLon as number | undefined;
+
+  if (typeof objectLat !== "number" || typeof objectLon !== "number") {
+    return [];
+  }
+
+  const triggeredGeofences = geofences.filter((gf) => {
+    const lat = gf.lat;
+    const lon = gf.lon;
+    const radiusM = gf.radius_m;
+    const distance = Math.sqrt((objectLat - lat) ** 2 + (objectLon - lon) ** 2) * 111000;
+    return distance <= radiusM;
+  });
+
+  if (triggeredGeofences.length === 0) {
+    return [];
+  }
+
+  const findings: SwanGeneratedFinding[] = [];
+
+  for (const geofence of triggeredGeofences) {
+    findings.push({
+      provider: "geofence",
+      target_type: "system",
+      target_id: geofence.geofence_id,
+      finding_kind: "geofence_alert",
+      title: `Geofence: ${geofence.name}`,
+      summary: `Object entered geofence "${geofence.name}" at ${new Date().toISOString()}`,
+      details: {
+        geofenceId: geofence.geofence_id,
+        name: geofence.name,
+        radiusM: geofence.radius_m,
+        alertType: geofence.alert_type,
+      },
+      verification_status: "trusted_source",
+      confidence: 0.92,
+      projection_targets: ["panel", "notification"],
+      source_urls: [],
+      media: [],
+      lat: objectLat,
+      lon: objectLon,
+    });
+  }
+
+  return findings;
+};
+
+export const thresholdProvider: SwanProvider = async ({ thread, repository, session }) => {
+  const thresholds = await repository.fetchDataThresholds();
+  if (thresholds.length === 0) {
+    return [];
+  }
+
+  const objectContext =
+    thread.target_type === "object" && thread.target_id
+      ? await repository.fetchObjectContext(thread.target_id)
+      : null;
+
+  if (!objectContext) {
+    return [];
+  }
+
+  const triggeredThresholds = thresholds.filter((threshold) => {
+    const attributeValue = objectContext.attributes?.[threshold.attribute_name];
+    if (typeof attributeValue !== "number") {
+      return false;
+    }
+
+    switch (threshold.operator) {
+      case "gt":
+        return attributeValue > threshold.threshold_value;
+      case "lt":
+        return attributeValue < threshold.threshold_value;
+      case "eq":
+        return attributeValue === threshold.threshold_value;
+      case "gte":
+        return attributeValue >= threshold.threshold_value;
+      case "lte":
+        return attributeValue <= threshold.threshold_value;
+      default:
+        return false;
+    }
+  });
+
+  if (triggeredThresholds.length === 0) {
+    return [];
+  }
+
+  const findings: SwanGeneratedFinding[] = [];
+
+  for (const threshold of triggeredThresholds) {
+    findings.push({
+      provider: "threshold",
+      target_type: thread.target_type ?? "unknown",
+      target_id: thread.target_id ?? "none",
+      finding_kind: "threshold_alert",
+      title: `Threshold: ${threshold.attribute_name}`,
+      summary: `${threshold.attribute_name} exceeded threshold of ${threshold.threshold_value} (${threshold.operator})`,
+      details: {
+        attributeName: threshold.attribute_name,
+        thresholdValue: threshold.threshold_value,
+        operator: threshold.operator,
+        currentValue: objectContext.attributes?.[threshold.attribute_name],
+      },
+      verification_status: "single_source",
+      confidence: 0.88,
+      projection_targets: ["panel", "notification"],
+      source_urls: [],
+      media: [],
+      lat: objectContext.lat,
+      lon: objectContext.lon,
+    });
+  }
+
+  return findings;
+};
+
+export const widgetInteractionProvider: SwanProvider = async ({ thread, repository, session }) => {
+  const widgetType = thread.context.widgetType as
+    | "tooltip"
+    | "info_card"
+    | "cluster"
+    | "badge"
+    | "route"
+    | undefined;
+  const action = thread.context.action as "hover" | "click" | "expand" | "collapse" | undefined;
+  const layerId = thread.context.layerId as string | undefined;
+  const entityId = thread.context.entityId as string | undefined;
+
+  if (!widgetType || !action || !entityId) {
+    return [];
+  }
+
+  let findingTitle = "";
+  let summary = "";
+
+  switch (widgetType) {
+    case "tooltip":
+      findingTitle = `Tooltip: ${entityId}`;
+      summary = `User hovered over entity ${entityId}`;
+      break;
+    case "info_card":
+      findingTitle = `Info Card: ${entityId}`;
+      summary = `User clicked info card for ${entityId}`;
+      break;
+    case "cluster":
+      findingTitle = `Cluster: ${entityId}`;
+      summary = `Cluster ${action} on ${entityId}`;
+      break;
+    case "badge":
+      findingTitle = `Badge: ${entityId}`;
+      summary = `Badge ${action} for ${entityId}`;
+      break;
+    case "route":
+      findingTitle = `Route: ${entityId}`;
+      summary = `Route ${action} interaction on ${entityId}`;
+      break;
+    default:
+      return [];
+  }
+
+  return [
+    {
+      provider: "widget_interaction",
+      target_type: "system",
+      target_id: `${widgetType}_${entityId}`,
+      finding_kind: "widget_interaction",
+      title: findingTitle,
+      summary,
+      details: {
+        widgetType,
+        action,
+        layerId: layerId ?? null,
+        entityId,
+      },
+      verification_status: "trusted_source",
+      confidence: 0.95,
+      projection_targets: ["panel"],
+      source_urls: [],
+      media: [],
+      lat: null,
+      lon: null,
+    },
+  ];
+};

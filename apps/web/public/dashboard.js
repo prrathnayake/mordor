@@ -946,9 +946,16 @@ function initTabs() {
 // ===== SEARCH =====
 function initSearch() {
   if (!dashDom.entitySearch) return;
+  let searchDebounceTimer = null;
   dashDom.entitySearch.addEventListener("input", (e) => {
     dashboardState.searchQuery = (e.target.value || "").trim();
-    renderEntityList();
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+    searchDebounceTimer = setTimeout(() => {
+      renderEntityList();
+      searchDebounceTimer = null;
+    }, 150);
   });
 }
 
@@ -991,6 +998,19 @@ function showMapTooltip(screenPosition, entity) {
   tooltip.style.left = `${screenPosition.x + 12}px`;
   tooltip.style.top = `${screenPosition.y + 12}px`;
   tooltip.style.display = "block";
+
+  if (typeof emitSwanActivity === "function") {
+    emitSwanActivity("widget_interacted", {
+      targetType: "widget",
+      targetId: entity.id,
+      context: {
+        widgetType: "tooltip",
+        action: "hover",
+        layerId: entity.layerId || "unknown",
+        entityId: entity.id,
+      },
+    });
+  }
 }
 
 function hideMapTooltip() {

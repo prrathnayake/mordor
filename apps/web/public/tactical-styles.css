@@ -978,6 +978,8 @@ body {
     transparent 2px
   );
   opacity: 0.3;
+  will-change: transform;
+  contain: layout style;
 }
 
 [data-theme="clean"] .crt-overlay {

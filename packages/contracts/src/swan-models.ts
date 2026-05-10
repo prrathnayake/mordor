@@ -6,6 +6,11 @@ export const SWAN_ACTIVITY_TYPES = [
   "replay_query_submitted",
   "layer_toggled",
   "map_selection_changed",
+  "zoom_level_changed",
+  "widget_interacted",
+  "data_threshold_crossed",
+  "geofence_entered",
+  "time_window_elapsed",
   "session_enabled",
   "session_disabled",
   "session_restored",
@@ -53,7 +58,13 @@ export const SWAN_FINDING_VERIFICATION_STATUSES = [
 
 export const SWAN_PROJECTION_TARGETS = ["panel", "map", "notification"] as const;
 
-export const SWAN_ARTIFACT_PROJECTIONS = ["session", "panels", "map", "notifications"] as const;
+export const SWAN_ARTIFACT_PROJECTIONS = [
+  "session",
+  "panels",
+  "map",
+  "notifications",
+  "zoom",
+] as const;
 
 export type SwanActivityType = (typeof SWAN_ACTIVITY_TYPES)[number];
 export type SwanTargetType = (typeof SWAN_TARGET_TYPES)[number];
@@ -198,5 +209,8 @@ export interface SwanArtifactProjection {
     | {
         unread_count: number;
         items: SwanNotificationItem[];
+      }
+    | {
+        zoom_findings: SwanFinding[];
       };
 }
