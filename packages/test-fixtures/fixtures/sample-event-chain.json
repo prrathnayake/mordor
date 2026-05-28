@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "description": "Sample causal event chain for testing",
+  "seedEntityName": "Storm Alert 2026-001",
+  "chainType": "causal",
+  "steps": [
+    {
+      "entityName": "USGS Earthquake Report",
+      "sequenceNumber": 1,
+      "timestamp": "2026-04-05T10:00:00.000Z",
+      "description": "Seismic activity detected off coast"
+    },
+    {
+      "entityName": "Storm Alert 2026-001",
+      "sequenceNumber": 2,
+      "timestamp": "2026-04-05T10:30:00.000Z",
+      "description": "Weather alert issued for region"
+    },
+    {
+      "entityName": "Flight AI101",
+      "sequenceNumber": 3,
+      "timestamp": "2026-04-05T11:00:00.000Z",
+      "description": "Flight diverted from path"
+    },
+    {
+      "entityName": "Coastal Observation Post",
+      "sequenceNumber": 4,
+      "timestamp": "2026-04-05T11:15:00.000Z",
+      "description": "Coastal sensors report increased activity"
+    }
+  ]
+}

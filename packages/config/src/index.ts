@@ -24,6 +24,13 @@ export interface AppConfig {
   swanSessionIdleTtlMs: number;
   swanWatchIntervalMs: number;
   swanProviderAllowlist: string[];
+  openrouterApiKey: string;
+  openrouterBaseUrl: string;
+  openrouterDefaultModel: string;
+  openrouterLightModel: string;
+  neo4jUri: string;
+  neo4jUser: string;
+  neo4jPassword: string;
 }
 
 export interface ConfigValidationResult {
@@ -88,6 +95,16 @@ export function getConfigFromEnv(): AppConfig {
     .map((value) => value.trim())
     .filter(Boolean);
 
+  const neo4jUri = process.env.NEO4J_URI || "bolt://127.0.0.1:7687";
+  const neo4jUser = process.env.NEO4J_USER || "neo4j";
+  const neo4jPassword = process.env.NEO4J_PASSWORD || "password";
+
+  const openrouterApiKey = process.env.OPENROUTER_API_KEY || "";
+  const openrouterBaseUrl = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+  const openrouterDefaultModel =
+    process.env.OPENROUTER_DEFAULT_MODEL || "anthropic/claude-3.5-sonnet";
+  const openrouterLightModel = process.env.OPENROUTER_LIGHT_MODEL || "openai/gpt-4o-mini";
+
   return {
     databaseUrl: databaseUrl ?? "",
     apiPort,
@@ -114,6 +131,13 @@ export function getConfigFromEnv(): AppConfig {
     swanSessionIdleTtlMs,
     swanWatchIntervalMs,
     swanProviderAllowlist,
+    openrouterApiKey,
+    openrouterBaseUrl,
+    openrouterDefaultModel,
+    openrouterLightModel,
+    neo4jUri,
+    neo4jUser,
+    neo4jPassword,
   };
 }
 
@@ -192,6 +216,14 @@ export function validateConfig(config: AppConfig): ConfigValidationResult {
 
   if (config.swanProviderAllowlist.length === 0) {
     errors.push("SWAN_PROVIDER_ALLOWLIST must contain at least one provider");
+  }
+
+  if (!config.neo4jUri) {
+    errors.push("NEO4J_URI is required");
+  }
+
+  if (!config.neo4jUser) {
+    errors.push("NEO4J_USER is required");
   }
 
   return {

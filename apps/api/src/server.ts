@@ -48,6 +48,7 @@ import {
 } from "../../../packages/swan/src/index.js";
 import { loadJsonFixture } from "../../../packages/test-fixtures/src/index.js";
 import { runCaptureJob } from "./capture-service.js";
+import { registerGraphRoutes } from "./graph-routes.js";
 import { type LiveEvent, liveEventBus } from "./live-event-bus.js";
 import { createLiveWorldService, refreshExternalDataLayer } from "./live-world-service.js";
 import {
@@ -2921,6 +2922,18 @@ export async function createApiServer(options: ApiServerOptions): Promise<Runnin
           );
 
           writeJson(response, 200, { linked: true });
+          return;
+        }
+
+        const graphHandled = registerGraphRoutes(
+          request,
+          response,
+          url,
+          authContext,
+          config,
+          logger,
+        );
+        if (graphHandled) {
           return;
         }
 

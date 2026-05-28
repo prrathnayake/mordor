@@ -203,6 +203,46 @@ export function createWebServer(options: { app_config: WebAppConfig }): RunningW
         return;
       }
 
+      if (url.pathname === "/ui-agents-viewer-hook.js") {
+        await serveStaticFile(
+          response,
+          new URL("ui-agents-viewer-hook.js", publicRoot),
+          getContentType("ui-agents-viewer-hook.js"),
+          "no-store",
+        );
+        return;
+      }
+
+      if (url.pathname === "/ui-agents-runtime.js") {
+        await serveStaticFile(
+          response,
+          new URL("ui-agents-runtime.js", publicRoot),
+          getContentType("ui-agents-runtime.js"),
+          "no-store",
+        );
+        return;
+      }
+
+      if (url.pathname === "/ui-agents.js") {
+        await serveStaticFile(
+          response,
+          new URL("ui-agents.js", publicRoot),
+          getContentType("ui-agents.js"),
+          "no-store",
+        );
+        return;
+      }
+
+      if (url.pathname === "/ui-agents-init.js") {
+        await serveStaticFile(
+          response,
+          new URL("ui-agents-init.js", publicRoot),
+          getContentType("ui-agents-init.js"),
+          "no-store",
+        );
+        return;
+      }
+
       response.statusCode = 404;
       response.setHeader("Content-Type", "text/plain; charset=utf-8");
       response.end(`Not found: ${url.pathname}`);

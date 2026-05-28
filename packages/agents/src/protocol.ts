@@ -24,7 +24,9 @@ export type AgentType =
   | "correlator" // Links related entities/events
   | "enrichment" // Adds context from external sources
   | "coordinator" // Routes tasks, manages locks
-  | "publisher"; // Creates UI-visible alerts
+  | "publisher" // Creates UI-visible alerts
+  | "entity-extractor" // Extracts entities from source data into Neo4j
+  | "relationship-miner"; // Discovers relationships between entities
 
 /** Types of work that can be assigned to agents */
 export type TaskType =
@@ -33,7 +35,9 @@ export type TaskType =
   | "detect_correlation" // Event correlation
   | "enrich" // Context enrichment
   | "publish" // UI notification
-  | "escalate"; // Escalate to higher authority
+  | "escalate" // Escalate to higher authority
+  | "extract_entities" // Extract entities from source data into Neo4j
+  | "mine_relationships"; // Discover relationships between graph entities
 
 /** Lifecycle state of a task */
 export type TaskStatus =

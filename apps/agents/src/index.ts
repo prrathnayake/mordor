@@ -1,12 +1,18 @@
 import { pathToFileURL } from "node:url";
 import { CollectorAgent, createCollectorAgent } from "./collector.js";
 import { createDetectorAgent, DetectorAgent } from "./detector.js";
+import { createEntityExtractorAgent, EntityExtractorAgent } from "./entity-extractor.js";
 import { createPublisherAgent, PublisherAgent } from "./publisher.js";
+import { createRelationshipMinerAgent, RelationshipMinerAgent } from "./relationship-miner.js";
 import type { BaseAgentWorker } from "./worker.js";
 
 const AGENT_MODE = process.env.AGENT_MODE || "collector";
 const DATABASE_URL = process.env.DATABASE_URL ?? "";
 const REDIS_URL = process.env.REDIS_URL ?? "";
+const NEO4J_URI = process.env.NEO4J_URI ?? "bolt://127.0.0.1:7687";
+const NEO4J_USER = process.env.NEO4J_USER ?? "neo4j";
+const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? "password";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
 
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL must be set");
@@ -40,6 +46,22 @@ async function main() {
       worker = new DetectorAgent(config);
       break;
     }
+    case "entity-extractor": {
+      if (!OPENROUTER_API_KEY) {
+        throw new Error("OPENROUTER_API_KEY must be set for entity-extractor agent");
+      }
+      const config = createEntityExtractorAgent({
+        agentId: AGENT_ID,
+        databaseUrl: DATABASE_URL,
+        redisUrl: REDIS_URL,
+        neo4jUri: NEO4J_URI,
+        neo4jUser: NEO4J_USER,
+        neo4jPassword: NEO4J_PASSWORD,
+        openrouterApiKey: OPENROUTER_API_KEY,
+      });
+      worker = new EntityExtractorAgent(config, config);
+      break;
+    }
     case "publisher": {
       const config = createPublisherAgent({
         agentId: AGENT_ID,
@@ -47,6 +69,22 @@ async function main() {
         redisUrl: REDIS_URL,
       });
       worker = new PublisherAgent(config);
+      break;
+    }
+    case "relationship-miner": {
+      if (!OPENROUTER_API_KEY) {
+        throw new Error("OPENROUTER_API_KEY must be set for relationship-miner agent");
+      }
+      const config = createRelationshipMinerAgent({
+        agentId: AGENT_ID,
+        databaseUrl: DATABASE_URL,
+        redisUrl: REDIS_URL,
+        neo4jUri: NEO4J_URI,
+        neo4jUser: NEO4J_USER,
+        neo4jPassword: NEO4J_PASSWORD,
+        openrouterApiKey: OPENROUTER_API_KEY,
+      });
+      worker = new RelationshipMinerAgent(config, config);
       break;
     }
     default:

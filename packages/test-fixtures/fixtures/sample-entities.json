@@ -1,0 +1,73 @@
+{
+  "version": "1.0",
+  "description": "Sample entities and relationships for knowledge graph testing",
+  "entities": [
+    {
+      "name": "Flight AI101",
+      "entityType": "Object",
+      "properties": {
+        "type": "aircraft",
+        "callsign": "AI101",
+        "altitude": 35000,
+        "heading": 270
+      },
+      "confidence": 0.95
+    },
+    {
+      "name": "Mumbai International Airport",
+      "entityType": "Location",
+      "properties": {
+        "type": "airport",
+        "lat": 19.0896,
+        "lng": 72.8656,
+        "country": "India"
+      },
+      "confidence": 0.99
+    },
+    {
+      "name": "Storm Alert 2026-001",
+      "entityType": "Alert",
+      "properties": {
+        "severity": "high",
+        "region": "Arabian Sea",
+        "type": "weather"
+      },
+      "confidence": 0.85
+    },
+    {
+      "name": "USGS Earthquake Report",
+      "entityType": "Source",
+      "properties": {
+        "sourceType": "external_data",
+        "provider": "USGS",
+        "feed": "earthquake"
+      },
+      "confidence": 1.0
+    },
+    {
+      "name": "Coastal Observation Post",
+      "entityType": "Object",
+      "properties": {
+        "type": "sensor_station",
+        "status": "active"
+      },
+      "confidence": 0.9
+    }
+  ],
+  "relationships": [
+    {
+      "sourceName": "Flight AI101",
+      "targetName": "Mumbai International Airport",
+      "type": "LOCATED_AT",
+      "properties": { "distance_km": 12.5 },
+      "confidence": 0.98
+    },
+    {
+      "sourceName": "Storm Alert 2026-001",
+      "targetName": "Flight AI101",
+      "type": "ASSOCIATED_WITH",
+      "properties": { "proximity_km": 45 },
+      "confidence": 0.75
+    }
+  ]
+}

@@ -73,6 +73,10 @@ describe("config validation", () => {
         "existing_external_layers",
         "external_research",
       ]);
+      expect(config.openrouterApiKey).toBe("");
+      expect(config.openrouterBaseUrl).toBe("https://openrouter.ai/api/v1");
+      expect(config.openrouterDefaultModel).toBe("anthropic/claude-3.5-sonnet");
+      expect(config.openrouterLightModel).toBe("openai/gpt-4o-mini");
     });
 
     it("parses port numbers from environment", () => {
@@ -178,6 +182,13 @@ describe("config validation", () => {
         swanSessionIdleTtlMs: 1800000,
         swanWatchIntervalMs: 60000,
         swanProviderAllowlist: ["app_context"],
+        openrouterApiKey: "",
+        openrouterBaseUrl: "https://openrouter.ai/api/v1",
+        openrouterDefaultModel: "anthropic/claude-3.5-sonnet",
+        openrouterLightModel: "openai/gpt-4o-mini",
+        neo4jUri: "bolt://localhost:7687",
+        neo4jUser: "neo4j",
+        neo4jPassword: "password",
       };
 
       const result = validateConfig(config);
@@ -213,6 +224,13 @@ describe("config validation", () => {
         swanSessionIdleTtlMs: 1800000,
         swanWatchIntervalMs: 60000,
         swanProviderAllowlist: ["app_context"],
+        openrouterApiKey: "",
+        openrouterBaseUrl: "https://openrouter.ai/api/v1",
+        openrouterDefaultModel: "anthropic/claude-3.5-sonnet",
+        openrouterLightModel: "openai/gpt-4o-mini",
+        neo4jUri: "bolt://localhost:7687",
+        neo4jUser: "neo4j",
+        neo4jPassword: "password",
       };
 
       const result = validateConfig(config);
@@ -248,6 +266,13 @@ describe("config validation", () => {
         swanSessionIdleTtlMs: 1800000,
         swanWatchIntervalMs: 60000,
         swanProviderAllowlist: ["app_context"],
+        openrouterApiKey: "",
+        openrouterBaseUrl: "https://openrouter.ai/api/v1",
+        openrouterDefaultModel: "anthropic/claude-3.5-sonnet",
+        openrouterLightModel: "openai/gpt-4o-mini",
+        neo4jUri: "bolt://localhost:7687",
+        neo4jUser: "neo4j",
+        neo4jPassword: "password",
       };
 
       const result = validateConfig(config);
@@ -283,6 +308,13 @@ describe("config validation", () => {
         swanSessionIdleTtlMs: 1800000,
         swanWatchIntervalMs: 60000,
         swanProviderAllowlist: ["app_context"],
+        openrouterApiKey: "",
+        openrouterBaseUrl: "https://openrouter.ai/api/v1",
+        openrouterDefaultModel: "anthropic/claude-3.5-sonnet",
+        openrouterLightModel: "openai/gpt-4o-mini",
+        neo4jUri: "bolt://localhost:7687",
+        neo4jUser: "neo4j",
+        neo4jPassword: "password",
       };
 
       const result = validateConfig(config);
@@ -318,6 +350,13 @@ describe("config validation", () => {
         swanSessionIdleTtlMs: 0,
         swanWatchIntervalMs: 0,
         swanProviderAllowlist: [],
+        openrouterApiKey: "",
+        openrouterBaseUrl: "https://openrouter.ai/api/v1",
+        openrouterDefaultModel: "anthropic/claude-3.5-sonnet",
+        openrouterLightModel: "openai/gpt-4o-mini",
+        neo4jUri: "bolt://localhost:7687",
+        neo4jUser: "neo4j",
+        neo4jPassword: "password",
       };
 
       const result = validateConfig(config);

@@ -58,6 +58,9 @@ services:
       SWAN_SESSION_IDLE_TTL_MS: 1800000
       SWAN_WATCH_INTERVAL_MS: 60000
       SWAN_PROVIDER_ALLOWLIST: app_context,existing_external_layers,external_research
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: password
       # Universal Data Sources
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       MEDIASTACK_KEY: ${MEDIASTACK_KEY:-}
@@ -209,5 +212,82 @@ services:
     command: npx tsx apps/agents/src/index.ts
     restart: unless-stopped
 
+  agent-entity-extractor:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      target: runner
+    container_name: mordor-agent-entity-extractor
+    environment:
+      NODE_ENV: production
+      AGENT_MODE: entity-extractor
+      AGENT_ID: entity-extractor-01
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
+      REDIS_URL: redis://redis:6379
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: password
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    command: npx tsx apps/agents/src/index.ts
+    restart: unless-stopped
+
+  agent-relationship-miner:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      target: runner
+    container_name: mordor-agent-relationship-miner
+    environment:
+      NODE_ENV: production
+      AGENT_MODE: relationship-miner
+      AGENT_ID: relationship-miner-01
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/chrona
+      REDIS_URL: redis://redis:6379
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: password
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AUTH_PASSWORD_VIEWER: viewer123
+      AUTH_PASSWORD_OPERATOR: operator123
+      AUTH_PASSWORD_ADMIN: admin123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    command: npx tsx apps/agents/src/index.ts
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: mordor-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_dbms_memory_pagecache_size: 512M
+      NEO4J_dbms_memory_heap_max__size: 1G
+    ports:
+      - "7687:7687"
+      - "7474:7474"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
+  neo4j_data:
