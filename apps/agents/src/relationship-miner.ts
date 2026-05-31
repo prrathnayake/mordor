@@ -68,6 +68,7 @@ export interface RelationshipMinerConfig {
   neo4jUser: string;
   neo4jPassword: string;
   openrouterApiKey: string;
+  discoveryModel?: string;
 }
 
 export class RelationshipMinerAgent extends BaseAgentWorker {
@@ -85,7 +86,10 @@ export class RelationshipMinerAgent extends BaseAgentWorker {
     });
     this.entitiesRepo = new EntityRepository(this.driver);
     this.relationshipsRepo = new RelationshipRepository(this.driver);
-    this.llm = new LLMService({ apiKey: minerConfig.openrouterApiKey });
+    this.llm = new LLMService({
+      apiKey: minerConfig.openrouterApiKey,
+      defaultModel: minerConfig.discoveryModel,
+    });
   }
 
   protected async processTask(task: TaskEnvelope): Promise<Record<string, unknown>> {
@@ -148,14 +152,16 @@ export class RelationshipMinerAgent extends BaseAgentWorker {
       return { relationshipCount: 0, relationshipIds: [], confidenceSummary: {} };
     }
 
-    const nameToId = new Map(entities.map((e) => [e.name, e.id]));
+    const nameToIdMap: Map<string, string> = new Map(
+      entities.map((e: GraphEntity): [string, string] => [e.name, e.id]),
+    );
 
     const createdIds: string[] = [];
     const confidences: number[] = [];
 
     for (const rel of discovered) {
-      const srcId = nameToId.get(rel.sourceName);
-      const tgtId = nameToId.get(rel.targetName);
+      const srcId = nameToIdMap.get(rel.sourceName);
+      const tgtId = nameToIdMap.get(rel.targetName);
 
       if (!srcId || !tgtId) {
         this.logger.debug("Skipping relationship: entity not found in graph", {
@@ -204,7 +210,10 @@ export class RelationshipMinerAgent extends BaseAgentWorker {
     const confidenceSummary = {
       min: confidences.length > 0 ? Math.min(...confidences) : 0,
       max: confidences.length > 0 ? Math.max(...confidences) : 0,
-      avg: confidences.length > 0 ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0,
+      avg:
+        confidences.length > 0
+          ? confidences.reduce((a, b) => a + b, 0) / confidences.length
+          : 0,
       count: confidences.length,
     };
 
@@ -275,6 +284,7 @@ export function createRelationshipMinerAgent(config: {
   neo4jUser: string;
   neo4jPassword: string;
   openrouterApiKey: string;
+  discoveryModel?: string;
 }): AgentWorkerConfig & RelationshipMinerConfig {
   return {
     agentId: config.agentId,
@@ -289,5 +299,6 @@ export function createRelationshipMinerAgent(config: {
     neo4jUser: config.neo4jUser,
     neo4jPassword: config.neo4jPassword,
     openrouterApiKey: config.openrouterApiKey,
+    discoveryModel: config.discoveryModel,
   };
 }

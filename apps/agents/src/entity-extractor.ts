@@ -29,6 +29,7 @@ export interface EntityExtractorConfig {
   neo4jUser: string;
   neo4jPassword: string;
   openrouterApiKey: string;
+  extractionModel?: string;
 }
 
 export class EntityExtractorAgent extends BaseAgentWorker {
@@ -46,7 +47,10 @@ export class EntityExtractorAgent extends BaseAgentWorker {
     });
     this.entitiesRepo = new EntityRepository(this.driver);
     this.relationshipsRepo = new RelationshipRepository(this.driver);
-    this.llm = new LLMService({ apiKey: extractorConfig.openrouterApiKey });
+    this.llm = new LLMService({
+      apiKey: extractorConfig.openrouterApiKey,
+      lightModel: extractorConfig.extractionModel,
+    });
   }
 
   protected async processTask(task: TaskEnvelope): Promise<Record<string, unknown>> {
@@ -184,6 +188,7 @@ export function createEntityExtractorAgent(config: {
   neo4jUser: string;
   neo4jPassword: string;
   openrouterApiKey: string;
+  extractionModel?: string;
 }): AgentWorkerConfig & EntityExtractorConfig {
   return {
     agentId: config.agentId,
@@ -198,5 +203,6 @@ export function createEntityExtractorAgent(config: {
     neo4jUser: config.neo4jUser,
     neo4jPassword: config.neo4jPassword,
     openrouterApiKey: config.openrouterApiKey,
+    extractionModel: config.extractionModel,
   };
 }

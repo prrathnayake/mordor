@@ -13,6 +13,8 @@ const NEO4J_URI = process.env.NEO4J_URI ?? "bolt://127.0.0.1:7687";
 const NEO4J_USER = process.env.NEO4J_USER ?? "neo4j";
 const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? "password";
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "";
+const OPENROUTER_EXTRACTION_MODEL = process.env.OPENROUTER_EXTRACTION_MODEL ?? "";
+const OPENROUTER_DISCOVERY_MODEL = process.env.OPENROUTER_DISCOVERY_MODEL ?? "";
 
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL must be set");
@@ -58,6 +60,7 @@ async function main() {
         neo4jUser: NEO4J_USER,
         neo4jPassword: NEO4J_PASSWORD,
         openrouterApiKey: OPENROUTER_API_KEY,
+        extractionModel: OPENROUTER_EXTRACTION_MODEL || undefined,
       });
       worker = new EntityExtractorAgent(config, config);
       break;
@@ -83,6 +86,7 @@ async function main() {
         neo4jUser: NEO4J_USER,
         neo4jPassword: NEO4J_PASSWORD,
         openrouterApiKey: OPENROUTER_API_KEY,
+        discoveryModel: OPENROUTER_DISCOVERY_MODEL || undefined,
       });
       worker = new RelationshipMinerAgent(config, config);
       break;
