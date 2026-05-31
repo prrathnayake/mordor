@@ -197,247 +197,6 @@ const intelligenceSourceState = {
   embeddableCount: 0,
 };
 
-const demoNewsClusters = [
-  {
-    cluster_id: "demo_news_black_sea_shipping",
-    primary_item: {
-      item_id: "demo_news_black_sea_shipping_primary",
-      title: "Black Sea shipping corridor disruption monitored near Odesa",
-      link: "https://example.com/black-sea-shipping",
-      source: "Chrona Open Intel",
-      source_tier: 2,
-      category: "infrastructure",
-      published_at: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
-      captured_at: new Date().toISOString(),
-      lat: 46.48,
-      lon: 30.72,
-      country_codes: ["UA"],
-      threat_level: "high",
-      snippet: "Local maritime and port indicators suggest delayed transits around Odesa.",
-      thumbnail_url: null,
-      language: "en",
-      metadata: {},
-    },
-    related_items: [],
-    mention_count: 7,
-    source_count: 4,
-    source_tier: 2,
-    category: "infrastructure",
-    center_lat: 46.48,
-    center_lon: 30.72,
-    country_codes: ["UA"],
-    threat_level: "high",
-    velocity_score: 5.4,
-    story_phase: "developing",
-    published_at_range: {
-      earliest: new Date(Date.now() - 92 * 60 * 1000).toISOString(),
-      latest: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
-    },
-  },
-  {
-    cluster_id: "demo_news_red_sea_security",
-    primary_item: {
-      item_id: "demo_news_red_sea_security_primary",
-      title: "Red Sea security alerts remain elevated around shipping lane",
-      link: "https://example.com/red-sea-security",
-      source: "Chrona Open Intel",
-      source_tier: 2,
-      category: "conflict",
-      published_at: new Date(Date.now() - 47 * 60 * 1000).toISOString(),
-      captured_at: new Date().toISOString(),
-      lat: 14.93,
-      lon: 43.15,
-      country_codes: ["YE"],
-      threat_level: "critical",
-      snippet: "Multiple open indicators point to sustained risk near Red Sea passage routes.",
-      thumbnail_url: null,
-      language: "en",
-      metadata: {},
-    },
-    related_items: [],
-    mention_count: 12,
-    source_count: 5,
-    source_tier: 2,
-    category: "conflict",
-    center_lat: 14.93,
-    center_lon: 43.15,
-    country_codes: ["YE"],
-    threat_level: "critical",
-    velocity_score: 11.8,
-    story_phase: "breaking",
-    published_at_range: {
-      earliest: new Date(Date.now() - 138 * 60 * 1000).toISOString(),
-      latest: new Date(Date.now() - 47 * 60 * 1000).toISOString(),
-    },
-  },
-];
-
-const demoNewsFeeds = [
-  {
-    feed_id: "demo_open_intel",
-    name: "Chrona Open Intel",
-    url: "https://example.com/rss",
-    category: "conflict",
-    tier: 2,
-    language: "en",
-    last_fetched_at: new Date().toISOString(),
-    last_item_count: 19,
-    status: "active",
-    error_message: null,
-  },
-  {
-    feed_id: "demo_maritime_watch",
-    name: "Maritime Watch",
-    url: "https://example.com/maritime",
-    category: "infrastructure",
-    tier: 2,
-    language: "en",
-    last_fetched_at: new Date().toISOString(),
-    last_item_count: 8,
-    status: "active",
-    error_message: null,
-  },
-];
-
-const demoWebcamChannels = [
-  {
-    channel_id: "demo_red_sea_tv",
-    name: "Red Sea Passage TV",
-    region: "Middle East",
-    country_code: "YE",
-    lat: 14.93,
-    lon: 43.15,
-    youtube_video_id: "jfKfPfyJRdk",
-    youtube_live: true,
-    relevance_tags: ["shipping", "security", "red sea"],
-    priority: "high",
-  },
-  {
-    channel_id: "demo_odesa_port_tv",
-    name: "Odesa Port TV",
-    region: "Eastern Europe",
-    country_code: "UA",
-    lat: 46.48,
-    lon: 30.72,
-    youtube_video_id: "jfKfPfyJRdk",
-    youtube_live: true,
-    relevance_tags: ["port", "ukraine", "maritime"],
-    priority: "medium",
-  },
-  {
-    channel_id: "demo_taiwan_strait_tv",
-    name: "Taiwan Strait TV",
-    region: "East Asia",
-    country_code: "TW",
-    lat: 24.48,
-    lon: 119.94,
-    youtube_video_id: "jfKfPfyJRdk",
-    youtube_live: true,
-    relevance_tags: ["strait", "maritime", "monitoring"],
-    priority: "high",
-  },
-];
-
-const demoIntelligenceSources = [
-  {
-    source_id: "nasa-eonet-open-events",
-    layer_id: "natural_hazards",
-    source_type: "hazard",
-    label: "Natural Event Tracker",
-    provider: "NASA EONET",
-    source_url: "https://eonet.gsfc.nasa.gov/api/v3/events",
-    license: "NASA open data",
-    status: "real",
-    update_cadence_seconds: 900,
-    lat: 0,
-    lon: -30,
-    coverage: "global",
-    normalized_event_type: "natural_hazard_observed",
-    watch_capabilities: ["wildfire", "storm", "volcano", "event imagery"],
-    useful_fields: ["id", "title", "categories", "geometry", "sources"],
-    ui_layer: "Hazards",
-    ui_summary: "Near-real-time global natural events with source imagery links.",
-  },
-  {
-    source_id: "gdacs-global-disasters",
-    layer_id: "global_disasters",
-    source_type: "hazard",
-    label: "Global Disaster Alerts",
-    provider: "GDACS",
-    source_url: "https://www.gdacs.org/xml/rss.xml",
-    license: "Attribution requested",
-    status: "real",
-    update_cadence_seconds: 360,
-    lat: 10,
-    lon: 20,
-    coverage: "global",
-    normalized_event_type: "disaster_alert_observed",
-    watch_capabilities: ["earthquake", "cyclone", "flood", "severity alert"],
-    useful_fields: ["eventid", "eventtype", "alertlevel", "country"],
-    ui_layer: "Disasters",
-    ui_summary: "Global sudden-onset disaster alerts for operational triage.",
-  },
-  {
-    source_id: "noaa-swpc-space-weather",
-    layer_id: "space_weather",
-    source_type: "space",
-    label: "Space Weather Alerts",
-    provider: "NOAA SWPC",
-    source_url: "https://services.swpc.noaa.gov/json/",
-    license: "Public domain",
-    status: "planned",
-    update_cadence_seconds: 300,
-    lat: null,
-    lon: null,
-    coverage: "non_map",
-    normalized_event_type: "space_weather_observed",
-    watch_capabilities: ["geomagnetic storm", "radio blackout", "Kp index"],
-    useful_fields: ["issue_datetime", "message", "scale", "kp"],
-    ui_layer: "Space Weather",
-    ui_summary: "Non-map alert strip for GNSS, comms, and power-grid risk.",
-  },
-  {
-    source_id: "official-live-watchwall",
-    layer_id: "live_video",
-    source_type: "media",
-    label: "Live Video Watch Wall",
-    provider: "Official webcams and public live TV",
-    source_url: "https://www.youtube.com/",
-    license: "Per-channel terms",
-    status: "degraded",
-    update_cadence_seconds: 300,
-    lat: 40.76,
-    lon: -73.98,
-    coverage: "point",
-    normalized_event_type: "video_source_observed",
-    watch_capabilities: ["embedded player", "live availability", "evidence capture"],
-    useful_fields: ["video_id", "embed_url", "channel_id", "live_status"],
-    ui_layer: "Live Watch",
-    ui_summary: "Embeddable, location-linked video sources for globe and incident panels.",
-    embed_url: "https://www.youtube-nocookie.com/embed/jfKfPfyJRdk",
-    video_id: "jfKfPfyJRdk",
-  },
-  {
-    source_id: "maritime-coastal-open-sources",
-    layer_id: "maritime_watch",
-    source_type: "maritime",
-    label: "Maritime and Coastal Watch",
-    provider: "NOAA, port feeds, buoy networks",
-    source_url: "https://www.ndbc.noaa.gov/",
-    license: "Public domain where NOAA; verify partner feeds",
-    status: "planned",
-    update_cadence_seconds: 600,
-    lat: 1.29,
-    lon: 103.85,
-    coverage: "regional",
-    normalized_event_type: "maritime_signal_observed",
-    watch_capabilities: ["buoys", "marine warnings", "port cameras", "shipping chokepoints"],
-    useful_fields: ["station_id", "wave_height", "wind_speed", "warning_type"],
-    ui_layer: "Maritime",
-    ui_summary: "Chokepoint and coastal operations context for ports and sea lanes.",
-  },
-];
-
 // ===== CIRCUIT BREAKERS =====
 class CircuitBreaker {
   constructor(name, options = {}) {
@@ -3752,8 +3511,15 @@ async function loadNewsIntelligence() {
       headers: sessionState.token ? { Authorization: `Bearer ${sessionState.token}` } : {},
     });
     if (!response.ok) {
-      applyDemoNewsIntelligence();
-      updateStatus(response.status === 401 ? "NEWS DEMO MODE" : "NEWS FALLBACK");
+      newsState.items = [];
+      newsState.clusters = [];
+      newsState.feeds = [];
+      newsState.totalCount = 0;
+      newsState.criticalCount = 0;
+      newsState.activeFeeds = 0;
+      renderNewsIntelligence();
+      renderNewsFeedList();
+      updateStatus("NEWS UNAVAILABLE");
       return;
     }
 
@@ -3770,23 +3536,16 @@ async function loadNewsIntelligence() {
     renderNewsFeedList();
   } catch (error) {
     console.error("Failed to load news intelligence:", error);
-    applyDemoNewsIntelligence();
-    updateStatus("NEWS FALLBACK");
+    newsState.items = [];
+    newsState.clusters = [];
+    newsState.feeds = [];
+    newsState.totalCount = 0;
+    newsState.criticalCount = 0;
+    newsState.activeFeeds = 0;
+    renderNewsIntelligence();
+    renderNewsFeedList();
+    updateStatus("NEWS UNAVAILABLE");
   }
-}
-
-function applyDemoNewsIntelligence() {
-  newsState.clusters = demoNewsClusters;
-  newsState.items = demoNewsClusters.map((cluster) => cluster.primary_item);
-  newsState.feeds = demoNewsFeeds;
-  newsState.fetchedAt = new Date().toISOString();
-  newsState.totalCount = newsState.items.length;
-  newsState.criticalCount = newsState.items.filter(
-    (item) => item.threat_level === "critical",
-  ).length;
-  newsState.activeFeeds = demoNewsFeeds.filter((feed) => feed.status === "active").length;
-  renderNewsIntelligence();
-  renderNewsFeedList();
 }
 
 function renderNewsIntelligence() {
@@ -3866,8 +3625,9 @@ async function loadWebcamChannels() {
     const url = `${apiBaseUrl}/webcams${region ? `?region=${encodeURIComponent(region)}` : ""}`;
     const response = await fetch(url);
     if (!response.ok) {
-      applyDemoWebcamChannels();
-      updateStatus("WEBCAM FALLBACK");
+      webcamState.channels = [];
+      renderWebcamGrid();
+      updateStatus("WEBCAM UNAVAILABLE");
       return;
     }
 
@@ -3881,29 +3641,24 @@ async function loadWebcamChannels() {
     renderWebcamGrid();
   } catch (error) {
     console.error("Failed to load webcam channels:", error);
-    applyDemoWebcamChannels();
-    updateStatus("WEBCAM FALLBACK");
+    webcamState.channels = [];
+    renderWebcamGrid();
+    updateStatus("WEBCAM UNAVAILABLE");
   }
-}
-
-function applyDemoWebcamChannels() {
-  const region = webcamState.regionFilter;
-  webcamState.channels = region
-    ? demoWebcamChannels.filter((channel) => channel.region === region)
-    : demoWebcamChannels;
-  if (webcamState.regions.length === 0) {
-    webcamState.regions = [...new Set(demoWebcamChannels.map((channel) => channel.region))];
-    populateWebcamRegionFilter();
-  }
-  renderWebcamGrid();
 }
 
 async function loadIntelligenceSources() {
   try {
     const response = await fetch(`${apiBaseUrl}/intelligence/sources`);
     if (!response.ok) {
-      applyDemoIntelligenceSources();
-      updateStatus("INTEL SOURCE FALLBACK");
+      applyIntelligenceSourcePayload({
+        generated_at: new Date().toISOString(),
+        total_count: 0,
+        embeddable_count: 0,
+        layers: [],
+        sources: [],
+      });
+      updateStatus("INTEL SOURCE UNAVAILABLE");
       return;
     }
 
@@ -3911,19 +3666,15 @@ async function loadIntelligenceSources() {
     applyIntelligenceSourcePayload(data);
   } catch (error) {
     console.error("Failed to load intelligence source catalog:", error);
-    applyDemoIntelligenceSources();
-    updateStatus("INTEL SOURCE FALLBACK");
+    applyIntelligenceSourcePayload({
+      generated_at: new Date().toISOString(),
+      total_count: 0,
+      embeddable_count: 0,
+      layers: [],
+      sources: [],
+    });
+    updateStatus("INTEL SOURCE UNAVAILABLE");
   }
-}
-
-function applyDemoIntelligenceSources() {
-  applyIntelligenceSourcePayload({
-    generated_at: new Date().toISOString(),
-    total_count: demoIntelligenceSources.length,
-    embeddable_count: demoIntelligenceSources.filter((source) => source.embed_url).length,
-    layers: buildIntelligenceSourceLayers(demoIntelligenceSources),
-    sources: demoIntelligenceSources,
-  });
 }
 
 function applyIntelligenceSourcePayload(data) {

@@ -56,198 +56,6 @@
  * @property {string} createdAt
  */
 
-// ===== DEMO FALLBACK DATA =====
-const DEMO_ENTITIES = [
-  {
-    id: "veh_42",
-    name: "Alpha-42",
-    type: "aircraft",
-    status: "active",
-    severity: "warning",
-    location: { lat: 51.47, lon: -0.46, altitude_m: 3200 },
-    metrics: { speed_mps: 142, heading_deg: 87, fuel_pct: 78 },
-    source: "adsb",
-    updatedAt: new Date(Date.now() - 120_000).toISOString(),
-  },
-  {
-    id: "sat_07",
-    name: "Sentinel-7",
-    type: "satellite",
-    status: "active",
-    severity: "info",
-    location: { lat: 28.5, lon: -80.6, altitude_m: 408_000 },
-    metrics: { velocity_kms: 7.66, inclination_deg: 51.6 },
-    source: "celestrak",
-    updatedAt: new Date(Date.now() - 45_000).toISOString(),
-  },
-  {
-    id: "cam_11",
-    name: "CCTV-11",
-    type: "camera",
-    status: "active",
-    severity: "info",
-    location: { lat: 51.5, lon: -0.08, altitude_m: 15 },
-    metrics: { uptime_pct: 99.8, bandwidth_mbps: 12 },
-    source: "cctv_mesh",
-    updatedAt: new Date(Date.now() - 300_000).toISOString(),
-  },
-  {
-    id: "veh_99",
-    name: "Shadow-99",
-    type: "aircraft",
-    status: "offline",
-    severity: "critical",
-    location: { lat: 48.85, lon: 2.35, altitude_m: 0 },
-    metrics: { speed_mps: 0, heading_deg: 0, fuel_pct: 12 },
-    source: "adsb",
-    updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
-  },
-  {
-    id: "eq_001",
-    name: "USGS-001",
-    type: "sensor",
-    status: "active",
-    severity: "critical",
-    location: { lat: 35.68, lon: 139.76, altitude_m: 0 },
-    metrics: { magnitude: 5.2, depth_km: 12 },
-    source: "usgs",
-    updatedAt: new Date(Date.now() - 600_000).toISOString(),
-  },
-  {
-    id: "weather_01",
-    name: "NOAA-Radar-01",
-    type: "sensor",
-    status: "degraded",
-    severity: "warning",
-    location: { lat: 40.71, lon: -74.0, altitude_m: 100 },
-    metrics: { coverage_pct: 62, latency_ms: 340 },
-    source: "noaa",
-    updatedAt: new Date(Date.now() - 900_000).toISOString(),
-  },
-];
-
-const DEMO_RELATIONSHIPS = [
-  {
-    id: "rel_1",
-    fromEntityId: "veh_42",
-    toEntityId: "cam_11",
-    type: "monitored_by",
-    status: "active",
-    strength: 0.92,
-  },
-  {
-    id: "rel_2",
-    fromEntityId: "sat_07",
-    toEntityId: "veh_42",
-    type: "tracks",
-    status: "active",
-    strength: 0.85,
-  },
-  {
-    id: "rel_3",
-    fromEntityId: "veh_99",
-    toEntityId: "veh_42",
-    type: "proximity",
-    status: "offline",
-    strength: 0.3,
-  },
-  {
-    id: "rel_4",
-    fromEntityId: "eq_001",
-    toEntityId: "weather_01",
-    type: "correlates_with",
-    status: "active",
-    strength: 0.67,
-  },
-];
-
-const DEMO_EVENTS = [
-  {
-    id: "evt_1",
-    entityId: "veh_42",
-    timestamp: new Date(Date.now() - 120_000).toISOString(),
-    severity: "warning",
-    title: "Course deviation detected",
-    description: "Aircraft deviated 3 degrees from planned route.",
-    source: "adsb",
-  },
-  {
-    id: "evt_2",
-    entityId: "veh_99",
-    timestamp: new Date(Date.now() - 3_600_000).toISOString(),
-    severity: "critical",
-    title: "Signal lost",
-    description: "ADS-B transponder stopped responding.",
-    source: "adsb",
-  },
-  {
-    id: "evt_3",
-    entityId: "eq_001",
-    timestamp: new Date(Date.now() - 600_000).toISOString(),
-    severity: "critical",
-    title: "Magnitude 5.2 earthquake",
-    description: "Detected at depth 12km.",
-    source: "usgs",
-  },
-  {
-    id: "evt_4",
-    entityId: "sat_07",
-    timestamp: new Date(Date.now() - 45_000).toISOString(),
-    severity: "info",
-    title: "Orbit update",
-    description: "TLE refreshed successfully.",
-    source: "celestrak",
-  },
-  {
-    id: "evt_5",
-    entityId: "weather_01",
-    timestamp: new Date(Date.now() - 900_000).toISOString(),
-    severity: "warning",
-    title: "Latency spike",
-    description: "Radar feed latency exceeded 300ms.",
-    source: "noaa",
-  },
-];
-
-const DEMO_ALERTS = [
-  {
-    id: "alt_1",
-    entityId: "veh_99",
-    severity: "critical",
-    status: "open",
-    title: "Aircraft offline",
-    evidence: ["evt_2"],
-    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-  },
-  {
-    id: "alt_2",
-    entityId: "eq_001",
-    severity: "critical",
-    status: "open",
-    title: "Seismic event",
-    evidence: ["evt_3"],
-    createdAt: new Date(Date.now() - 600_000).toISOString(),
-  },
-  {
-    id: "alt_3",
-    entityId: "veh_42",
-    severity: "warning",
-    status: "acknowledged",
-    title: "Course deviation",
-    evidence: ["evt_1"],
-    createdAt: new Date(Date.now() - 120_000).toISOString(),
-  },
-  {
-    id: "alt_4",
-    entityId: "weather_01",
-    severity: "warning",
-    status: "open",
-    title: "Feed degraded",
-    evidence: ["evt_5"],
-    createdAt: new Date(Date.now() - 900_000).toISOString(),
-  },
-];
-
 // ===== STATE =====
 const dashboardState = {
   entities: /** @type {Entity[]} */ ([]),
@@ -264,7 +72,6 @@ const dashboardState = {
   },
   loading: false,
   error: /** @type {string|null} */ (null),
-  useDemoData: false,
 };
 
 // ===== DOM REFERENCES =====
@@ -383,7 +190,7 @@ async function fetchEntities() {
       }));
     }
   } catch (error) {
-    console.warn("Failed to fetch entities from API, using demo fallback:", error);
+    console.warn("Failed to fetch entities from API:", error);
   }
   return null;
 }
@@ -407,7 +214,7 @@ async function fetchAlerts() {
       }));
     }
   } catch (error) {
-    console.warn("Failed to fetch alerts from API, using demo fallback:", error);
+    console.warn("Failed to fetch alerts from API:", error);
   }
   return null;
 }
@@ -419,23 +226,10 @@ async function loadDashboardData() {
 
   const [entities, alerts] = await Promise.all([fetchEntities(), fetchAlerts()]);
 
-  if (entities) {
-    dashboardState.entities = entities;
-    dashboardState.useDemoData = false;
-  } else {
-    dashboardState.entities = DEMO_ENTITIES;
-    dashboardState.useDemoData = true;
-  }
-
-  if (alerts) {
-    dashboardState.alerts = alerts;
-  } else {
-    dashboardState.alerts = DEMO_ALERTS;
-  }
-
-  // Use demo relationships and events if no API equivalents
-  dashboardState.relationships = DEMO_RELATIONSHIPS;
-  dashboardState.events = DEMO_EVENTS;
+  dashboardState.entities = entities || [];
+  dashboardState.alerts = alerts || [];
+  dashboardState.relationships = [];
+  dashboardState.events = [];
 
   dashboardState.loading = false;
   renderDashboard();
