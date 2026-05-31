@@ -1733,6 +1733,108 @@ function sanitizeEmbedUrl(value) {
   }
 }
 
+// ===== SVG ICON HELPERS =====
+const _svgIconCache = new Map();
+
+function svgToDataUrl(svgString) {
+  return `data:image/svg+xml;base64,${btoa(svgString)}`;
+}
+
+function getSvgIcon(type, color, size) {
+  const cacheKey = `${type}:${color}:${size}`;
+  if (_svgIconCache.has(cacheKey)) {
+    return _svgIconCache.get(cacheKey);
+  }
+
+  const s = size || 24;
+  const c = color || "#ffffff";
+  let svg = "";
+
+  switch (type) {
+    case "aircraft":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><polygon points="12,2 14,10 22,10 22,13 14,12 13,22 11,22 10,12 2,13 2,10 10,10" fill="${c}"/></svg>`;
+      break;
+    case "aircraft-ground":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><polygon points="12,4 14,10 22,10 22,13 14,12 13,20 11,20 10,12 2,13 2,10 10,10" fill="${c}"/><line x1="8" y1="20" x2="8" y2="22" stroke="${c}" stroke-width="2"/><line x1="16" y1="20" x2="16" y2="22" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "satellite":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="8" y="8" width="8" height="8" fill="${c}" rx="1"/><line x1="0" y1="0" x2="8" y2="8" stroke="${c}" stroke-width="2"/><line x1="24" y1="0" x2="16" y2="8" stroke="${c}" stroke-width="2"/><line x1="0" y1="24" x2="8" y2="16" stroke="${c}" stroke-width="2"/><line x1="24" y1="24" x2="16" y2="16" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "space-station":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="6" y="9" width="12" height="6" fill="${c}" rx="1"/><line x1="0" y1="4" x2="6" y2="9" stroke="${c}" stroke-width="2"/><line x1="24" y1="4" x2="18" y2="9" stroke="${c}" stroke-width="2"/><line x1="0" y1="20" x2="6" y2="15" stroke="${c}" stroke-width="2"/><line x1="24" y1="20" x2="18" y2="15" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "starlink":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="9" y="9" width="6" height="6" fill="${c}" rx="1"/><line x1="2" y1="2" x2="9" y2="9" stroke="${c}" stroke-width="1.5"/><line x1="22" y1="2" x2="15" y2="9" stroke="${c}" stroke-width="1.5"/><line x1="2" y1="22" x2="9" y2="15" stroke="${c}" stroke-width="1.5"/><line x1="22" y1="22" x2="15" y2="15" stroke="${c}" stroke-width="1.5"/></svg>`;
+      break;
+    case "earthquake":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><circle cx="12" cy="12" r="5" fill="none" stroke="${c}" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="${c}" stroke-width="2"/><path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "weather":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><path d="M18 16a4 4 0 0 0 0-8 4 4 0 0 0-4-2 6 6 0 0 0-6 6 4 4 0 0 0 0 4z" fill="${c}"/><path d="M8 18l-2 4M14 18l-2 4" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "traffic":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><path d="M12 2l10 18H2L12 2z" fill="none" stroke="${c}" stroke-width="2"/><line x1="12" y1="9" x2="12" y2="15" stroke="${c}" stroke-width="2"/><circle cx="12" cy="18" r="1" fill="${c}"/></svg>`;
+      break;
+    case "bikeshare":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><circle cx="6" cy="17" r="4" fill="none" stroke="${c}" stroke-width="2"/><circle cx="18" cy="17" r="4" fill="none" stroke="${c}" stroke-width="2"/><polyline points="6,17 12,8 18,17" fill="none" stroke="${c}" stroke-width="2"/><line x1="9" y1="8" x2="15" y2="8" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "camera":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="4" y="8" width="14" height="10" fill="none" stroke="${c}" stroke-width="2"/><polygon points="18,10 22,8 22,18 18,16" fill="${c}"/><circle cx="11" cy="13" r="3" fill="none" stroke="${c}" stroke-width="1.5"/></svg>`;
+      break;
+    case "sensor":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><circle cx="12" cy="12" r="4" fill="none" stroke="${c}" stroke-width="2"/><circle cx="12" cy="12" r="8" fill="none" stroke="${c}" stroke-width="1.5"/><line x1="12" y1="2" x2="12" y2="4" stroke="${c}" stroke-width="2"/><line x1="12" y1="20" x2="12" y2="22" stroke="${c}" stroke-width="2"/><line x1="2" y1="12" x2="4" y2="12" stroke="${c}" stroke-width="2"/><line x1="20" y1="12" x2="22" y2="12" stroke="${c}" stroke-width="2"/></svg>`;
+      break;
+    case "incident":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><circle cx="12" cy="12" r="6" fill="none" stroke="${c}" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="${c}"/></svg>`;
+      break;
+    case "swan":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><polygon points="12,2 15,10 22,12 15,14 12,22 9,14 2,12 9,10" fill="${c}"/></svg>`;
+      break;
+    case "intelligence":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><polygon points="12,2 15,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9,9" fill="${c}"/></svg>`;
+      break;
+    case "inference":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><polygon points="12,2 22,12 12,22 2,12" fill="none" stroke="${c}" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="${c}"/></svg>`;
+      break;
+    case "artifact":
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="6" y="4" width="12" height="16" fill="none" stroke="${c}" stroke-width="2"/><line x1="9" y1="8" x2="15" y2="8" stroke="${c}" stroke-width="1.5"/><line x1="9" y1="12" x2="15" y2="12" stroke="${c}" stroke-width="1.5"/><line x1="9" y1="16" x2="12" y2="16" stroke="${c}" stroke-width="1.5"/></svg>`;
+      break;
+    default:
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}"><circle cx="12" cy="12" r="5" fill="${c}"/></svg>`;
+  }
+
+  const dataUrl = svgToDataUrl(svg);
+  _svgIconCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}
+
+function getMarkerIconType(markerType) {
+  switch (markerType) {
+    case "alert": return "incident";
+    case "earthquake": return "earthquake";
+    case "weather": return "weather";
+    case "traffic": return "traffic";
+    case "satellite": return "satellite";
+    case "bikeshare": return "bikeshare";
+    case "source_health": return "sensor";
+    default: return "sensor";
+  }
+}
+
+function getIntelligenceSourceIconType(sourceType) {
+  switch (sourceType) {
+    case "media": return "camera";
+    case "space": return "satellite";
+    case "hazard":
+    case "atmosphere":
+    case "maritime":
+    case "cyber":
+    case "health":
+    default:
+      return "sensor";
+  }
+}
+
 function clearEntityMap(entityMap) {
   if (!viewer) {
     entityMap?.clear?.();
@@ -1929,11 +2031,13 @@ function buildFlightEntitySpec(objectId, state, showLabel) {
 
   return {
     position: cartesianFromLatLon(state.position.lat, state.position.lon, altitude),
-    point: {
-      pixelSize: isSelected ? 11 : 6,
+    billboard: {
+      image: getSvgIcon(state.status === "ground" ? "aircraft-ground" : "aircraft", "#ffffff", isSelected ? 28 : 20),
+      width: isSelected ? 28 : 20,
+      height: isSelected ? 28 : 20,
       color: color,
-      outlineColor: outlineColor,
-      outlineWidth: isSelected ? 2 : 1,
+      rotation: Cesium.Math.toRadians(state.velocity?.heading_deg || 0),
+      pixelOffset: new Cesium.Cartesian2(0, 0),
     },
     label: {
       text: buildFlightLabel(state),
@@ -1959,7 +2063,7 @@ function upsertLiveFlightEntity(objectId, state, showLabel) {
 
   if (existing) {
     existing.position = spec.position;
-    existing.point = spec.point;
+    existing.billboard = spec.billboard;
     existing.ellipse = undefined;
     existing.label = spec.label;
     existing.properties = {
@@ -2223,26 +2327,14 @@ function renderMapMarkers() {
 
     const entity = viewer.entities.add({
       position: cartesianFromLatLon(state.position.lat, state.position.lon, altitude),
-      point:
-        currentMode === "live"
-          ? {
-              pixelSize: isSelected ? 11 : 6,
-              color: color,
-              outlineColor: outlineColor,
-              outlineWidth: isSelected ? 2 : 1,
-            }
-          : undefined,
-      ellipse:
-        currentMode === "live"
-          ? undefined
-          : {
-              semiMinorAxis: isSelected ? 25 : 20,
-              semiMajorAxis: isSelected ? 25 : 20,
-              material: color,
-              outline: true,
-              outlineColor: outlineColor,
-              outlineWidth: isSelected ? 4 : 2,
-            },
+      billboard: {
+        image: getSvgIcon("aircraft", "#ffffff", isSelected ? 24 : 18),
+        width: isSelected ? 24 : 18,
+        height: isSelected ? 24 : 18,
+        color: color,
+        rotation: Cesium.Math.toRadians(state.velocity?.heading_deg || 0),
+        pixelOffset: new Cesium.Cartesian2(0, 0),
+      },
       label:
         currentMode === "live"
           ? {
@@ -3129,11 +3221,12 @@ function renderSwanMapOverlays() {
 
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(overlay.lon, overlay.lat, 150),
-      point: {
-        pixelSize: 12,
+      billboard: {
+        image: getSvgIcon("swan", "#ffffff", 22),
+        width: 22,
+        height: 22,
         color: Cesium.Color.fromCssColorString("#00ff41").withAlpha(0.85),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
       },
       label: {
         text: overlay.title,
@@ -3812,11 +3905,12 @@ function renderIntelligenceSourceLayer() {
     const position = Cesium.Cartesian3.fromDegrees(source.lon, source.lat, 1200);
     const entitySpec = {
       position,
-      point: {
-        pixelSize: source.embed_url ? 14 : 11,
+      billboard: {
+        image: getSvgIcon(getIntelligenceSourceIconType(source.source_type), "#ffffff", source.embed_url ? 22 : 18),
+        width: source.embed_url ? 22 : 18,
+        height: source.embed_url ? 22 : 18,
         color: Cesium.Color.fromCssColorString(color).withAlpha(0.88),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 1,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
       },
       label: {
         text: source.embed_url ? "WATCH" : source.ui_layer || source.source_type,
@@ -3837,7 +3931,7 @@ function renderIntelligenceSourceLayer() {
     const existing = intelligenceSourceState.entities.get(entityId);
     if (existing) {
       existing.position = position;
-      existing.point.color = Cesium.Color.fromCssColorString(color).withAlpha(0.88);
+      existing.billboard.color = Cesium.Color.fromCssColorString(color).withAlpha(0.88);
       existing.properties = entitySpec.properties;
     } else {
       intelligenceSourceState.entities.set(entityId, viewer.entities.add(entitySpec));
@@ -4793,11 +4887,12 @@ function renderIncidentContext() {
   ) {
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(aoi.coordinates[0], aoi.coordinates[1], 0),
-      point: {
-        pixelSize: 16,
+      billboard: {
+        image: getSvgIcon("incident", "#ffffff", 26),
+        width: 26,
+        height: 26,
         color: Cesium.Color.fromCssColorString("#ef4444").withAlpha(0.85),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
       label: {
@@ -5211,11 +5306,12 @@ function renderIncidentIntelligenceMapEntities() {
     const color = getIncidentIntelligenceMarkerColor(item.artifact_type);
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(item.lon, item.lat, 0),
-      point: {
-        pixelSize: 11,
+      billboard: {
+        image: getSvgIcon("artifact", "#ffffff", 20),
+        width: 20,
+        height: 20,
         color: Cesium.Color.fromCssColorString(color).withAlpha(0.85),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
       label: {
@@ -5676,11 +5772,13 @@ function renderCorrelationTimeline() {
 
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(marker.lon, marker.lat, 0),
-      point: {
-        pixelSize: getMarkerSize(marker.type),
+      billboard: {
+        image: getSvgIcon(getMarkerIconType(marker.type), "#ffffff", getMarkerSize(marker.type)),
+        width: getMarkerSize(marker.type),
+        height: getMarkerSize(marker.type),
         color: Cesium.Color.fromCssColorString(getMarkerColor(marker)),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 1,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       },
       label: {
         text: getMarkerLabel(marker),
@@ -6869,11 +6967,16 @@ function renderSatellites(events) {
     const entityKey = String(event.external_id || event.payload?.noradId || event.event_id);
     const spec = {
       position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, altitudeM),
-      point: {
-        pixelSize: isSelected ? style.pixelSize + 3 : style.pixelSize,
+      billboard: {
+        image: getSvgIcon(
+          type === "space_station" ? "space-station" : type === "starlink" ? "starlink" : "satellite",
+          "#ffffff",
+          isSelected ? style.pixelSize + 6 : style.pixelSize + 3,
+        ),
+        width: isSelected ? style.pixelSize + 6 : style.pixelSize + 3,
+        height: isSelected ? style.pixelSize + 6 : style.pixelSize + 3,
         color: Cesium.Color.fromCssColorString(style.color),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 1,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
       },
       label: {
         text: `${event.payload?.name || event.external_id}\nNORAD ${event.payload?.noradId || event.external_id}`,
@@ -6899,7 +7002,7 @@ function renderSatellites(events) {
     const existing = entities.get(entityKey);
     if (existing) {
       existing.position = spec.position;
-      existing.point = spec.point;
+      existing.billboard = spec.billboard;
       existing.label = spec.label;
       existing.properties = spec.properties;
     } else {
@@ -6944,11 +7047,12 @@ function renderWeather(events) {
 
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
-      point: {
-        pixelSize: 10,
+      billboard: {
+        image: getSvgIcon("weather", "#ffffff", 20),
+        width: 20,
+        height: 20,
         color: Cesium.Color.fromCssColorString(color).withAlpha(0.8),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 2,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
       },
       label: {
         text: event.payload?.event || "Weather Alert",
@@ -6998,11 +7102,12 @@ function renderBikeshare(events) {
 
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
-      point: {
-        pixelSize: size,
+      billboard: {
+        image: getSvgIcon("bikeshare", "#ffffff", size + 8),
+        width: size + 8,
+        height: size + 8,
         color: Cesium.Color.fromCssColorString(color),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 1,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
       },
       label: {
         text: `${event.payload?.freeBikes || 0}`,
@@ -7049,11 +7154,12 @@ function renderTraffic(events) {
 
     const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 0),
-      point: {
-        pixelSize: 8,
+      billboard: {
+        image: getSvgIcon("traffic", "#ffffff", 18),
+        width: 18,
+        height: 18,
         color: Cesium.Color.fromCssColorString(color),
-        outlineColor: Cesium.Color.WHITE,
-        outlineWidth: 1,
+        pixelOffset: new Cesium.Cartesian2(0, 0),
       },
       label: {
         text: event.payload?.type || "Traffic",
@@ -7318,11 +7424,12 @@ function renderInferenceLayer(layerType) {
           inference.location.latitude,
           100,
         ),
-        point: {
-          pixelSize: 12,
+        billboard: {
+          image: getSvgIcon("inference", "#ffffff", 22),
+          width: 22,
+          height: 22,
           color: colors[layerType].withAlpha(0.8),
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
+          pixelOffset: new Cesium.Cartesian2(0, 0),
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         },
         description: `
