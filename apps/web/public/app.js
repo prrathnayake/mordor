@@ -6426,6 +6426,243 @@ function updateVisualEffects() {
   dom.instabilitySlider.nextElementSibling.textContent = `${visualState.instability}%`;
 }
 
+// ===== WORLDVIEW UI FUNCTIONS =====
+const locationPresets = {
+  austin: { lat: 30.2672, lon: -97.7431, height: 2500, label: "Austin" },
+  "san-francisco": { lat: 37.7749, lon: -122.4194, height: 2500, label: "San Francisco" },
+  "new-york": { lat: 40.7128, lon: -74.006, height: 2500, label: "New York" },
+  tokyo: { lat: 35.6762, lon: 139.6503, height: 2500, label: "Tokyo" },
+  london: { lat: 51.5074, lon: -0.1278, height: 2500, label: "London" },
+  paris: { lat: 48.8566, lon: 2.3522, height: 2500, label: "Paris" },
+  dubai: { lat: 25.2048, lon: 55.2708, height: 2500, label: "Dubai" },
+  "washington-dc": { lat: 38.9072, lon: -77.0369, height: 2500, label: "Washington DC" },
+};
+
+const poiLocations = {
+  "texas-state-capitol": { lat: 30.2747, lon: -97.7403, height: 800, label: "Texas State Capitol" },
+  "frost-bank-tower": { lat: 30.2644, lon: -97.7431, height: 800, label: "Frost Bank Tower" },
+  "pennycacker-bridge": { lat: 30.245, lon: -97.735, height: 800, label: "Pennycacker Bridge" },
+  "the-jenga-tower": { lat: 30.263, lon: -97.745, height: 800, label: "The Jenga Tower" },
+  "ut-tower": { lat: 30.286, lon: -97.739, height: 800, label: "UT Tower" },
+};
+
+function flyToLocationPreset(presetId) {
+  const preset = locationPresets[presetId];
+  if (!preset || !viewer) return;
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(preset.lon, preset.lat, preset.height),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 },
+    duration: 2,
+  });
+  updateStatus(`VIEW: ${preset.label.toUpperCase()}`);
+  emitSwanActivity("location_preset_selected", {
+    targetType: "location",
+    targetId: presetId,
+    context: { lat: preset.lat, lon: preset.lon },
+  });
+}
+
+function flyToPoi(poiId) {
+  const poi = poiLocations[poiId];
+  if (!poi || !viewer) return;
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(poi.lon, poi.lat, poi.height),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+    duration: 1.5,
+  });
+  updateStatus(`POI: ${poi.label.toUpperCase()}`);
+}
+
+function initLocationPresets() {
+  document.querySelectorAll(".location-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".location-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      flyToLocationPreset(chip.dataset.location);
+    });
+  });
+
+  document.querySelectorAll(".poi-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".poi-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      flyToPoi(chip.dataset.poi);
+    });
+  });
+}
+
+const viewModes = {
+  normal: { preset: "clean", mapSurface: "satellite", label: "NORMAL" },
+  crt: { preset: "crt", mapSurface: "satellite", label: "CRT" },
+  nvg: { preset: "nvg", mapSurface: "satellite", label: "NVG" },
+  flir: { preset: "flir", mapSurface: "satellite", label: "FLIR" },
+  anime: { preset: "clean", mapSurface: "satellite", label: "ANIME" },
+  noir: { preset: "clean", mapSurface: "street", label: "NOIR" },
+  snow: { preset: "clean", mapSurface: "satellite", label: "SNOW" },
+  ai: { preset: "clean", mapSurface: "satellite", label: "AI" },
+};
+
+function setViewMode(modeId) {
+  const mode = viewModes[modeId];
+  if (!mode) return;
+
+  document.querySelectorAll(".mode-selector-btn").forEach((btn) => btn.classList.remove("active"));
+  const activeBtn = document.querySelector(`.mode-selector-btn[data-mode="${modeId}"]`);
+  if (activeBtn) activeBtn.classList.add("active");
+
+  applyStylePreset(mode.preset);
+  if (mode.mapSurface !== visualState.mapSurface) {
+    setMapSurface(mode.mapSurface);
+  }
+  updateStatus(`MODE: ${mode.label}`);
+}
+
+function initModeSelector() {
+  document.querySelectorAll(".mode-selector-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setViewMode(btn.dataset.mode));
+  });
+}
+
+// Camera feed timer
+let cameraTimerInterval = null;
+let cameraTimerSeconds = 0;
+
+function startCameraTimer() {
+  if (cameraTimerInterval) return;
+  cameraTimerSeconds = 0;
+  const timerEl = document.getElementById("camera-timer");
+  if (!timerEl) return;
+  cameraTimerInterval = setInterval(() => {
+    cameraTimerSeconds++;
+    const mins = Math.floor(cameraTimerSeconds / 60);
+    const secs = cameraTimerSeconds % 60;
+    timerEl.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
+  }, 1000);
+}
+
+function stopCameraTimer() {
+  if (cameraTimerInterval) {
+    clearInterval(cameraTimerInterval);
+    cameraTimerInterval = null;
+  }
+}
+
+// Telemetry readouts from camera position
+function updateTelemetryReadouts() {
+  if (!viewer) return;
+  const cartographic = viewer.camera.positionCartographic;
+  const lat = Cesium.Math.toDegrees(cartographic.latitude);
+  const lon = Cesium.Math.toDegrees(cartographic.longitude);
+  const height = cartographic.height;
+
+  // GSD (Ground Sample Distance) rough estimate
+  const gsd = Math.max(0.01, (height / 1000) * 0.15).toFixed(2);
+
+  // NIIRS (National Imagery Interpretability Rating Scale) rough estimate
+  let niirs = 1;
+  if (height < 500) niirs = 9;
+  else if (height < 1000) niirs = 7;
+  else if (height < 3000) niirs = 6;
+  else if (height < 8000) niirs = 5;
+  else if (height < 20000) niirs = 4;
+  else if (height < 50000) niirs = 3;
+  else niirs = 2;
+
+  // Sun elevation (simplified)
+  const now = new Date();
+  const hours = now.getUTCHours() + now.getUTCMinutes() / 60;
+  const sunElev = Math.sin((hours - 6) * Math.PI / 12) * 90;
+
+  const gsdEl = document.getElementById("telemetry-gsd");
+  const niirsEl = document.getElementById("telemetry-niirs");
+  const altEl = document.getElementById("telemetry-alt");
+  const sunEl = document.getElementById("telemetry-sun");
+
+  if (gsdEl) gsdEl.textContent = `${gsd}m`;
+  if (niirsEl) niirsEl.textContent = niirs.toFixed(1);
+  if (altEl) altEl.textContent = `${Math.round(height)}m`;
+  if (sunEl) sunEl.textContent = `${sunElev.toFixed(1)}° EL`;
+}
+
+// Sensor slider updates
+function initSensorSliders() {
+  document.querySelectorAll(".sensor-slider input").forEach((slider) => {
+    slider.addEventListener("input", (e) => {
+      const valueEl = e.target.parentElement.querySelector(".sensor-slider-value");
+      if (valueEl) {
+        const val = parseInt(e.target.value, 10);
+        if (e.target.id.includes("pitch") || e.target.id.includes("roll") || e.target.id.includes("yaw")) {
+          valueEl.textContent = `${val}°`;
+        } else if (e.target.id.includes("zoom")) {
+          valueEl.textContent = `${val}%`;
+        } else {
+          valueEl.textContent = `${val}`;
+        }
+      }
+    });
+  });
+}
+
+// New right-panel toggle switches
+function initNewToggles() {
+  document.querySelectorAll(".toggle-switch-v2 input").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const toggleId = e.target.id;
+      const isChecked = e.target.checked;
+
+      if (toggleId === "toggle-bloom-v2") {
+        visualState.bloom = isChecked ? 20 : 0;
+        dom.bloomSlider.value = visualState.bloom;
+        updateVisualEffects();
+      } else if (toggleId === "toggle-sharpen-v2") {
+        visualState.sharpen = isChecked ? 30 : 0;
+        dom.sharpenSlider.value = visualState.sharpen;
+        updateVisualEffects();
+      } else if (toggleId === "toggle-hud-v2") {
+        visualState.hud = isChecked;
+        document.querySelector(".crosshair").style.opacity = isChecked ? "0.3" : "0";
+        document.querySelector(".coordinates").style.opacity = isChecked ? "1" : "0";
+        document.querySelector(".zoom-level").style.opacity = isChecked ? "1" : "0";
+      } else if (toggleId === "toggle-panoptic-v2") {
+        visualState.panoptic = isChecked;
+        renderMapMarkers();
+      }
+    });
+  });
+
+  // Clear UI button
+  document.getElementById("clear-ui-btn")?.addEventListener("click", () => {
+    document.querySelectorAll(".left-rail, .right-rail, .tactical-footer").forEach((el) => {
+      el.classList.toggle("hidden");
+    });
+    updateStatus("UI TOGGLED");
+  });
+
+  // Tactical select
+  document.getElementById("tactical-select")?.addEventListener("change", (e) => {
+    updateStatus(`TACTICAL: ${e.target.value.toUpperCase()}`);
+  });
+}
+
+// Update classification sub-label based on location
+function updateClassificationLabel() {
+  const subLabel = document.querySelector(".classification-sub");
+  if (!subLabel || !viewer) return;
+  const cartographic = viewer.camera.positionCartographic;
+  const lat = Cesium.Math.toDegrees(cartographic.latitude);
+  const lon = Cesium.Math.toDegrees(cartographic.longitude);
+  // Simple heuristic: if near Austin, TX
+  if (Math.abs(lat - 30.27) < 1 && Math.abs(lon - (-97.74)) < 1) {
+    subLabel.textContent = "CRT STREET NEAR AUSTIN";
+  } else if (Math.abs(lat - 37.77) < 1 && Math.abs(lon - (-122.42)) < 1) {
+    subLabel.textContent = "CRT STREET NEAR SAN FRANCISCO";
+  } else if (Math.abs(lat - 40.71) < 1 && Math.abs(lon - (-74.01)) < 1) {
+    subLabel.textContent = "CRT STREET NEAR NEW YORK";
+  } else {
+    subLabel.textContent = "CRT ORBITAL VIEW";
+  }
+}
+
 // ===== EVENT LISTENERS =====
 function initEventListeners() {
   // Mode switching
@@ -6779,11 +7016,26 @@ function initEventListeners() {
   dom.closeNewIncidentModal.addEventListener("click", hideNewIncidentForm);
   dom.btnCancelIncident.addEventListener("click", hideNewIncidentForm);
   dom.btnCreateIncident.addEventListener("click", createIncident);
+
+  // New Worldview UI bindings
+  initLocationPresets();
+  initModeSelector();
+  initSensorSliders();
+  initNewToggles();
+
+  // Telemetry update on camera move
+  viewer?.camera.changed.addEventListener(() => {
+    updateTelemetryReadouts();
+    updateClassificationLabel();
+  });
 }
 
 // Make handleAuthClick available globally for onclick handler
 window.handleAuthClick = handleAuthClick;
 window.selectObject = selectObject;
+window.flyToLocationPreset = flyToLocationPreset;
+window.flyToPoi = flyToPoi;
+window.setViewMode = setViewMode;
 
 // ===== EXTERNAL DATA LAYERS =====
 async function loadExternalLayers() {

@@ -1,55 +1,19 @@
-# Daily Summary
+# Daily Summary — 2026-05-31
 
-## Current Repo Snapshot
-- Project name: Chrona Twin
-- Repository type: TypeScript monorepo for a geospatial digital twin platform
-- Intended primary branch: `main`
-- Current observed local branch during setup: `master`
-- Main verification command: `npm run validate`
-- Quick smoke checks: `npm run typecheck`, `npm run lint`, and the smallest affected Vitest/Playwright slice
-- Preferred test root: `tests/`
-- Manual/ad hoc output folder: `tests/manual/outputs/`
-- External docs hub: none configured
+## Completed Tasks
+1. **SVG Billboard Icons** — Replaced all Cesium `point` circles with proper SVG `billboard` icons (17 types with heading rotation for flights)
+2. **Classified Terminal UI Redesign** — Complete overhaul of web UI:
+   - CSS: WORLDVIEW branding, CRT scanlines, green/amber accents, sensor controls, camera feed, telemetry readouts
+   - HTML: New layout with classification header, location/POI chips, mode selector, toggle switches
+   - JS: Fly-to presets, camera timer, live telemetry (GSD/NIIRS/ALT/SUN), sensor sliders, mode button handlers
 
-## Working Norms
-- Reusable memory lives only in `.codex_memories/`.
-- Local docs in `docs/` should be kept in sync for material architecture, workflow, tooling, gateway, prompt, or user-facing app changes.
-- Before commits, review `.env` and `.gitignore` for secrets and local output leaks.
-- Preserve useful comments/docstrings in orchestration-heavy or non-trivial code.
+## Current Status
+- Web container rebuilt and running on port 3001
+- All syntax/type checks pass
+- UI served correctly with new classified-terminal aesthetic
+- Auth required for live data (viewer/viewer123)
 
-## Open Notes
-- The repo already contains unrelated in-progress changes; future Codex work should avoid reverting them.
-- A branch-name mismatch exists between the requested primary branch (`main`) and the current checkout (`master`). Future runs should verify branch intent before branch-sensitive work.
-- The current worktree now also contains an intentional structure cleanup that moves Docker/Compose support into `infra/` and current-state docs into topical subfolders under `docs/`; inspect `git status --short` before any branch or commit action.
-- The current live-source architecture is still mostly explicit and hardcoded: new live layers enter through `packages/external-data`, `apps/api/src/live-world-service.ts`, `apps/api/src/server.ts`, and the fixed render/switch paths in `apps/web/public/app.js`.
-- The current web client is a single imperative Cesium shell with static HTML panels and SWAN projection seams; future autonomous UI growth should stay declarative and registry-driven instead of generating arbitrary DOM/HTML.
-- Incident intelligence now has a second-stage spatial context path: `map_context` widget manifests can describe incident focus plus geolocated artifacts, and the tactical client can render both the incident AOI and intelligence markers directly on the globe from those structured specs.
-- Local incident-intelligence integration specs currently depend on Testcontainers and are blocked on this machine until a working container runtime is available.
-- A new 4-zone operations intelligence dashboard was added to the tactical UI (`dashboard.js`, `dashboard-styles.css`, updated `index.html`/`app.js`/`server.ts`). The feature is functionally complete but awaiting final Playwright verification because the container runtime is down.
-- The tactical UI now has resilient fallback rendering for news and webcam/TV panels, immediate webcam loading, clickable iframe-backed TV cards, and DOM-based location popups that track/clamp to Cesium globe positions. Narrow-width rails now remain reachable instead of being transformed offscreen without open controls.
-- A tests-only integration contract now covers the current tactical media/info UI behavior in `app.js` and `tactical-styles.css`, including fallback news/webcams, safe webcam embeds, DOM earth popups, and narrow rail reachability.
-- The tactical UI now also has a Global Intel Sources layer backed by `GET /intelligence/sources`, a static intelligence source catalog, source/media observation database tables, source-catalog rendering in the right Intelligence panel, and embedded media-capable globe popups for safe in-app watching instead of forcing external navigation.
-
-## Last Completed Task
-- 2026-04-25 18:54:45 +10:00: Added global intelligence source catalog capabilities and embedded watch/info popups. Implemented `packages/intelligence/src/source-catalog.ts`, `GET /intelligence/sources`, `infra/migrations/0011_intelligence_source_catalog.sql`, the Global Intel Sources UI layer, source-catalog right-rail rendering, embedded media popup support, tests, and docs. Verified with browser checks, `node --check` for app/dashboard JS, `npm run typecheck`, `npm run lint`, and focused integration tests (29 passed).
-- 2026-04-25 18:40:13 +10:00: Added `tests/integration/tactical-media-contract.spec.ts` after inspecting current frontend/test coverage for the global info layer and embedded video/info work. The test locks current app-source behavior without editing app source. Verified with the focused Vitest spec, Biome check on the new file, and `npm run typecheck`.
-- 2026-04-25 18:22:58 +10:00: Tested the tactical web UI in the in-app browser and fixed missing/broken UI behavior around news and TV location popups. Added fallback news/webcam data for UI-only runs, immediate webcam loading, iframe-safe webcam card clicks, safer popup links, robust Cesium-projected DOM popups for News/TV, and responsive rail visibility fixes. Verified with browser interaction, `node --check apps/web/public/app.js`, `npm run typecheck`, `npm run lint`, and `npx vitest run tests/integration/tactical-shell.spec.ts` (23 tests).
-- 2026-04-25 13:28:00 +10:00: Upgraded the tactical UI to a 4-zone Palantir/Nexus Ops style real-time operations intelligence dashboard with entity list, search, filters, intelligence panel, telemetry panel, demo fallback data, and 12 new e2e tests. Fixed server.ts to serve new dashboard assets, resolved Playwright selector strict-mode violations, and worked around hidden-checkbox interaction issues. Verified typecheck, lint, gate, unit tests, and contract tests as green. Final dashboard e2e verification blocked by unavailable container runtime (Docker).
-- 2026-04-12 10:48:30 +10:00: Prepared a focused commit for the instruction and memory scaffolding while leaving the repo's unrelated SWAN/docs changes untouched.
-- 2026-04-13 09:56:17 +10:00: Collected current project/architecture context from code, refreshed the primary runtime docs, fixed API/web startup port mismatches, corrected nearest-source distance calculations to meters in both persistence and SWAN queries, added `400 invalid_json` handling for malformed API request bodies, and verified the changes with lint, typecheck, and focused unit suites.
-- 2026-04-13 11:46:05 +10:00: Ran a broad bug-fix and verification loop across API, SWAN, external-data adapters, UI behavior, and test harnesses; fixed replay/alert/CCTV UI regressions, stabilized shared Postgres test environments, removed a retry-vs-rate-limit bug from the external-data HTTP client, hardened API shutdown to drain in-flight requests before closing the pool, refreshed failing Playwright/Vitest specs, and completed a full green `npm run validate` pass (`33` Vitest files / `269` tests, `127` Playwright tests).
-- 2026-04-14 12:12:55 +10:00: Cleaned up repo structure for readability by moving Docker/Compose support files into `infra/compose` and `infra/docker`, grouping current-state docs into `docs/architecture`, `docs/runbooks`, and `docs/tests`, updating the main navigation docs to match, and verifying the required docs gate; lint remains blocked by pre-existing formatting drift in existing source files outside this change.
-- 2026-04-14 12:19:23 +10:00: Assessed the current live-data capabilities and found that Chrona Twin already supports SSE-driven live updates, OpenSky-backed live flights, external-data layer refresh endpoints, and Cesium rendering for satellites and other feeds; remaining work is primarily productization of continuous external-layer streaming and richer UI behavior rather than greenfield architecture.
-- 2026-04-14 12:25:15 +10:00: Extended the live update path so external data layers now emit SSE notifications on refresh and the tactical UI reloads only the changed enabled layer, reducing the gap between backend refresh cadence and on-screen updates for satellites, earthquakes, weather, traffic, and bikeshare.
-- 2026-04-14 12:35:23 +10:00: Further improved the tactical live UX by eliminating full redraws for live flights and satellite refreshes where possible, adding visible relative-age freshness labels for external layers, and documenting the expectation that live overlays should update incrementally rather than by disruptive full-scene reloads.
-- 2026-04-14 12:40:33 +10:00: Added viewport-aware loading for external overlays so bounded layer requests now follow the operator’s Cesium view rectangle instead of always requesting global layer data, with focused integration coverage for both SSE resilience and geospatial event filtering.
-- 2026-04-14 12:46:04 +10:00: Extended viewport awareness into the SSE path too, so external overlay refreshes can now be pushed as viewport-scoped snapshots directly over `/live/events`, reducing both over-fetching and follow-up HTTP reloads for live external layers.
-- 2026-04-14 12:50:28 +10:00: Added differential SSE updates for external overlays so, after an initial scoped snapshot, later refreshes can transmit only changed and removed overlay events; the browser now maintains a lightweight per-layer event cache to apply those deltas before rerendering.
-- 2026-04-14 12:24:28 +10:00: Audited the current source inventory and researched expansion candidates; the strongest next-source gaps are maritime/AIS, wildfire, multi-hazard disaster feeds, space weather, air quality, and curated global event/news signals, and the repo already has the normalization and source-registry patterns needed to absorb those feeds without inventing a new ingestion model.
-- 2026-04-14 12:28:40 +10:00: Investigated the blurry zoom behavior in the tactical globe, traced it to the hardcoded low-resolution `NaturalEarthII` basemap in the web client, replaced that with a configurable imagery provider pipeline defaulting to ArcGIS World Imagery and supporting OSM/custom XYZ tiles via env config, updated the runbook/config docs, and verified with `npm run typecheck` plus `npx vitest run tests/integration/tactical-shell.spec.ts`.
-- 2026-04-14 12:40:40 +10:00: Added an in-UI `MAP SURFACE` switch to the tactical right rail so operators can swap the Cesium base layer between satellite imagery and a street-map view at runtime without restarting the app, kept the layer swap scoped to the base imagery so live entities remain intact, updated the local runbook, and verified with `npm run typecheck` plus `npx vitest run tests/integration/tactical-shell.spec.ts`.
-- 2026-04-14 12:44:40 +10:00: Added a feature-gated close-range ground-view capability to the tactical UI by extending web-config injection with optional street-scene providers, wiring Cesium credentials/3D tiles loading for `google-photorealistic` or `osm-buildings`, and surfacing the feature in the inspector via an `ENTER GROUND VIEW` action that remains disabled unless configured so default deployments stay stable; verified with `npm run typecheck`, `npx vitest run tests/integration/tactical-shell.spec.ts`, and focused Playwright Cesium smoke tests.
-- 2026-04-14 12:40:05 +10:00: Mapped the current extension points for always-on live sources, ingestion workers, persistence, SSE/live event publishing, and capture/evidence storage; the practical seams are the source-registry contracts, the external-data adapters, the live-world refresh service, the API route handlers, the Postgres persistence gateway, the capture service, and the static web layer renderers.
-- 2026-04-14 12:41:32 +10:00: Defined the next high-level product direction as a public-source, multi-agent world-simulation system: 24/7 collectors for authoritative events plus media/news/image discovery, fusion/provenance agents that turn raw findings into incident-centric evidence graphs, and a controlled declarative UI-manifest path for agent-created panels/widgets delivered through SWAN and existing live/dashboard seams.
-- 2026-04-14 12:58:59 +10:00: Added complex integration scenarios for the live external-overlay SSE pipeline, covering reconnect backfill ordering against current persisted state, per-layer snapshot isolation within a single stream, and viewport-scoped delta/removal behavior; verified with `npm run typecheck` and `npx vitest run tests/integration/live-resilience.spec.ts tests/integration/external-data-api.spec.ts`.
-- 2026-04-15 13:59:58 +10:00: Extended incident intelligence into the map layer by generating `map_context` widgets from incident AOIs and geolocated artifacts, rendering those widgets plus associated markers inside the tactical incident workflow, fixing AOI focusing/cleanup on the globe, updating the local architecture/frontend docs, and verifying with `node --check apps/web/public/app.js`, `npm run typecheck`, and `npx vitest run tests/unit/incident-intelligence-service.spec.ts` while noting that the existing integration specs are locally blocked by missing container runtime support for Testcontainers.
+## Remaining Issues
+- PostgreSQL `data_source_registry` table missing
+- Some external layer routes return 404
+- Need browser verification of circular viewport mask and interactive controls
