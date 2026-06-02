@@ -933,10 +933,24 @@ function updateSwanUI() {
 }
 
 function showSwanToast(notification) {
-  if (!dom.swanNotifications) return;
   if (swanState.seenNotificationIds.has(notification.finding_id)) return;
-
   swanState.seenNotificationIds.add(notification.finding_id);
+
+  // Use UI Component Shop if available
+  if (window.uiShop) {
+    window.uiShop.create("alert-toast", {
+      id: `swan-${notification.finding_id}`,
+      position: { x: 20, y: 20 },
+      positionType: "fixed",
+      message: `${notification.title}: ${notification.summary} (${notification.verification_status.replace("_", " ")})`,
+      severity: notification.verification_status === "verified" ? "success" : "info",
+      duration: 5000,
+    });
+    return;
+  }
+
+  // Fallback: legacy ad-hoc toast
+  if (!dom.swanNotifications) return;
   const toast = document.createElement("div");
   toast.className = "swan-toast";
   toast.innerHTML = `
@@ -986,6 +1000,36 @@ function handleInsightEvent(data) {
 }
 
 function showInsightPopup(insight) {
+  // Use UI Component Shop if available
+  if (window.uiShop) {
+    const actions = insight.actions.map((a) => ({
+      id: a.actionType,
+      label: a.label,
+      handler: () => handleInsightAction(a.actionType, insight.insightId),
+    }));
+
+    window.uiShop.create("info-card", {
+      id: `insight-${insight.insightId}`,
+      position: { x: window.innerWidth / 2 - 150, y: 80 },
+      positionType: "fixed",
+      title: insight.title,
+      fields: [
+        { label: "Severity", value: insight.severity.toUpperCase() },
+        { label: "Message", value: insight.message },
+      ],
+      actions,
+      zIndex: 2000,
+      onCreate: (instance) => {
+        // Auto-close for critical insights
+        if (insight.severity === "critical") {
+          setTimeout(() => window.uiShop.destroy(instance.id), 10000);
+        }
+      },
+    });
+    return;
+  }
+
+  // Fallback: legacy ad-hoc DOM creation
   const popup = document.createElement("div");
   popup.className = `insight-popup insight-popup-${insight.severity}`;
   popup.innerHTML = `
@@ -2216,6 +2260,61 @@ function initCesium() {
       },
     });
   }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+  // ===== INITIALIZE UI COMPONENT SHOP & SPACE CALCULATOR =====
+  if (typeof SpaceCalculator !== "undefined") {
+    window.spaceCalculator = new SpaceCalculator(viewer);
+  }
+  if (typeof UIComponentShop !== "undefined" && typeof UIComponentFactories !== "undefined") {
+    window.uiShop = new UIComponentShop({
+      viewer,
+      container: document.getElementById("mordor-app") || document.body,
+      calculator: window.spaceCalculator,
+    });
+
+    // Register all component factories
+    window.uiShop
+      .register("globe-popup", {
+        factory: UIComponentFactories.createGlobePopup,
+        defaultZIndex: 1100,
+        supportsGlobePosition: true,
+      })
+      .register("alert-toast", {
+        factory: UIComponentFactories.createAlertToast,
+        defaultZIndex: 2000,
+        supportsGlobePosition: false,
+      })
+      .register("floating-panel", {
+        factory: UIComponentFactories.createFloatingPanel,
+        defaultZIndex: 1200,
+        supportsGlobePosition: false,
+      })
+      .register("badge", {
+        factory: UIComponentFactories.createBadge,
+        defaultZIndex: 1050,
+        supportsGlobePosition: true,
+      })
+      .register("info-card", {
+        factory: UIComponentFactories.createInfoCard,
+        defaultZIndex: 1150,
+        supportsGlobePosition: true,
+      })
+      .register("video-embed", {
+        factory: UIComponentFactories.createVideoEmbed,
+        defaultZIndex: 1300,
+        supportsGlobePosition: true,
+      })
+      .register("image-viewer", {
+        factory: UIComponentFactories.createImageViewer,
+        defaultZIndex: 1250,
+        supportsGlobePosition: true,
+      })
+      .register("timeline", {
+        factory: UIComponentFactories.createTimeline,
+        defaultZIndex: 1100,
+        supportsGlobePosition: true,
+      });
+  }
 
   // Update coordinates display
   let lastEmittedZoomLevel = null;
@@ -4122,8 +4221,15 @@ let activeInWorldPanel = null;
 let activeCesiumEntities = [];
 let activeLeaderLine = null;
 let panelPostRenderListener = null;
+let inWorldPopupShopId = null;
 
 function clearInWorldPanel() {
+  // Destroy shop-managed popup if present
+  if (inWorldPopupShopId && window.uiShop) {
+    window.uiShop.destroy(inWorldPopupShopId);
+    inWorldPopupShopId = null;
+  }
+
   if (activeInWorldPanel) {
     activeInWorldPanel.remove();
     activeInWorldPanel = null;
@@ -4229,99 +4335,108 @@ function createInWorldInfoPanel(lat, lon, data) {
     },
   });
 
-  // Create DOM popup overlay that tracks the 3D position
-  const popupEl = document.createElement("div");
-  popupEl.className = "earth-popup-overlay";
-  popupEl.dataset.testid = "earth-popup-overlay";
-  popupEl.innerHTML = `
-    <div class="earth-popup-box" style="border-color:${color}">
-      <div class="earth-popup-header" style="background:${color}20">
-        <span class="earth-popup-badge" style="background:${color}">${escapeHtml(data.badge)}</span>
-        <span class="earth-popup-title">${escapeHtml(data.title)}</span>
-        <button class="earth-popup-close" title="Close">&times;</button>
-      </div>
-      <div class="earth-popup-body">
-        ${
-          safeEmbedUrl
-            ? `<div class="earth-popup-media">
-                <iframe
-                  src="${safeEmbedUrl}"
-                  title="${escapeHtml(data.title)}"
-                  loading="lazy"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowfullscreen
-                ></iframe>
-              </div>`
-            : ""
-        }
-        ${safeSummary ? `<div class="earth-popup-summary">${safeSummary}</div>` : ""}
-        ${safeLines.map((line) => `<div class="earth-popup-line">${escapeHtml(line)}</div>`).join("")}
-        ${
-          safeTags.length > 0
-            ? `<div class="earth-popup-tags">${safeTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`
-            : ""
-        }
-        ${safeLink ? `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="earth-popup-link" style="color:${color}">Source details</a>` : ""}
-      </div>
-    </div>
-  `;
+  // Build popup content
+  let popupContent = "";
+  if (safeEmbedUrl) {
+    popupContent += `<div class="earth-popup-media">
+      <iframe src="${safeEmbedUrl}" title="${escapeHtml(data.title)}" loading="lazy"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen></iframe></div>`;
+  }
+  if (safeSummary) popupContent += `<div class="earth-popup-summary">${safeSummary}</div>`;
+  popupContent += safeLines.map((line) => `<div class="earth-popup-line">${escapeHtml(line)}</div>`).join("");
+  if (safeTags.length > 0) {
+    popupContent += `<div class="earth-popup-tags">${safeTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>`;
+  }
+  if (safeLink) {
+    popupContent += `<a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="earth-popup-link" style="color:${color}">Source details</a>`;
+  }
 
-  const cesiumContainer = document.getElementById("cesiumContainer") || document.body;
-  cesiumContainer.appendChild(popupEl);
-  activeInWorldPanel = popupEl;
-  popupEl.style.left = "50%";
-  popupEl.style.top = "50%";
-  popupEl.style.opacity = "1";
-
-  // Close handler
-  popupEl.querySelector(".earth-popup-close").addEventListener("click", clearInWorldPanel);
-
-  // Track 3D position and update DOM overlay
-  panelPostRenderListener = () => {
-    try {
-      if (!viewer || !activeInWorldPanel || viewer.isDestroyed?.()) return;
-      const result = new Cesium.Cartesian2();
-      const sceneTransform =
-        Cesium.SceneTransforms.wgs84ToWindowCoordinates ||
-        Cesium.SceneTransforms.worldToWindowCoordinates;
-      if (!sceneTransform) {
-        popupEl.dataset.projection = "unavailable";
-        return;
-      }
-      const canvasPos = sceneTransform?.(viewer.scene, lineTop, result);
-      if (!canvasPos) {
-        popupEl.style.opacity = "0";
-        popupEl.style.pointerEvents = "none";
-        return;
-      }
-
-      const rect = cesiumContainer.getBoundingClientRect();
-      const x = canvasPos.x;
-      const y = canvasPos.y;
-
-      const clampedX = Math.min(Math.max(x, 150), Math.max(rect.width - 150, 150));
-      const clampedY = Math.min(Math.max(y - 16, 110), Math.max(rect.height - 16, 110));
-      popupEl.style.opacity = "1";
-      popupEl.style.pointerEvents = "auto";
-      popupEl.style.transform = "translate(-50%, -100%) scale(1)";
-      popupEl.style.left = `${clampedX}px`;
-      popupEl.style.top = `${clampedY}px`;
-      popupEl.dataset.anchorX = String(Math.round(x));
-      popupEl.dataset.anchorY = String(Math.round(y));
-    } catch (_e) {
-      // ignore
+  // Use UI Component Shop if available
+  if (window.uiShop) {
+    const instance = window.uiShop.create("globe-popup", {
+      id: `inworld-${Date.now()}`,
+      position: { lat, lon, height: 25000 },
+      title: data.title,
+      content: popupContent,
+      severity: data.severity || "info",
+      closable: true,
+      container: document.getElementById("cesiumContainer") || document.body,
+      onClose: clearInWorldPanel,
+    });
+    if (instance) {
+      inWorldPopupShopId = instance.id;
     }
-  };
+  } else {
+    // Fallback: legacy ad-hoc DOM creation
+    const popupEl = document.createElement("div");
+    popupEl.className = "earth-popup-overlay";
+    popupEl.dataset.testid = "earth-popup-overlay";
+    popupEl.innerHTML = `
+      <div class="earth-popup-box" style="border-color:${color}">
+        <div class="earth-popup-header" style="background:${color}20">
+          <span class="earth-popup-badge" style="background:${color}">${escapeHtml(data.badge)}</span>
+          <span class="earth-popup-title">${escapeHtml(data.title)}</span>
+          <button class="earth-popup-close" title="Close">&times;</button>
+        </div>
+        <div class="earth-popup-body">${popupContent}</div>
+      </div>
+    `;
 
-  viewer.scene.postRender.addEventListener(panelPostRenderListener);
-  // Force initial update next frame
-  requestAnimationFrame(() => {
-    if (panelPostRenderListener) panelPostRenderListener();
-  });
+    const cesiumContainer = document.getElementById("cesiumContainer") || document.body;
+    cesiumContainer.appendChild(popupEl);
+    activeInWorldPanel = popupEl;
+    popupEl.style.left = "50%";
+    popupEl.style.top = "50%";
+    popupEl.style.opacity = "1";
+
+    popupEl.querySelector(".earth-popup-close").addEventListener("click", clearInWorldPanel);
+
+    panelPostRenderListener = () => {
+      try {
+        if (!viewer || !activeInWorldPanel || viewer.isDestroyed?.()) return;
+        const result = new Cesium.Cartesian2();
+        const sceneTransform =
+          Cesium.SceneTransforms.wgs84ToWindowCoordinates ||
+          Cesium.SceneTransforms.worldToWindowCoordinates;
+        if (!sceneTransform) {
+          popupEl.dataset.projection = "unavailable";
+          return;
+        }
+        const canvasPos = sceneTransform?.(viewer.scene, lineTop, result);
+        if (!canvasPos) {
+          popupEl.style.opacity = "0";
+          popupEl.style.pointerEvents = "none";
+          return;
+        }
+        const rect = cesiumContainer.getBoundingClientRect();
+        const x = canvasPos.x;
+        const y = canvasPos.y;
+        const clampedX = Math.min(Math.max(x, 150), Math.max(rect.width - 150, 150));
+        const clampedY = Math.min(Math.max(y - 16, 110), Math.max(rect.height - 16, 110));
+        popupEl.style.opacity = "1";
+        popupEl.style.pointerEvents = "auto";
+        popupEl.style.transform = "translate(-50%, -100%) scale(1)";
+        popupEl.style.left = `${clampedX}px`;
+        popupEl.style.top = `${clampedY}px`;
+        popupEl.dataset.anchorX = String(Math.round(x));
+        popupEl.dataset.anchorY = String(Math.round(y));
+      } catch (_e) {
+        // ignore
+      }
+    };
+
+    viewer.scene.postRender.addEventListener(panelPostRenderListener);
+    requestAnimationFrame(() => {
+      if (panelPostRenderListener) panelPostRenderListener();
+    });
+  }
 
   // Auto-dismiss after 30s
   setTimeout(() => {
-    if (activeInWorldPanel === popupEl) clearInWorldPanel();
+    if ((activeInWorldPanel) || (inWorldPopupShopId && window.uiShop?.get(inWorldPopupShopId))) {
+      clearInWorldPanel();
+    }
   }, 30_000);
 }
 
@@ -5684,10 +5799,6 @@ async function freezeEvidence(captureJobId) {
 }
 
 function showCaptureSourceModal() {
-  const modal = document.createElement("div");
-  modal.className = "modal capture-modal";
-  modal.id = "capture-source-modal";
-
   const sources = [
     { type: "flights", name: "Live Flights", status: "ADS-B / Telemetry" },
     { type: "earthquakes", name: "Earthquakes", status: "USGS" },
@@ -5698,26 +5809,56 @@ function showCaptureSourceModal() {
     { type: "events", name: "Object Events", status: "Tracked Objects" },
   ];
 
+  const content = `
+    <div class="capture-source-grid">
+      ${sources
+        .map(
+          (s) => `
+        <button type="button" class="capture-source-btn" data-source="${s.type}">
+          <span class="source-name">${s.name}</span>
+          <span class="source-status">${s.status}</span>
+        </button>
+      `,
+        )
+        .join("")}
+    </div>
+  `;
+
+  // Use UI Component Shop if available
+  if (window.uiShop) {
+    const instance = window.uiShop.create("floating-panel", {
+      id: "capture-source-panel",
+      position: { x: window.innerWidth / 2 - 200, y: 150 },
+      positionType: "fixed",
+      title: "ADD CAPTURE JOB",
+      content,
+      width: "400px",
+      draggable: true,
+      closable: true,
+    });
+
+    if (instance) {
+      instance.element.querySelectorAll(".capture-source-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          createCaptureJob(btn.dataset.source);
+          window.uiShop.destroy(instance.id);
+        });
+      });
+      return;
+    }
+  }
+
+  // Fallback: legacy ad-hoc modal
+  const modal = document.createElement("div");
+  modal.className = "modal capture-modal";
+  modal.id = "capture-source-modal";
   modal.innerHTML = `
     <div class="modal-content">
       <div class="modal-header">
         <h2>ADD CAPTURE JOB</h2>
         <button type="button" class="panel-close" id="close-capture-modal">×</button>
       </div>
-      <div class="modal-body">
-        <div class="capture-source-grid">
-          ${sources
-            .map(
-              (s) => `
-            <button type="button" class="capture-source-btn" data-source="${s.type}">
-              <span class="source-name">${s.name}</span>
-              <span class="source-status">${s.status}</span>
-            </button>
-          `,
-            )
-            .join("")}
-        </div>
-      </div>
+      <div class="modal-body">${content}</div>
     </div>
   `;
 
@@ -5729,9 +5870,7 @@ function showCaptureSourceModal() {
   });
 
   modal.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      modal.remove();
-    }
+    if (e.target === modal) modal.remove();
   });
 
   modal.querySelectorAll(".capture-source-btn").forEach((btn) => {
