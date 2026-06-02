@@ -2316,6 +2316,108 @@ function initCesium() {
       });
   }
 
+  // ===== INITIALIZE EVENT BUS, TEMPLATES, AND LAYOUT ENGINE =====
+  if (typeof UIEventBus !== "undefined") {
+    window.uiBus = new UIEventBus({ maxHistory: 2000, debug: false });
+  }
+  if (typeof UIComponentTemplates !== "undefined") {
+    window.uiTemplates = new UIComponentTemplates();
+  }
+  if (typeof UILayoutEngine !== "undefined" && window.uiShop && window.spaceCalculator) {
+    window.uiLayout = new UILayoutEngine({
+      shop: window.uiShop,
+      calculator: window.spaceCalculator,
+      container: document.getElementById("mordor-app") || document.body,
+    });
+  }
+
+  // Wire event bus subscriptions for cross-component coordination
+  if (window.uiBus && window.uiShop) {
+    // When an incident is selected, show globe popup + timeline
+    window.uiBus.on("incident_selected", (data) => {
+      if (!data?.position) return;
+      const layoutPos = window.uiLayout
+        ? window.uiLayout.getPosition("globe-popup", data.position, { strategy: "clusterGlobe" })
+        : data.position;
+
+      window.uiShop.create("globe-popup", {
+        id: `incident-popup-${data.id}`,
+        position: layoutPos,
+        title: data.title || "Incident",
+        content: data.description || "",
+        severity: data.severity || "info",
+      });
+
+      if (data.timeline?.length) {
+        const tlPos = window.uiLayout
+          ? window.uiLayout.getPosition("timeline", { x: 20, y: window.innerHeight - 250 }, { strategy: "stackPlace" })
+          : { x: 20, y: window.innerHeight - 250 };
+        window.uiShop.create("timeline", {
+          id: `incident-timeline-${data.id}`,
+          position: { x: tlPos.x, y: tlPos.y },
+          positionType: "fixed",
+          title: `Timeline: ${data.title}`,
+          events: data.timeline,
+        });
+      }
+    });
+
+    // When external layer updates, refresh badges
+    window.uiBus.on("external_layer_update", (data) => {
+      if (!data?.layerId || !data?.events?.length) return;
+      // Update or create badge for layer
+      const existing = window.uiShop.getByType("badge").find((b) => b.config.layerId === data.layerId);
+      if (existing) {
+        window.uiShop.update(existing.id, {
+          label: `${data.events.length}`,
+        });
+      }
+    });
+
+    // When an alert fires, show toast + optional globe popup
+    window.uiBus.on("alert_fired", (data) => {
+      window.uiShop.create("alert-toast", {
+        id: `alert-${data.id || Date.now()}`,
+        position: { x: window.innerWidth - 300, y: 20 },
+        positionType: "fixed",
+        message: data.message || data.title || "Alert",
+        severity: data.severity || "warning",
+        duration: data.duration || 10000,
+      });
+
+      if (data.position) {
+        const layoutPos = window.uiLayout
+          ? window.uiLayout.getPosition("globe-popup", data.position, { strategy: "clusterGlobe" })
+          : data.position;
+        window.uiShop.create("globe-popup", {
+          id: `alert-popup-${data.id || Date.now()}`,
+          position: layoutPos,
+          title: data.title || "Alert",
+          content: data.message || "",
+          severity: data.severity || "warning",
+        });
+      }
+    });
+
+    // Agent manifest handler: agents can broadcast a manifest to create UI
+    window.uiBus.on("agent_create_ui", (data) => {
+      if (!data?.template || !window.uiTemplates) return;
+      const result = window.uiTemplates.createFromTemplate(
+        data.template,
+        data.data || {},
+        window.uiShop,
+        window.spaceCalculator
+      );
+      if (result) {
+        window.uiBus.emit("ui_component_created", {
+          template: data.template,
+          componentId: result.id || result.config?.id,
+          source: data.source || "agent",
+        });
+      }
+    });
+  }
+
   // Update coordinates display
   let lastEmittedZoomLevel = null;
   viewer.camera.changed.addEventListener(() => {
@@ -7175,6 +7277,29 @@ window.selectObject = selectObject;
 window.flyToLocationPreset = flyToLocationPreset;
 window.flyToPoi = flyToPoi;
 window.setViewMode = setViewMode;
+
+// Agent-safe UI creation helpers
+window.createAgentUI = (templateName, data) => {
+  if (!window.uiTemplates || !window.uiShop) {
+    console.warn("[AgentUI] UI system not initialized");
+    return null;
+  }
+  return window.uiTemplates.createFromTemplate(templateName, data, window.uiShop, window.spaceCalculator);
+};
+
+window.emitUIEvent = (event, data) => {
+  if (!window.uiBus) {
+    console.warn("[AgentUI] Event bus not initialized");
+    return false;
+  }
+  window.uiBus.emit(event, data, { source: "agent" });
+  return true;
+};
+
+window.getUILayoutPosition = (componentType, desiredPosition, options) => {
+  if (!window.uiLayout) return desiredPosition;
+  return window.uiLayout.getPosition(componentType, desiredPosition, options);
+};
 
 // ===== EXTERNAL DATA LAYERS =====
 async function loadExternalLayers() {
