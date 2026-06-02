@@ -1,19 +1,19 @@
-# Daily Summary — 2026-05-31
+# Daily Summary — 2026-06-02
 
 ## Completed Tasks
-1. **SVG Billboard Icons** — Replaced all Cesium `point` circles with proper SVG `billboard` icons (17 types with heading rotation for flights)
-2. **Classified Terminal UI Redesign** — Complete overhaul of web UI:
-   - CSS: WORLDVIEW branding, CRT scanlines, green/amber accents, sensor controls, camera feed, telemetry readouts
-   - HTML: New layout with classification header, location/POI chips, mode selector, toggle switches
-   - JS: Fly-to presets, camera timer, live telemetry (GSD/NIIRS/ALT/SUN), sensor sliders, mode button handlers
+1. **UI Event Bus** — Pub/sub event bus with history, middleware, debounce/throttle, async `waitFor`, and wildcard listeners. Pre-wired events: `incident_selected`, `external_layer_update`, `alert_fired`, `agent_create_ui`
+2. **Component Templates** — Schema-driven, agent-safe templates with validation, sanitization, and builtin types: `incident-card`, `flight-tracker`, `breaking-alert`, `intelligence-summary`, `event-timeline`, `source-panel`
+3. **Smart Layout Engine** — Collision detection, spiral/grid/stack placement, globe clustering (50km), viewport clamping. Strategies: `spiralAvoid`, `gridPlace`, `stackPlace`, `clusterGlobe`
+4. **Integration** — Wired all systems into `app.js` with global agent helpers (`createAgentUI`, `emitUIEvent`, `getUILayoutPosition`). Updated `index.html` script loading.
+5. **Documentation** — Updated `docs/architecture/overview.md`, `docs/04_FRONTEND_DESIGN.md`, and `docs/INDEX.md` with new UI infrastructure details.
 
 ## Current Status
-- Web container rebuilt and running on port 3001
+- All new modules: `ui-event-bus.js`, `ui-component-templates.js`, `ui-layout-engine.js`
+- Existing modules: `space-calculator.js`, `ui-component-shop.js`, `ui-component-factories.js`
+- Container rebuilt and healthy on port 3001
 - All syntax/type checks pass
-- UI served correctly with new classified-terminal aesthetic
-- Auth required for live data (viewer/viewer123)
 
 ## Remaining Issues
 - PostgreSQL `data_source_registry` table missing
 - Some external layer routes return 404
-- Need browser verification of circular viewport mask and interactive controls
+- Agent containers need restart for data ingestion

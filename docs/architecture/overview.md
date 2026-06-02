@@ -72,6 +72,11 @@ The web app is a server-rendered static asset host for a tactical UI built with 
 - incident playback and evidence controls
 - inferred intelligence overlays
 - SWAN toggle, status, and advisory surfaces
+- **UI Component Shop** — centralized registry and factory for dynamic components (popups, badges, panels, toasts, timelines, video/image embeds)
+- **Space Calculator** — multi-format coordinate conversion engine supporting lat/lon, Cartesian3, MGRS, UTM, screen pixels, addresses, and entity-relative offsets
+- **Event Bus** — pub/sub inter-component communication with history, middleware, debounce/throttle, and async `waitFor`
+- **Component Templates** — schema-driven, agent-safe templates (incident-card, flight-tracker, breaking-alert, intelligence-summary, event-timeline, source-panel)
+- **Smart Layout Engine** — collision detection, spiral/grid/stack placement, globe clustering, and viewport-aware positioning
 
 ### `apps/worker`
 

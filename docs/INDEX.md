@@ -19,6 +19,7 @@ Use this index for the current runtime shape of the repo. Some numbered planning
 | [architecture/capture-service.md](architecture/capture-service.md) | Capture-job and evidence-freeze workflow |
 | [architecture/inference-service.md](architecture/inference-service.md) | Inferred-intelligence generation path |
 | [architecture/incident-intelligence.md](architecture/incident-intelligence.md) | Public-source incident enrichment, widget manifests, and refresh flow |
+| [04_FRONTEND_DESIGN.md](04_FRONTEND_DESIGN.md) | Frontend UX principles, layout, state model, and dynamic UI infrastructure (Component Shop, Event Bus, Templates, Layout Engine) |
 
 ## Persistence and Domain
 

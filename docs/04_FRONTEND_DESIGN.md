@@ -165,6 +165,85 @@ Suggested structure:
 - `ReplayControls`
 - `EventEvidencePanel`
 
+## Dynamic UI Infrastructure
+
+The tactical shell includes a dedicated dynamic UI layer for agent-driven and real-time component creation:
+
+### UI Component Shop (`ui-component-shop.js`)
+Centralized registry and factory for all dynamic UI surfaces:
+- **Register** component types with factory functions, default configs, and z-index rules
+- **Create / Mount** instances to DOM (static side rails, floating panels, or globe-tracked overlays)
+- **Update** live data without re-creating DOM
+- **Destroy** with cleanup (remove listeners, DOM nodes, Cesium postRender hooks)
+- **Globe tracking** — auto-updates DOM position every frame via Cesium `postRender`
+- **Visibility** — hides components when anchor moves off-screen or behind globe
+
+### Space Calculator (`space-calculator.js`)
+Coordinate conversion engine supporting multiple input formats:
+| Format | Example |
+|--------|---------|
+| Lat/Lon/Height | `{ lat: 35.68, lon: 51.38, height: 100 }` |
+| Cartesian3 | `Cesium.Cartesian3` instance |
+| Cartographic | `Cesium.Cartographic` radians |
+| Screen pixels | `{ x: 500, y: 300 }` |
+| MGRS | `"14RPU1234567890"` |
+| UTM | `{ zone: 14, easting: 123456, northing: 7890123 }` |
+| Address | `"Tehran, Iran"` (cached Nominatim geocoding) |
+| Entity-relative | `{ entityId: "flight-123", offset: { x: 0, y: 0, z: 50 } }` |
+
+Utilities: `toCartesian3()`, `toScreen()`, `toLatLon()`, `isVisible()`, `distanceMeters()`, `bearingDegrees()`, `getViewportBounds()`.
+
+### UI Event Bus (`ui-event-bus.js`)
+Pub/sub event bus for inter-component and agent-to-UI communication:
+- **Subscribe:** `on(event, handler)`, `once(event, handler)`, wildcard `on("*", handler)`
+- **Publish:** `emit(event, data, meta)` with automatic history tracking
+- **Middleware:** chainable validation/transformation hooks
+- **Rate limiting:** per-listener debounce and throttle options
+- **Async:** `waitFor(event, timeout)` returns Promise
+- **History:** queryable event log for replay and debugging
+
+Pre-wired events:
+| Event | Trigger | Effect |
+|-------|---------|--------|
+| `incident_selected` | Operator clicks incident | Creates `globe-popup` + `timeline` at incident location |
+| `external_layer_update` | SSE layer refresh | Updates `badge` count for the affected layer |
+| `alert_fired` | New alert generated | Creates `alert-toast` + optional `globe-popup` |
+| `agent_create_ui` | External agent broadcast | Validates template + data, creates component via Template system |
+
+### Component Templates (`ui-component-templates.js`)
+Schema-driven, agent-safe component creation without raw HTML injection:
+- **Builtin templates:** `incident-card`, `flight-tracker`, `breaking-alert`, `intelligence-summary`, `event-timeline`, `source-panel`
+- **Validation:** required fields, type checking, enum constraints, custom validators
+- **Sanitization:** all strings HTML-escaped unless explicitly marked `allowHtml`
+- **Agent API:**
+  ```js
+  window.createAgentUI("incident-card", { id: "...", title: "...", severity: "critical", position: { lat: 35.68, lon: 51.38 } });
+  window.uiTemplates.listTemplates();   // Available templates
+  window.uiTemplates.getSchema(name);    // JSON schema for a template
+  ```
+
+### Smart Layout Engine (`ui-layout-engine.js`)
+Prevents component overlap and intelligently positions elements:
+| Strategy | Best For | Behavior |
+|----------|----------|----------|
+| `spiralAvoid` | General popups | Spiral offset from desired position, avoids collisions |
+| `gridPlace` | Panels | Grid-based placement with configurable cols/cell size |
+| `stackPlace` | Toasts/alerts | Vertical stack with direction (up/down) |
+| `clusterGlobe` | Globe badges/popups | Groups nearby components into clusters with radial offset |
+
+- **Collision detection:** screen-pixel rectangle intersection with configurable margin
+- **Globe clustering:** distance-based grouping (default 50km) with automatic radial spread
+- **Viewport clamping:** keeps all components on-screen
+- **Usage:** `window.getUILayoutPosition("globe-popup", { lat: 35.68, lon: 51.38 }, { strategy: "clusterGlobe" })`
+
+### Agent Global Helpers
+Exposed on `window` for external agent scripts:
+```js
+window.createAgentUI(templateName, data)         // Create from template
+window.emitUIEvent(event, data)                  // Publish to event bus
+window.getUILayoutPosition(type, pos, opts)     // Get smart position
+```
+
 ## Frontend state model
 Separate these concerns:
 1. view state
